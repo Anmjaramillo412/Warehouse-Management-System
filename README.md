@@ -112,3 +112,7 @@ Before changing the inventory, the system checks that all required components ar
 Excel is used as the persistence layer.
 
 The runtime system uses C++ objects and data structures, while XLNT is used to save and restore the system state.
+
+## Author
+
+Ana Maria Jaramillo
