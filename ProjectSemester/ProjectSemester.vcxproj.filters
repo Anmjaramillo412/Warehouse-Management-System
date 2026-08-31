@@ -54,6 +54,9 @@
     <ClCompile Include="ProductManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="MovementLogger.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="web\app.js">
@@ -98,6 +101,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ProductManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MovementLogger.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

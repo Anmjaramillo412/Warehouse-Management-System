@@ -138,6 +138,7 @@
     </ClCompile>
     <ClCompile Include="Material.cpp" />
     <ClCompile Include="MaterialManager.cpp" />
+    <ClCompile Include="MovementLogger.cpp" />
     <ClCompile Include="Product.cpp" />
     <ClCompile Include="ProductManager.cpp" />
     <ClCompile Include="Warehouse.cpp" />
@@ -156,6 +157,7 @@
     <ClInclude Include="InventoryManager.h" />
     <ClInclude Include="Material.h" />
     <ClInclude Include="MaterialManager.h" />
+    <ClInclude Include="MovementLogger.h" />
     <ClInclude Include="Product.h" />
     <ClInclude Include="ProductManager.h" />
     <ClInclude Include="Warehouse.h" />
