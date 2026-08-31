@@ -1246,6 +1246,160 @@ void WebServer::run()
                 }
             });
 
+
+// ============================================================
+// GOODS ISSUE
+// ============================================================
+
+    CROW_ROUTE(app, "/api/inventory/issue")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+
+                    // ------------------------------------------------
+                    // Read data
+                    // ------------------------------------------------
+
+                    int warehouseID =
+                        body["warehouseID"].i();
+
+                    string materialID =
+                        body["materialID"].s();
+
+                    int quantity =
+                        body["quantity"].i();
+
+
+                    // ------------------------------------------------
+                    // Validate
+                    // ------------------------------------------------
+
+                    if (!Material::isValidID(
+                        materialID))
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid Material ID. Expected format ###-######.");
+                    }
+
+
+                    if (quantity <= 0)
+                    {
+                        return crow::response(
+                            400,
+                            "Quantity must be greater than zero.");
+                    }
+
+
+                    // ------------------------------------------------
+                    // Find Warehouse
+                    // ------------------------------------------------
+
+                    WarehouseManager& warehouseManager =
+                        warehouseSystem->getWarehouseManager();
+
+
+                    Warehouse* warehouse =
+                        warehouseManager.findWarehouse(
+                            warehouseID);
+
+
+                    if (warehouse == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Warehouse not found.");
+                    }
+
+
+                    // ------------------------------------------------
+                    // Check material in warehouse
+                    // ------------------------------------------------
+
+                    WarehouseNode* node =
+                        warehouse->findMaterial(
+                            materialID);
+
+
+                    if (node == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Material not found in warehouse.");
+                    }
+
+
+                    // ------------------------------------------------
+                    // Check available quantity
+                    // ------------------------------------------------
+
+                    if (node->quantity < quantity)
+                    {
+                        return crow::response(
+                            409,
+                            "Insufficient quantity available.");
+                    }
+
+
+                    // ------------------------------------------------
+                    // Execute Goods Issue
+                    // ------------------------------------------------
+
+                    InventoryManager& inventoryManager =
+                        warehouseSystem->getInventoryManager();
+
+
+                    bool success =
+                        inventoryManager.goodsIssue(
+                            warehouseID,
+                            materialID,
+                            quantity);
+
+
+                    if (!success)
+                    {
+                        return crow::response(
+                            400,
+                            "Goods issue failed.");
+                    }
+
+
+                    // ------------------------------------------------
+                    // Response
+                    // ------------------------------------------------
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] =
+                        "Goods issue completed successfully.";
+
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
     // ============================================================
     // TRANSFER MATERIAL
     // ============================================================

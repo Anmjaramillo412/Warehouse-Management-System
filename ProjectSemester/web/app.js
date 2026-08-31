@@ -167,7 +167,7 @@ function openModule(module) {
                     Goods Receipt
                 </button>
 
-                <button>
+                <button onclick="showGoodsIssue()">
                     Goods Issue
                 </button>
 
@@ -2318,208 +2318,211 @@ async function goodsReceipt() {
 }
 
 // ============================================================
-// DISPLAY INVENTORY
+// GOODS ISSUE FORM
 // ============================================================
 
-async function displayInventory() {
+function showGoodsIssue() {
 
     const content =
         document.getElementById(
             "inventory-content"
         );
 
-
     content.innerHTML = `
-        <p>
-            Loading inventory...
-        </p>
-    `;
 
+        <div class="form-container">
+
+            <h2>
+                Goods Issue
+            </h2>
+
+
+            <label>
+                Warehouse ID
+            </label>
+
+            <input
+                type="number"
+                id="issue-warehouse-id"
+                placeholder="Enter Warehouse ID"
+            >
+
+
+            <label>
+                Material ID
+            </label>
+
+            <input
+                type="text"
+                id="issue-material-id"
+                placeholder="###-######"
+                maxlength="10"
+            >
+
+
+            <label>
+                Quantity
+            </label>
+
+            <input
+                type="number"
+                id="issue-quantity"
+                min="1"
+                placeholder="Enter Quantity"
+            >
+
+
+            <div class="form-actions">
+
+                <button
+                    onclick="goodsIssue()">
+
+                    Issue Goods
+
+                </button>
+
+            </div>
+
+
+            <div id="issue-message">
+            </div>
+
+        </div>
+    `;
+}
+
+// ============================================================
+// GOODS ISSUE
+// ============================================================
+
+async function goodsIssue() {
+
+    const warehouseID =
+        document.getElementById(
+            "issue-warehouse-id"
+        ).value;
+
+    const materialID =
+        document.getElementById(
+            "issue-material-id"
+        ).value.trim();
+
+    const quantity =
+        document.getElementById(
+            "issue-quantity"
+        ).value;
+
+
+    const message =
+        document.getElementById(
+            "issue-message"
+        );
+
+
+    // --------------------------------------------------------
+    // Validation
+    // --------------------------------------------------------
+
+    const materialIDPattern =
+        /^[0-9]{3}-[0-9]{6}$/;
+
+
+    if (!warehouseID) {
+
+        message.textContent =
+            "Please enter a Warehouse ID.";
+
+        return;
+    }
+
+
+    if (!materialIDPattern.test(materialID)) {
+
+        message.textContent =
+            "Invalid Material ID. Expected format ###-######.";
+
+        return;
+    }
+
+
+    if (!quantity ||
+        Number(quantity) <= 0) {
+
+        message.textContent =
+            "Quantity must be greater than zero.";
+
+        return;
+    }
+
+
+    // --------------------------------------------------------
+    // Prepare request
+    // --------------------------------------------------------
+
+    const issue = {
+
+        warehouseID:
+            Number(warehouseID),
+
+        materialID:
+            materialID,
+
+        quantity:
+            Number(quantity)
+
+    };
+
+
+    // --------------------------------------------------------
+    // Send request
+    // --------------------------------------------------------
 
     try {
 
         const response =
             await fetch(
-                "/api/inventory"
+                "/api/inventory/issue",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify(issue)
+                }
             );
 
 
-        if (!response.ok) {
+        const responseText =
+            await response.text();
 
-            const message =
-                await response.text();
 
-            content.innerHTML = `
-                <p>
-                    Error: ${message}
-                </p>
-            `;
+        if (response.ok) {
 
-            return;
+            message.textContent =
+                "Goods issue completed successfully.";
+
+            document.getElementById(
+                "issue-quantity"
+            ).value = "";
+
         }
+        else {
 
-
-        const data =
-            await response.json();
-
-
-        if (
-            !data.warehouses ||
-            data.warehouses.length === 0
-        ) {
-
-            content.innerHTML = `
-                <div class="empty-message">
-
-                    No inventory available.
-
-                </div>
-            `;
-
-            return;
+            message.textContent =
+                "Error: " + responseText;
         }
-
-
-        let html = "";
-
-
-        for (
-            const warehouse of data.warehouses
-        ) {
-
-            html += `
-
-                <div class="material-table-container">
-
-                    <h2>
-                        Warehouse
-                        ${warehouse.id}
-                        -
-                        ${escapeHtml(
-                            warehouse.name
-                        )}
-                    </h2>
-            `;
-
-
-            if (
-                !warehouse.inventory ||
-                warehouse.inventory.length === 0
-            ) {
-
-                html += `
-
-                    <div class="empty-message">
-
-                        Warehouse is empty.
-
-                    </div>
-
-                `;
-
-            }
-            else {
-
-                html += `
-
-                    <table class="material-table">
-
-                        <thead>
-
-                            <tr>
-
-                                <th>
-                                    Material ID
-                                </th>
-
-                                <th>
-                                    Material Name
-                                </th>
-
-                                <th>
-                                    Quantity
-                                </th>
-
-                                <th>
-                                    UoM
-                                </th>
-
-                            </tr>
-
-                        </thead>
-
-                        <tbody>
-                `;
-
-
-                for (
-                    const item of warehouse.inventory
-                ) {
-
-                    html += `
-
-                        <tr>
-
-                            <td>
-                                ${escapeHtml(
-                                    item.materialID
-                                )}
-                            </td>
-
-                            <td>
-                                ${escapeHtml(
-                                    item.materialName
-                                )}
-                            </td>
-
-                            <td>
-                                ${item.quantity}
-                            </td>
-
-                            <td>
-                                ${escapeHtml(
-                                    item.uom
-                                )}
-                            </td>
-
-                        </tr>
-
-                    `;
-                }
-
-
-                html += `
-
-                        </tbody>
-
-                    </table>
-
-                `;
-            }
-
-
-            html += `
-
-                </div>
-
-            `;
-        }
-
-
-        content.innerHTML = html;
 
     }
     catch (error) {
 
         console.error(error);
 
-        content.innerHTML = `
-
-            <p>
-                Could not connect to the server.
-            </p>
-
-        `;
+        message.textContent =
+            "Could not connect to the server.";
     }
 }
 
@@ -2757,6 +2760,212 @@ async function transferMaterial() {
 
         message.textContent =
             "Could not connect to the server.";
+    }
+}
+
+// ============================================================
+// DISPLAY INVENTORY
+// ============================================================
+
+async function displayInventory() {
+
+    const content =
+        document.getElementById(
+            "inventory-content"
+        );
+
+
+    content.innerHTML = `
+        <p>
+            Loading inventory...
+        </p>
+    `;
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/inventory"
+            );
+
+
+        if (!response.ok) {
+
+            const message =
+                await response.text();
+
+            content.innerHTML = `
+                <p>
+                    Error: ${message}
+                </p>
+            `;
+
+            return;
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            !data.warehouses ||
+            data.warehouses.length === 0
+        ) {
+
+            content.innerHTML = `
+                <div class="empty-message">
+
+                    No inventory available.
+
+                </div>
+            `;
+
+            return;
+        }
+
+
+        let html = "";
+
+
+        for (
+            const warehouse of data.warehouses
+        ) {
+
+            html += `
+
+                <div class="material-table-container">
+
+                    <h2>
+                        Warehouse
+                        ${warehouse.id}
+                        -
+                        ${escapeHtml(
+                            warehouse.name
+                        )}
+                    </h2>
+            `;
+
+
+            if (
+                !warehouse.inventory ||
+                warehouse.inventory.length === 0
+            ) {
+
+                html += `
+
+                    <div class="empty-message">
+
+                        Warehouse is empty.
+
+                    </div>
+
+                `;
+
+            }
+            else {
+
+                html += `
+
+                    <table class="material-table">
+
+                        <thead>
+
+                            <tr>
+
+                                <th>
+                                    Material ID
+                                </th>
+
+                                <th>
+                                    Material Name
+                                </th>
+
+                                <th>
+                                    Quantity
+                                </th>
+
+                                <th>
+                                    UoM
+                                </th>
+
+                            </tr>
+
+                        </thead>
+
+                        <tbody>
+                `;
+
+
+                for (
+                    const item of warehouse.inventory
+                ) {
+
+                    html += `
+
+                        <tr>
+
+                            <td>
+                                ${escapeHtml(
+                                    item.materialID
+                                )}
+                            </td>
+
+                            <td>
+                                ${escapeHtml(
+                                    item.materialName
+                                )}
+                            </td>
+
+                            <td>
+                                ${item.quantity}
+                            </td>
+
+                            <td>
+                                ${escapeHtml(
+                                    item.uom
+                                )}
+                            </td>
+
+                        </tr>
+
+                    `;
+                }
+
+
+                html += `
+
+                        </tbody>
+
+                    </table>
+
+                `;
+            }
+
+
+            html += `
+
+                </div>
+
+            `;
+        }
+
+
+        content.innerHTML = html;
+
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `
+
+            <p>
+                Could not connect to the server.
+            </p>
+
+        `;
     }
 }
 
