@@ -1,0 +1,503 @@
+/* ============================================================
+   GENERAL
+============================================================ */
+
+* {
+    box-sizing: border-box;
+}
+
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f6f8;
+    color: #1f2937;
+}
+
+
+/* ============================================================
+   HEADER
+============================================================ */
+
+.header {
+    background: #1f2937;
+    color: white;
+    padding: 30px 50px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+
+    .header h1 {
+        margin: 0;
+        font-size: 30px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+
+    .header p {
+        margin: 8px 0 0;
+        color: #cbd5e1;
+    }
+
+
+.status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+}
+
+
+.status-dot {
+    width: 11px;
+    height: 11px;
+    background: #22c55e;
+    border-radius: 50%;
+}
+
+
+/* ============================================================
+   DASHBOARD
+============================================================ */
+
+.dashboard {
+    max-width: 1100px;
+    margin: 50px auto;
+    padding: 0 25px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 25px;
+}
+
+
+/* ============================================================
+   MENU CARDS
+============================================================ */
+
+.menu-card {
+    background: white;
+    border: none;
+    border-radius: 12px;
+    padding: 30px;
+    min-height: 180px;
+    text-align: left;
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+
+    .menu-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.14);
+    }
+
+
+.icon {
+    font-size: 42px;
+}
+
+
+.menu-card h2 {
+    margin: 0 0 8px;
+    font-size: 21px;
+}
+
+
+.menu-card p {
+    margin: 0;
+    color: #6b7280;
+    line-height: 1.5;
+}
+
+
+.arrow {
+    font-size: 30px;
+    color: #64748b;
+}
+
+
+/* ============================================================
+   MODULE VIEW
+============================================================ */
+
+.module-view {
+    max-width: 1100px;
+    margin: 40px auto;
+    padding: 0 25px;
+}
+
+
+.hidden {
+    display: none;
+}
+
+
+.back-button {
+    border: none;
+    background: transparent;
+    color: #374151;
+    font-size: 16px;
+    cursor: pointer;
+    margin-bottom: 25px;
+}
+
+
+    .back-button:hover {
+        text-decoration: underline;
+    }
+
+
+#module-content {
+    background: white;
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+
+/* ============================================================
+   MODULE BUTTONS
+============================================================ */
+
+.module-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-top: 30px;
+}
+
+
+    .module-buttons button {
+        padding: 14px 22px;
+        border: none;
+        border-radius: 8px;
+        background: #1f2937;
+        color: white;
+        cursor: pointer;
+        font-size: 15px;
+    }
+
+
+        .module-buttons button:hover {
+            background: #374151;
+        }
+
+
+/* ============================================================
+   MATERIAL FORM
+============================================================ */
+
+.form-container {
+    margin-top: 35px;
+    max-width: 600px;
+    padding: 30px;
+    background: #f8fafc;
+    border-radius: 10px;
+}
+
+
+    .form-container h2 {
+        margin-top: 0;
+    }
+
+
+    .form-container label {
+        display: block;
+        margin-top: 18px;
+        margin-bottom: 6px;
+        font-weight: bold;
+    }
+
+
+    .form-container input {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 15px;
+    }
+
+
+.form-actions {
+    margin-top: 25px;
+}
+
+
+    .form-actions button {
+        padding: 12px 20px;
+        border: none;
+        border-radius: 7px;
+        background: #1f2937;
+        color: white;
+        cursor: pointer;
+        font-size: 15px;
+    }
+
+
+        .form-actions button:hover {
+            background: #374151;
+        }
+
+
+#material-message {
+    margin-top: 20px;
+    font-weight: bold;
+}
+
+
+/* ============================================================
+   FOOTER
+============================================================ */
+
+footer {
+    border-top: 1px solid #e5e7eb;
+    margin-top: 60px;
+    padding: 20px 40px;
+    display: flex;
+    justify-content: space-between;
+    color: #6b7280;
+    font-size: 14px;
+}
+
+
+/* ============================================================
+   RESPONSIVE
+============================================================ */
+
+@media (max-width: 750px) {
+
+    .dashboard {
+        grid-template-columns: 1fr;
+    }
+
+
+    .header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 20px;
+    }
+}
+
+// ============================================================
+// MODULE NAVIGATION
+// ============================================================
+
+function openModule(module) {
+    const dashboard = document.querySelector(".dashboard");
+    const moduleView = document.getElementById("module-view");
+    const content = document.getElementById("module-content");
+    dashboard .style.display = "none";
+    moduleView .classList.remove("hidden");
+    // ======================================================== // MATERIAL MANAGER // ======================================================== if (module === "materials")
+
+{
+    content .innerHTML = ` <h1> Material Manager </h1> <p> Manage materials stored in the system. </p> <div class="module-buttons"> <button onclick="showCreateMaterial()"> Create Material </button> <button> Modify Material </button> <button> Delete Material </button> <button> Search Material </button> <button> Display Materials </button> </div> <div id="material-form"> </div> `;
+}
+
+
+// ========================================================
+// WAREHOUSE MANAGER
+// ========================================================
+
+else if (module === "warehouses") {
+    content .innerHTML = ` <h1> Warehouse Manager </h1> <p> Manage warehouses and storage locations. </p> <div class="module-buttons"> <button> Create Warehouse </button> <button> Delete Warehouse </button> <button> Display Warehouses </button> </div> `;
+}
+
+
+// ========================================================
+// INVENTORY MANAGER
+// ========================================================
+
+else if (module === "inventory") {
+    content .innerHTML = ` <h1> Inventory Manager </h1> <p> Manage material movements and inventory. </p> <div class="module-buttons"> <button> Goods Receipt </button> <button> Goods Issue </button> <button> Transfer Material </button> <button> Display Inventory </button> <button> Inventory Check </button> </div> `;
+}
+
+
+// ========================================================
+// DATA MANAGEMENT
+// ========================================================
+
+else if (module === "data") {
+    content .innerHTML = ` <h1> Data Management </h1> <p> Save and recover system data. </p> <div class="module-buttons"> <button> Save Data </button> <button> Load Data </button> </div> `;
+}
+
+}
+
+
+// ============================================================
+// CREATE MATERIAL FORM
+// ============================================================
+
+function showCreateMaterial() {
+    const form = document.getElementById("material-form");
+    form .innerHTML = ` <div class="form-container"> <h2> Create Material </h2>
+    <!-- MATERIAL ID -->
+    <label> Material ID </label> <input type="number" id="material-id" placeholder="Enter Material ID" >
+    <!-- MATERIAL NAME -->
+    <label> Material Name </label> <input type="text" id="material-name" placeholder="Enter Material Name" >
+    <!-- UNIT OF MEASURE -->
+    <label> Unit of Measure </label> <input type="text" id="material-uom" value="pcs" placeholder="pcs" >
+    <!-- CATEGORY -->
+    <label> Category </label> <input type="text" id="material-category" placeholder="Enter Category" >
+    <!-- SUPPLIER -->
+    <label> Supplier </label> <input type="text" id="material-supplier" placeholder="Enter Supplier" >
+    <!-- CREATE BUTTON -->
+    <div class="form-actions"> <button onclick="createMaterial()"> Create Material </button> </div>
+    <!-- MESSAGE -->
+    <div id="material-message"> </div> </div> `;
+}
+
+// ============================================================
+// BACK TO DASHBOARD
+// ============================================================
+
+function closeModule() {
+    const dashboard = document.querySelector(".dashboard");
+    const moduleView = document.getElementById("module-view");
+    moduleView .classList.add("hidden");
+    dashboard .style.display = "grid";
+}
+
+/* ============================================================
+   MATERIAL TABLE
+============================================================ */
+
+.material-table-container {
+    margin-top: 35px;
+    width: 100%;
+    overflow-x: auto;
+}
+
+
+    .material-table-container h2 {
+        margin-bottom: 20px;
+    }
+
+
+.material-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+}
+
+
+    .material-table th {
+        background: #1f2937;
+        color: white;
+        padding: 14px;
+        text-align: left;
+    }
+
+
+    .material-table td {
+        padding: 14px;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+
+    .material-table tbody tr:hover {
+        background: #f8fafc;
+    }
+
+
+.empty-message {
+    margin-top: 30px;
+    padding: 20px;
+    background: #f8fafc;
+    border-radius: 8px;
+    color: #6b7280;
+}
+
+/* ============================================================
+   SEARCH RESULT
+============================================================ */
+
+.search-result {
+    margin-top: 25px;
+    padding: 20px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+}
+
+
+    .search-result h3 {
+        margin-top: 0;
+    }
+
+
+    .search-result p {
+        margin: 8px 0;
+    }
+
+/* ============================================================
+   CONTAINER TEXT AREA
+============================================================ */
+
+.form-container textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 15px;
+    font-family: Arial, Helvetica, sans-serif;
+    resize: vertical;
+}
+
+
+.form-container small {
+    display: block;
+    margin-top: 5px;
+    color: #6b7280;
+}
+
+
+.checkbox-label {
+    display: flex !important;
+    align-items: center;
+    gap: 10px;
+    margin-top: 20px !important;
+}
+
+
+    .checkbox-label input {
+        width: auto;
+    }
+
+
+.form-container input[type="file"] {
+    padding: 8px;
+    background: white;
+}
+
+/* ============================================================
+   DATA MESSAGE
+============================================================ */
+
+#data-message {
+    margin-top: 20px;
+    padding: 12px 15px;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+/* ============================================================
+   MATERIAL THUMBNAIL
+============================================================ */
+
+.material-thumbnail {
+    width: 60px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+    display: block;
+}

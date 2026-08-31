@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>
+        Warehouse Management System
+    </title>
+
+    <link rel="stylesheet"
+          href="style.css">
+
+</head>
+
+
+<body>
+
+    <!-- =========================================================
+         HEADER
+    ========================================================== -->
+
+    <header class="header">
+
+        <div>
+
+            <h1>
+                Warehouse Management System
+            </h1>
+
+            <p>
+                Inventory & Operations
+            </p>
+
+        </div>
+
+        <div class="status">
+
+            <span class="status-dot"></span>
+
+            System Online
+
+        </div>
+
+    </header>
+
+
+    <!-- =========================================================
+         MAIN DASHBOARD
+    ========================================================== -->
+
+    <main class="dashboard">
+
+
+        <!-- MATERIAL MANAGER -->
+
+        <button class="menu-card"
+                onclick="openModule('materials')">
+
+            <div class="icon">
+                🧩
+            </div>
+
+            <div>
+
+                <h2>
+                    Material Manager
+                </h2>
+
+                <p>
+                    Create, modify, delete
+                    and search materials.
+                </p>
+
+            </div>
+
+            <span class="arrow">
+                →
+            </span>
+
+        </button>
+
+
+        <!-- WAREHOUSE MANAGER -->
+
+        <button class="menu-card"
+                onclick="openModule('warehouses')">
+
+            <div class="icon">
+                🏭
+            </div>
+
+            <div>
+
+                <h2>
+                    Warehouse Manager
+                </h2>
+
+                <p>
+                    Manage warehouses
+                    and locations.
+                </p>
+
+            </div>
+
+            <span class="arrow">
+                →
+            </span>
+
+        </button>
+
+
+        <!-- INVENTORY MANAGER -->
+
+        <button class="menu-card"
+                onclick="openModule('inventory')">
+
+            <div class="icon">
+                📦
+            </div>
+
+            <div>
+
+                <h2>
+                    Inventory Manager
+                </h2>
+
+                <p>
+                    Goods receipt, issue
+                    and material transfers.
+                </p>
+
+            </div>
+
+            <span class="arrow">
+                →
+            </span>
+
+        </button>
+
+        <!-- Product Manager -->
+
+        <div class="menu-card"
+             onclick="openModule('products')">
+
+            <div class="icon">
+                ⚙
+            </div>
+
+            <div>
+
+                <h2>
+                    Product Manager
+                </h2>
+
+                <p>
+                    Manage products and their Bills of Materials.
+                </p>
+
+            </div>
+
+            <div class="arrow">
+                →
+            </div>
+
+        </div>
+
+        <!-- DATA MANAGEMENT -->
+
+        <button class="menu-card"
+                onclick="openModule('data')">
+
+            <div class="icon">
+                💾
+            </div>
+
+            <div>
+
+                <h2>
+                    Data Management
+                </h2>
+
+                <p>
+                    Save and recover
+                    system data.
+                </p>
+
+            </div>
+
+            <span class="arrow">
+                →
+            </span>
+
+        </button>
+
+
+    </main>
+
+
+    <!-- =========================================================
+         MODULE WINDOW
+    ========================================================== -->
+
+    <section id="module-view"
+             class="module-view hidden">
+
+        <button class="back-button"
+                onclick="closeModule()">
+
+            ← Back to Dashboard
+
+        </button>
+
+
+        <div id="module-content">
+
+        </div>
+
+    </section>
+
+
+    <!-- =========================================================
+         FOOTER
+    ========================================================== -->
+
+    <footer>
+
+        <span>
+            Warehouse Management System
+        </span>
+
+        <span>
+            localhost:18080
+        </span>
+
+    </footer>
+
+
+    <script src="app.js"></script>
+
+</body>
+
+</html>
