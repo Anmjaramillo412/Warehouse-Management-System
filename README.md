@@ -67,7 +67,6 @@ System data is stored using XLNT in an Excel workbook containing:
 
 The application is structured into several classes with clearly separated responsibilities.
 
-```text
 WarehouseSystem
 │
 ├── MaterialManager
@@ -86,3 +85,30 @@ WarehouseSystem
 ├── DataManager
 │
 └── WebServer
+
+## Data Structures
+
+Inventory inside each warehouse is represented using a doubly linked list.
+
+Each WarehouseNode stores:
+
+* A pointer to an existing Material
+* The inventory quantity
+* A pointer to the previous node
+* A pointer to the next node
+
+Materials are owned by MaterialManager and warehouses keep pointers to the existing material objects. This avoids duplicating material master data.
+
+### Product and BOM Concept
+
+A Product contains a Bill of Materials consisting of Material IDs and required quantities.
+
+When a product is sold, the system automatically calculates the required quantities of all BOM components and performs the corresponding inventory issues.
+
+Before changing the inventory, the system checks that all required components are available.
+
+### Persistence
+
+Excel is used as the persistence layer.
+
+The runtime system uses C++ objects and data structures, while XLNT is used to save and restore the system state.
