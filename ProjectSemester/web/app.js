@@ -207,6 +207,7 @@ function openModule(module) {
                 Save and recover system data.
             </p>
 
+
             <div class="module-buttons">
 
                 <button onclick="saveData()">
@@ -219,9 +220,76 @@ function openModule(module) {
 
             </div>
 
-            <div id="data-message">
+
+            <div class="data-logging-option">
+
+                <label>
+
+                    <input
+                        type="checkbox"
+                        id="log-data-operations"
+                        onchange="setDataLogging()"
+                    >
+
+                    Log Save/Load operations
+
+                </label>
+
             </div>
+
+
+            <div id="data-logging-message">
+            </div>
+
         `;
+
+
+        loadDataLoggingState();
+    }
+}
+
+// ============================================================
+// LOAD DATA LOGGING STATE
+// ============================================================
+
+async function loadDataLoggingState()
+{
+    try
+    {
+        const response =
+            await fetch(
+                "/api/data/logging"
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (!response.ok)
+        {
+            return;
+        }
+
+
+        const checkbox =
+            document.getElementById(
+                "log-data-operations"
+            );
+
+
+        if (checkbox)
+        {
+            checkbox.checked =
+                data.enabled;
+        }
+    }
+    catch (error)
+    {
+        console.error(
+            "Could not load logging state:",
+            error
+        );
     }
 }
 
@@ -233,7 +301,7 @@ async function saveData() {
 
     const message =
             document.getElementById(
-                "data-message"
+                "data-logging-message"
             );
 
     try {
@@ -283,7 +351,7 @@ async function loadData() {
     
     const message =
         document.getElementById(
-            "data-message"
+            "data-logging-message"
         );
 
     try {
@@ -375,8 +443,7 @@ function showCreateMaterial() {
             <textarea
                 id="material-description"
                 placeholder="Enter Material Description"
-                rows="4"
-            ></textarea>
+                rows="4"></textarea>
 
 
             <label>
@@ -454,7 +521,6 @@ function showCreateMaterial() {
         </div>
     `;
 }
-
 
 // ============================================================
 // CREATE MATERIAL
@@ -2162,6 +2228,15 @@ function showGoodsReceipt() {
                 placeholder="Enter Quantity"
             >
 
+            <label>
+                Comment
+            </label>
+
+            <textarea
+                id="receipt-comment"
+                rows="4"
+                placeholder="Reason or additional information"></textarea>
+
 
             <div class="form-actions">
 
@@ -2203,6 +2278,10 @@ async function goodsReceipt() {
             "receipt-quantity"
         ).value;
 
+    const comment =
+        document.getElementById(
+            "receipt-comment"
+        ).value.trim();
 
     const message =
         document.getElementById(
@@ -2259,7 +2338,10 @@ async function goodsReceipt() {
             materialID,
 
         quantity:
-            Number(quantity)
+            Number(quantity),
+
+        comment:
+            comment
 
     };
 
@@ -2296,9 +2378,12 @@ async function goodsReceipt() {
             message.textContent =
                 "Goods receipt completed successfully.";
 
-            document.getElementById(
-                "receipt-quantity"
-            ).value = "";
+            clearInputFields([
+                "receipt-warehouse-id",
+                "receipt-material-id",
+                "receipt-quantity",
+                "receipt-comment"
+            ]);
 
         }
         else {
@@ -2371,6 +2456,15 @@ function showGoodsIssue() {
                 placeholder="Enter Quantity"
             >
 
+            <label>
+                Comment
+            </label>
+
+            <textarea
+                id="issue-comment"
+                rows="4"
+                placeholder="Reason or additional information"></textarea>
+
 
             <div class="form-actions">
 
@@ -2411,6 +2505,11 @@ async function goodsIssue() {
         document.getElementById(
             "issue-quantity"
         ).value;
+
+    const comment =
+        document.getElementById(
+            "issue-comment"
+        ).value.trim();
 
 
     const message =
@@ -2468,8 +2567,10 @@ async function goodsIssue() {
             materialID,
 
         quantity:
-            Number(quantity)
+            Number(quantity),
 
+        comment:
+            comment
     };
 
 
@@ -2505,9 +2606,12 @@ async function goodsIssue() {
             message.textContent =
                 "Goods issue completed successfully.";
 
-            document.getElementById(
-                "issue-quantity"
-            ).value = "";
+            clearInputFields([
+                "issue-warehouse-id",
+                "issue-material-id",
+                "issue-quantity",
+                "issue-comment"
+            ]);
 
         }
         else {
@@ -2591,6 +2695,14 @@ function showTransferMaterial() {
                 placeholder="Enter Quantity"
             >
 
+            <label>
+                Comment
+            </label>
+
+            <textarea
+                id="transfer-comment"
+                rows="4"
+                placeholder="Reason or additional information"></textarea>
 
             <div class="form-actions">
 
@@ -2637,12 +2749,15 @@ async function transferMaterial() {
             "transfer-quantity"
         ).value;
 
+    const comment =
+        document.getElementById(
+            "transfer-comment"
+        ).value.trim();
 
     const message =
         document.getElementById(
             "transfer-message"
         );
-
 
     const materialIDPattern =
         /^[0-9]{3}-[0-9]{6}$/;
@@ -2705,10 +2820,11 @@ async function transferMaterial() {
             materialID,
 
         quantity:
-            Number(quantity)
+            Number(quantity),
 
+        comment:
+            comment
     };
-
 
     // --------------------------------------------------------
     // Send to C++
@@ -2742,10 +2858,13 @@ async function transferMaterial() {
             message.textContent =
                 "Material transferred successfully.";
 
-            document.getElementById(
-                "transfer-quantity"
-            ).value = "";
-
+            clearInputFields([
+                "transfer-source",
+                "transfer-destination",
+                "transfer-material-id",
+                "transfer-quantity",
+                "transfer-comment"
+            ]);
         }
         else {
 
@@ -3171,8 +3290,7 @@ function showCreateProduct() {
             <textarea
                 id="product-description"
                 rows="4"
-                placeholder="Enter Product Description"
-            ></textarea>
+                placeholder="Enter Product Description"></textarea>
 
 
             <h3>
@@ -3431,6 +3549,11 @@ async function createProduct() {
             message.textContent =
                 "Product created successfully.";
 
+            clearInputFields([
+                "product-id",
+                "product-name",
+                "product-description"
+            ]);
         }
         else {
 
@@ -3999,6 +4122,91 @@ function readFileAsBase64(file) {
             reader.readAsDataURL(file);
         }
     );
+}
+
+// ============================================================
+// CLEAR INPUT FIELDS
+// ============================================================
+
+function clearInputFields(ids) {
+
+    ids.forEach(id => {
+
+        const element =
+            document.getElementById(id);
+
+        if (element) {
+
+            element.value = "";
+
+        }
+    });
+}
+
+// ============================================================
+// SET DATA LOGGING
+// ============================================================
+
+async function setDataLogging() {
+
+    const checkbox =
+        document.getElementById(
+            "log-data-operations"
+        );
+
+    const message =
+        document.getElementById(
+            "data-logging-message"
+        );
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/data/logging",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({
+                            enabled:
+                                checkbox.checked
+                        })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (!response.ok) {
+
+            message.textContent =
+                data.message ||
+                "Could not update logging setting.";
+
+            return;
+        }
+
+
+        message.textContent =
+            data.message;
+
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
+    }
 }
 
 // ============================================================

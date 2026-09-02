@@ -3,6 +3,7 @@
 #include "MaterialManager.h"
 #include "ProductManager.h"
 #include "WarehouseManager.h"
+#include "MovementLogger.h"
 #include "InventoryManager.h"
 #include "DataManager.h"
 
@@ -15,6 +16,8 @@ private:
     ProductManager productManager;
 
     WarehouseManager warehouseManager;
+
+    MovementLogger movementLogger;
 
     InventoryManager inventoryManager;
 
@@ -30,7 +33,14 @@ public:
 
     WarehouseManager& getWarehouseManager();
 
+    MovementLogger& getMovementLogger();
+
     InventoryManager& getInventoryManager();
 
     DataManager& getDataManager();
+
+    void setLogDataOperations(
+        bool enabled);
+
+    bool getLogDataOperations() const;
 };

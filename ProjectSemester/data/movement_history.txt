@@ -1,0 +1,18 @@
+2026-08-31 20:14:25 | GOODS RECEIPT | WH: 1 | Material: 008-200016 | Qty: 10 | Comment: Received from supplier PO-12345
+2026-08-31 20:29:27 | GOODS RECEIPT | WH: 1 | Material: 008-200016 | Qty: 10 | Comment: ok
+2026-08-31 20:29:47 | GOODS RECEIPT | WH: 1 | Material: 008-200017 | Qty: 10 | Comment: xx
+2026-08-31 20:54:42 | GOODS ISSUE | WH: 1 | Material: 008-200015 | Qty: 2 | Comment: Bad material
+2026-08-31 20:56:25 | GOODS RECEIPT | WH: 1 | Material: 008-200015 | Qty: 10 | Comment: New delivery
+2026-09-01 15:05:13 | GOODS RECEIPT | WH: 1 | Material: 008-200015 | Qty: 10 | Comment: qgzkjgqsj
+2026-09-02 19:50:00 | GOODS RECEIPT | WH: 1 | Material: 008-200015 | Qty: 20 | Comment: ok
+2026-09-02 19:50:17 | TRANSFER | WH: 1 -> WH: 2 | Material: 008-200015 | Qty: 5 | Comment: Damaged
+2026-09-02 19:52:09 | GOODS RECEIPT | WH: 1 | Material: 008-200016 | Qty: 20
+2026-09-02 19:52:22 | GOODS RECEIPT | WH: 1 | Material: 008-200017 | Qty: 20
+2026-09-02 20:21:03 | TRANSFER | WH: 2 -> WH: 3 | Material: 008-200015 | Qty: 2 | Comment: not funktional
+2026-09-02 20:21:55 | GOODS RECEIPT | WH: 1 | Material: 008-200015 | Qty: 100
+2026-09-02 20:22:23 | GOODS RECEIPT | WH: 1 | Material: 008-200016 | Qty: 10
+2026-09-02 20:22:31 | GOODS RECEIPT | WH: 1 | Material: 008-200017 | Qty: 10
+2026-09-02 20:24:25 | GOODS ISSUE | WH: 2 | Material: 008-200015 | Qty: 2 | Comment: sfdsg
+2026-09-02 20:30:43 | DATA LOAD | File: warehouse_data.xlsx
+2026-09-02 20:31:17 | GOODS RECEIPT | WH: 1 | Material: 008-200015 | Qty: 100 | Comment: dhdh
+2026-09-02 20:31:19 | DATA SAVE | File: warehouse_data.xlsx

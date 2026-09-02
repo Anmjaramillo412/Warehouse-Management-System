@@ -1159,6 +1159,13 @@ void WebServer::run()
                     int quantity =
                         body["quantity"].i();
 
+                    string comment = "";
+
+                    if (body.has("comment"))
+                    {
+                        comment =
+                            body["comment"].s();
+                    }
 
                     // ------------------------------------------------
                     // Validate
@@ -1213,7 +1220,8 @@ void WebServer::run()
                         inventoryManager.goodsReceipt(
                             warehouseID,
                             material,
-                            quantity);
+                            quantity,
+                            comment);
 
 
                     if (!success)
@@ -1282,6 +1290,13 @@ void WebServer::run()
                     int quantity =
                         body["quantity"].i();
 
+                    string comment = "";
+
+                    if (body.has("comment"))
+                    {
+                        comment =
+                            body["comment"].s();
+                    }
 
                     // ------------------------------------------------
                     // Validate
@@ -1366,7 +1381,8 @@ void WebServer::run()
                         inventoryManager.goodsIssue(
                             warehouseID,
                             materialID,
-                            quantity);
+                            quantity,
+                            comment);
 
 
                     if (!success)
@@ -1438,6 +1454,14 @@ void WebServer::run()
                     int quantity =
                         body["quantity"].i();
 
+                    string comment = "";
+
+                    if (body.has("comment"))
+                    {
+                        comment =
+                            body["comment"].s();
+                    }
+
 
                     // ------------------------------------------------
                     // Validation
@@ -1481,7 +1505,8 @@ void WebServer::run()
                             sourceWarehouseID,
                             destinationWarehouseID,
                             materialID,
-                            quantity);
+                            quantity,
+                            comment);
 
 
                     if (!success)
@@ -2173,6 +2198,78 @@ void WebServer::run()
 
 
                 return response;
+            });
+
+// ============================================================
+// SET DATA LOGGING
+// ============================================================
+
+    CROW_ROUTE(app, "/api/data/logging")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+
+                    bool enabled =
+                        body["enabled"].b();
+
+
+                    warehouseSystem->
+                        setLogDataOperations(
+                            enabled);
+
+
+                    crow::json::wvalue response;
+
+                    response["success"] =
+                        true;
+
+                    response["enabled"] =
+                        enabled;
+
+                    response["message"] =
+                        enabled
+                        ? "Save/Load logging enabled."
+                        : "Save/Load logging disabled.";
+
+
+                    return crow::response(
+                        response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
+// GET DATA LOGGING STATUS
+// ============================================================
+
+    CROW_ROUTE(app, "/api/data/logging")
+        .methods(crow::HTTPMethod::GET)
+        ([warehouseSystem]()
+            {
+                crow::json::wvalue response;
+
+                response["enabled"] =
+                    warehouseSystem->getLogDataOperations();
+
+                return crow::response(
+                    response);
             });
 
     // ============================================================

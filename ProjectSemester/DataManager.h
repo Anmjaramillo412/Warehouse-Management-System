@@ -3,6 +3,7 @@
 #include "MaterialManager.h"
 #include "WarehouseManager.h"
 #include "ProductManager.h"
+#include "MovementLogger.h"
 
 #include <string>
 
@@ -13,12 +14,16 @@ class DataManager
 private:
 
     string filename;
+    MovementLogger* movementLogger;
 
 public:
 
     // Constructor
     DataManager(
         string file = "warehouse_data.xlsx");
+
+    void setMovementLogger(
+        MovementLogger* logger);
 
     // Save
     bool save(
