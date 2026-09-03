@@ -11,6 +11,17 @@ using namespace std;
 DataManager::DataManager(string file)
 {
     filename = file;
+    movementLogger = nullptr;
+}
+
+// ================================================================
+// SET MOVEMENT LOGGER
+// ================================================================
+
+void DataManager::setMovementLogger(
+    MovementLogger* logger)
+{
+    movementLogger = logger;
 }
 
 // ================================================================
@@ -274,6 +285,16 @@ bool DataManager::save(
 
         workbook.save(filename);
 
+        // ------------------------------------------------
+        // Log data save
+        // ------------------------------------------------
+
+                if (movementLogger != nullptr)
+                {
+                    movementLogger->logSystemEvent(
+                        "DATA SAVE",
+                        "File: " + filename);
+                }
 
         return true;
     }
@@ -694,6 +715,16 @@ bool DataManager::load(
             }
         }
 
+        // ========================================================
+        // LOAD COMPLETED
+        // ========================================================
+
+        if (movementLogger != nullptr)
+        {
+            movementLogger->logSystemEvent(
+                "DATA LOAD",
+                "File: " + filename);
+        }
 
         return true;
     }
