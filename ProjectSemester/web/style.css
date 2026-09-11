@@ -217,12 +217,75 @@ body {
     }
 
 
-    .form-container input {
+    .form-container input,
+    .form-container select {
         width: 100%;
         padding: 12px;
         border: 1px solid #d1d5db;
         border-radius: 6px;
         font-size: 15px;
+        font-family: Arial, Helvetica, sans-serif;
+        background: white;
+    }
+
+
+.checkbox-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 8px;
+}
+
+
+/* ============================================================
+   SUPPLIER SEARCH COMBOBOX
+============================================================ */
+
+.combobox {
+    position: relative;
+}
+
+
+.combobox-options {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    margin-top: 4px;
+    background: white;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+}
+
+
+.combobox-option {
+    padding: 10px 12px;
+    cursor: pointer;
+}
+
+
+    .combobox-option:hover {
+        background: #f1f5f9;
+    }
+
+
+.combobox-empty {
+    color: #6b7280;
+    cursor: default;
+}
+
+
+    .combobox-empty:hover {
+        background: white;
+    }
+
+
+    .checkbox-group .checkbox-label {
+        margin-top: 0 !important;
     }
 
 

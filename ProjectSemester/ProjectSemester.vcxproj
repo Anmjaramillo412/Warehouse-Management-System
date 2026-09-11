@@ -29,26 +29,26 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -141,6 +141,8 @@
     <ClCompile Include="MovementLogger.cpp" />
     <ClCompile Include="Product.cpp" />
     <ClCompile Include="ProductManager.cpp" />
+    <ClCompile Include="Supplier.cpp" />
+    <ClCompile Include="SupplierManager.cpp" />
     <ClCompile Include="Warehouse.cpp" />
     <ClCompile Include="WarehouseManager.cpp" />
     <ClCompile Include="WarehouseSystem.cpp" />
@@ -160,6 +162,8 @@
     <ClInclude Include="MovementLogger.h" />
     <ClInclude Include="Product.h" />
     <ClInclude Include="ProductManager.h" />
+    <ClInclude Include="Supplier.h" />
+    <ClInclude Include="SupplierManager.h" />
     <ClInclude Include="Warehouse.h" />
     <ClInclude Include="WarehouseManager.h" />
     <ClInclude Include="WarehouseSystem.h" />

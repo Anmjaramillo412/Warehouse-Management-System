@@ -30,6 +30,7 @@ void DataManager::setMovementLogger(
 
 bool DataManager::save(
     MaterialManager& materialManager,
+    SupplierManager& supplierManager,
     WarehouseManager& warehouseManager,
     ProductManager& productManager)
 {
@@ -53,9 +54,14 @@ bool DataManager::save(
         materialsSheet.cell("C1").value("Description");
         materialsSheet.cell("D1").value("UoM");
         materialsSheet.cell("E1").value("Category");
-        materialsSheet.cell("F1").value("Supplier");
-        materialsSheet.cell("G1").value("Photo");
-        materialsSheet.cell("H1").value("Active");
+        materialsSheet.cell("F1").value("Type");
+        materialsSheet.cell("G1").value("Drawing Number");
+        materialsSheet.cell("H1").value("Manufacturer");
+        materialsSheet.cell("I1").value("Manufacturer Part Number");
+        materialsSheet.cell("J1").value("Supplier");
+        materialsSheet.cell("K1").value("Supplier Part Number");
+        materialsSheet.cell("L1").value("Photo");
+        materialsSheet.cell("M1").value("Active");
 
 
         int materialRow = 2;
@@ -89,20 +95,116 @@ bool DataManager::save(
 
             materialsSheet.cell(
                 "F" + to_string(materialRow))
-                .value(material->getSupplier());
+                .value(
+                    Material::materialTypeToString(
+                        material->getType()));
 
             materialsSheet.cell(
                 "G" + to_string(materialRow))
-                .value(material->getPhotoPath());
+                .value(material->getDrawingNumber());
 
             materialsSheet.cell(
                 "H" + to_string(materialRow))
+                .value(material->getManufacturer());
+
+            materialsSheet.cell(
+                "I" + to_string(materialRow))
+                .value(material->getManufacturerPartNumber());
+
+            materialsSheet.cell(
+                "J" + to_string(materialRow))
+                .value(
+                    material->getSupplier() != nullptr
+                    ? material->getSupplier()->getName()
+                    : "");
+
+            materialsSheet.cell(
+                "K" + to_string(materialRow))
+                .value(material->getSupplierPartNumber());
+
+            materialsSheet.cell(
+                "L" + to_string(materialRow))
+                .value(material->getPhotoPath());
+
+            materialsSheet.cell(
+                "M" + to_string(materialRow))
                 .value(
                     material->isActive()
                     ? "YES"
                     : "NO");
 
             materialRow++;
+        }
+
+
+        // ========================================================
+        // SUPPLIERS SHEET
+        // ========================================================
+
+        xlnt::worksheet suppliersSheet =
+            workbook.create_sheet();
+
+        suppliersSheet.title("Suppliers");
+
+        suppliersSheet.cell("A1").value("Name");
+        suppliersSheet.cell("B1").value("Address");
+        suppliersSheet.cell("C1").value("Country");
+        suppliersSheet.cell("D1").value("Contact Name");
+        suppliersSheet.cell("E1").value("Contact Email");
+        suppliersSheet.cell("F1").value("Website");
+        suppliersSheet.cell("G1").value("Ordering Methods");
+        suppliersSheet.cell("H1").value("Payment Method");
+        suppliersSheet.cell("I1").value("Lead Time (weeks)");
+
+
+        int supplierRow = 2;
+
+
+        const vector<unique_ptr<Supplier>>& suppliers =
+            supplierManager.getSuppliers();
+
+
+        for (const auto& supplier : suppliers)
+        {
+            suppliersSheet.cell(
+                "A" + to_string(supplierRow))
+                .value(supplier->getName());
+
+            suppliersSheet.cell(
+                "B" + to_string(supplierRow))
+                .value(supplier->getAddress());
+
+            suppliersSheet.cell(
+                "C" + to_string(supplierRow))
+                .value(supplier->getCountry());
+
+            suppliersSheet.cell(
+                "D" + to_string(supplierRow))
+                .value(supplier->getContactName());
+
+            suppliersSheet.cell(
+                "E" + to_string(supplierRow))
+                .value(supplier->getContactEmail());
+
+            suppliersSheet.cell(
+                "F" + to_string(supplierRow))
+                .value(supplier->getWebsite());
+
+            suppliersSheet.cell(
+                "G" + to_string(supplierRow))
+                .value(
+                    Supplier::orderingMethodsToString(
+                        supplier->getOrderingMethods()));
+
+            suppliersSheet.cell(
+                "H" + to_string(supplierRow))
+                .value(supplier->getPaymentMethod());
+
+            suppliersSheet.cell(
+                "I" + to_string(supplierRow))
+                .value(supplier->getLeadTimeWeeks());
+
+            supplierRow++;
         }
 
 
@@ -316,6 +418,7 @@ bool DataManager::save(
 
 bool DataManager::load(
     MaterialManager& materialManager,
+    SupplierManager& supplierManager,
     WarehouseManager& warehouseManager,
     ProductManager& productManager)
 {
@@ -335,6 +438,7 @@ bool DataManager::load(
         // ========================================================
 
         materialManager.clear();
+        supplierManager.clear();
         productManager.clear();
 
 
@@ -350,6 +454,92 @@ bool DataManager::load(
         }
 
         currentWarehouses.clear();
+
+
+        // ========================================================
+        // LOAD SUPPLIERS
+        // (must happen before Materials, which reference them)
+        // ========================================================
+
+        if (!workbook.contains("Suppliers"))
+        {
+            cout << endl;
+
+            cout << "Suppliers sheet not found."
+                << endl;
+        }
+        else
+        {
+            xlnt::worksheet suppliersSheet =
+                workbook.sheet_by_title("Suppliers");
+
+
+            for (auto row : suppliersSheet.rows(false))
+            {
+                if (row[0].row() == 1)
+                {
+                    continue;
+                }
+
+
+                string name =
+                    row[0].value<string>();
+
+
+                if (name.empty())
+                {
+                    continue;
+                }
+
+
+                string address =
+                    row[1].value<string>();
+
+                string country =
+                    row[2].value<string>();
+
+                string contactName =
+                    row[3].value<string>();
+
+                string contactEmail =
+                    row[4].value<string>();
+
+                string website =
+                    row[5].value<string>();
+
+                string orderingMethodsValue =
+                    row[6].value<string>();
+
+                string paymentMethod =
+                    row[7].value<string>();
+
+                int leadTimeWeeks =
+                    row[8].value<int>();
+
+
+                Supplier supplier(
+                    name,
+                    address,
+                    country,
+                    contactName,
+                    contactEmail,
+                    website,
+                    Supplier::orderingMethodsFromString(
+                        orderingMethodsValue),
+                    paymentMethod,
+                    leadTimeWeeks);
+
+
+                if (!supplierManager.createSupplier(supplier))
+                {
+                    cout << endl;
+
+                    cout << "Warning: Could not load supplier "
+                        << name
+                        << endl;
+                }
+            }
+        }
 
 
         // ========================================================
@@ -401,18 +591,51 @@ bool DataManager::load(
             string category =
                 row[4].value<string>();
 
-            string supplier =
+            string typeValue =
                 row[5].value<string>();
 
-            string photoPath =
+            string drawingNumber =
                 row[6].value<string>();
 
-            string activeValue =
+            string manufacturer =
                 row[7].value<string>();
+
+            string manufacturerPartNumber =
+                row[8].value<string>();
+
+            string supplierName =
+                row[9].value<string>();
+
+            string supplierPartNumber =
+                row[10].value<string>();
+
+            string photoPath =
+                row[11].value<string>();
+
+            string activeValue =
+                row[12].value<string>();
 
 
             bool active =
                 (activeValue == "YES");
+
+
+            Supplier* supplier =
+                supplierName.empty()
+                ? nullptr
+                : supplierManager.findSupplier(supplierName);
+
+
+            if (!supplierName.empty() && supplier == nullptr)
+            {
+                cout << endl;
+
+                cout << "Warning: Supplier "
+                    << supplierName
+                    << " not found for material "
+                    << id
+                    << endl;
+            }
 
 
             Material material(
@@ -421,7 +644,12 @@ bool DataManager::load(
                 description,
                 uom,
                 category,
+                Material::materialTypeFromString(typeValue),
+                drawingNumber,
+                manufacturer,
+                manufacturerPartNumber,
                 supplier,
+                supplierPartNumber,
                 photoPath,
                 active);
 

@@ -24,6 +24,8 @@ private:
     // Material menu
     void materialMenu();
 
+    MaterialType readMaterialType();
+
     Material readMaterial();
 
     void createMaterial();
@@ -35,6 +37,15 @@ private:
     void searchMaterial();
 
     void displayMaterials();
+
+    // Supplier menu
+    void supplierMenu();
+
+    void createSupplier();
+
+    void modifySupplier();
+
+    void displaySuppliers();
 
     // Warehouse menu
     void warehouseMenu();

@@ -39,6 +39,10 @@ public:
     const vector<unique_ptr<Material>>&
         getMaterials() const;
 
+    // Whether any material references this supplier
+    bool isSupplierInUse(
+        const string& supplierName) const;
+
     // Clear all materials
     void clear();
 };

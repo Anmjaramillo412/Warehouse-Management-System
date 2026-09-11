@@ -192,6 +192,47 @@ function openModule(module) {
 
 
     // ========================================================
+    // SUPPLIER MANAGER
+    // ========================================================
+
+    else if (module === "suppliers") {
+
+        content.innerHTML = `
+
+            <h1>
+                Supplier Manager
+            </h1>
+
+            <p>
+                Manage suppliers referenced by materials.
+            </p>
+
+            <div class="module-buttons">
+
+                <button onclick="showCreateSupplier()">
+                    Create Supplier
+                </button>
+
+                <button onclick="showModifySupplier()">
+                    Modify Supplier
+                </button>
+
+                <button onclick="displaySuppliers()">
+                    Display Suppliers
+                </button>
+
+                <button onclick="showDeleteSupplier()">
+                    Delete Supplier
+                </button>
+
+            </div>
+
+            <div id="supplier-content">
+            </div>
+        `;
+    }
+
+    // ========================================================
     // DATA MANAGEMENT
     // ========================================================
 
@@ -245,6 +286,875 @@ function openModule(module) {
 
 
         loadDataLoggingState();
+    }
+}
+
+// ============================================================
+// CREATE SUPPLIER FORM
+// ============================================================
+
+function showCreateSupplier() {
+
+    const content =
+        document.getElementById("supplier-content");
+
+    content.innerHTML = `
+
+        <div class="form-container">
+
+            <h2>
+                Create Supplier
+            </h2>
+
+            <label>
+                Name
+            </label>
+
+            <input
+                type="text"
+                id="supplier-name"
+                placeholder="Enter Supplier Name"
+            >
+
+
+            <label>
+                Address
+            </label>
+
+            <input
+                type="text"
+                id="supplier-address"
+                placeholder="Enter Address"
+            >
+
+
+            <label>
+                Country
+            </label>
+
+            <input
+                type="text"
+                id="supplier-country"
+                placeholder="Enter Country"
+            >
+
+
+            <label>
+                Contact Name
+            </label>
+
+            <input
+                type="text"
+                id="supplier-contact-name"
+                placeholder="Enter Contact Name"
+            >
+
+
+            <label>
+                Contact Email
+            </label>
+
+            <input
+                type="email"
+                id="supplier-contact-email"
+                placeholder="Enter Contact Email"
+            >
+
+
+            <label>
+                Website
+            </label>
+
+            <input
+                type="text"
+                id="supplier-website"
+                placeholder="https://..."
+            >
+
+
+            <label>
+                Ordering Method
+            </label>
+
+            <div class="checkbox-group">
+
+                <label class="checkbox-label">
+                    <input type="checkbox" class="supplier-ordering-method" value="Online">
+                    Online
+                </label>
+
+                <label class="checkbox-label">
+                    <input type="checkbox" class="supplier-ordering-method" value="Email">
+                    Email
+                </label>
+
+                <label class="checkbox-label">
+                    <input type="checkbox" class="supplier-ordering-method" value="PO">
+                    PO
+                </label>
+
+            </div>
+
+
+            <label>
+                Payment Method
+            </label>
+
+            <select id="supplier-payment-method">
+                <option value="Invoice">Invoice</option>
+                <option value="Pre-payment">Pre-payment</option>
+                <option value="Online">Online</option>
+            </select>
+
+
+            <label>
+                Lead Time (weeks)
+            </label>
+
+            <input
+                type="number"
+                id="supplier-lead-time"
+                min="0"
+                value="0"
+            >
+
+
+            <div class="form-actions">
+
+                <button onclick="createSupplier()">
+                    Create Supplier
+                </button>
+
+            </div>
+
+
+            <div id="supplier-message">
+            </div>
+
+        </div>
+    `;
+}
+
+// ============================================================
+// CREATE SUPPLIER
+// ============================================================
+
+async function createSupplier() {
+
+    const name =
+        document.getElementById(
+            "supplier-name"
+        ).value.trim();
+
+    const address =
+        document.getElementById(
+            "supplier-address"
+        ).value.trim();
+
+    const country =
+        document.getElementById(
+            "supplier-country"
+        ).value.trim();
+
+    const contactName =
+        document.getElementById(
+            "supplier-contact-name"
+        ).value.trim();
+
+    const contactEmail =
+        document.getElementById(
+            "supplier-contact-email"
+        ).value.trim();
+
+    const website =
+        document.getElementById(
+            "supplier-website"
+        ).value.trim();
+
+    const orderingMethods =
+        Array.from(
+            document.querySelectorAll(
+                ".supplier-ordering-method:checked"
+            )
+        ).map(checkbox => checkbox.value);
+
+    const paymentMethod =
+        document.getElementById(
+            "supplier-payment-method"
+        ).value;
+
+    const leadTimeWeeks =
+        Number(
+            document.getElementById(
+                "supplier-lead-time"
+            ).value
+        ) || 0;
+
+    const message =
+        document.getElementById(
+            "supplier-message"
+        );
+
+
+    if (!name) {
+
+        message.textContent =
+            "Supplier name is required.";
+
+        return;
+    }
+
+
+    const supplier = {
+
+        name: name,
+
+        address: address,
+
+        country: country,
+
+        contactName: contactName,
+
+        contactEmail: contactEmail,
+
+        website: website,
+
+        orderingMethods: orderingMethods,
+
+        paymentMethod: paymentMethod,
+
+        leadTimeWeeks: leadTimeWeeks
+    };
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/suppliers/create",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify(supplier)
+                }
+            );
+
+
+        const responseText =
+            await response.text();
+
+
+        if (response.ok) {
+
+            message.textContent =
+                "Supplier created successfully.";
+
+            showCreateSupplier();
+        }
+        else {
+
+            message.textContent =
+                "Error: " + responseText;
+        }
+
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
+    }
+}
+
+// ============================================================
+// MODIFY SUPPLIER FORM
+// ============================================================
+
+function showModifySupplier() {
+
+    const content =
+        document.getElementById(
+            "supplier-content"
+        );
+
+    content.innerHTML = `
+
+        <div class="form-container">
+
+            <h2>
+                Modify Supplier
+            </h2>
+
+            <label>
+                Supplier
+            </label>
+
+            <select id="ms-lookup-name">
+                <option value="">Loading suppliers...</option>
+            </select>
+
+            <div class="form-actions">
+
+                <button onclick="loadSupplierForModify()">
+                    Load Supplier
+                </button>
+
+            </div>
+
+            <div id="modify-supplier-form">
+            </div>
+
+        </div>
+    `;
+
+    populateSupplierSelect("ms-lookup-name");
+}
+
+// ============================================================
+// LOAD SUPPLIER FOR MODIFY
+// ============================================================
+
+async function loadSupplierForModify() {
+
+    const name =
+        document.getElementById(
+            "ms-lookup-name"
+        ).value;
+
+    const modifyForm =
+        document.getElementById(
+            "modify-supplier-form"
+        );
+
+    if (!name) {
+
+        modifyForm.innerHTML = `
+            <p>
+                Please select a supplier.
+            </p>
+        `;
+
+        return;
+    }
+
+    modifyForm.innerHTML = `
+        <p>
+            Loading supplier...
+        </p>
+    `;
+
+    try {
+
+        const response =
+            await fetch(
+                `/api/suppliers/${encodeURIComponent(name)}`
+            );
+
+        const data =
+            await response.json();
+
+        if (!response.ok) {
+
+            modifyForm.innerHTML = `
+                <p>
+                    ${data.message}
+                </p>
+            `;
+
+            return;
+        }
+
+        const orderingMethods =
+            data.orderingMethods || [];
+
+        modifyForm.innerHTML = `
+
+            <input type="hidden" id="ms-name" value="${escapeHtml(data.name)}">
+
+            <p>
+                Supplier:
+                <strong>${escapeHtml(data.name)}</strong>
+            </p>
+
+            <label>
+                Address
+            </label>
+
+            <input type="text" id="ms-address"
+                value="${escapeHtml(data.address || "")}">
+
+            <label>
+                Country
+            </label>
+
+            <input type="text" id="ms-country"
+                value="${escapeHtml(data.country || "")}">
+
+            <label>
+                Contact Name
+            </label>
+
+            <input type="text" id="ms-contact-name"
+                value="${escapeHtml(data.contactName || "")}">
+
+            <label>
+                Contact Email
+            </label>
+
+            <input type="email" id="ms-contact-email"
+                value="${escapeHtml(data.contactEmail || "")}">
+
+            <label>
+                Website
+            </label>
+
+            <input type="text" id="ms-website"
+                value="${escapeHtml(data.website || "")}">
+
+            <label>
+                Ordering Method
+            </label>
+
+            <div class="checkbox-group">
+
+                <label class="checkbox-label">
+                    <input type="checkbox" class="ms-ordering-method" value="Online"
+                        ${orderingMethods.includes("Online") ? "checked" : ""}>
+                    Online
+                </label>
+
+                <label class="checkbox-label">
+                    <input type="checkbox" class="ms-ordering-method" value="Email"
+                        ${orderingMethods.includes("Email") ? "checked" : ""}>
+                    Email
+                </label>
+
+                <label class="checkbox-label">
+                    <input type="checkbox" class="ms-ordering-method" value="PO"
+                        ${orderingMethods.includes("PO") ? "checked" : ""}>
+                    PO
+                </label>
+
+            </div>
+
+            <label>
+                Payment Method
+            </label>
+
+            <select id="ms-payment-method">
+                <option value="Invoice" ${data.paymentMethod === "Invoice" ? "selected" : ""}>Invoice</option>
+                <option value="Pre-payment" ${data.paymentMethod === "Pre-payment" ? "selected" : ""}>Pre-payment</option>
+                <option value="Online" ${data.paymentMethod === "Online" ? "selected" : ""}>Online</option>
+            </select>
+
+            <label>
+                Lead Time (weeks)
+            </label>
+
+            <input type="number" id="ms-lead-time" min="0"
+                value="${data.leadTimeWeeks || 0}">
+
+            <div class="form-actions">
+
+                <button onclick="modifySupplierSubmit()">
+                    Save Changes
+                </button>
+
+            </div>
+
+            <div id="modify-supplier-message">
+            </div>
+        `;
+    }
+    catch (error) {
+
+        console.error(error);
+
+        modifyForm.innerHTML = `
+            <p>
+                Could not connect to the server.
+            </p>
+        `;
+    }
+}
+
+// ============================================================
+// MODIFY SUPPLIER (SUBMIT)
+// ============================================================
+
+async function modifySupplierSubmit() {
+
+    const name =
+        document.getElementById(
+            "ms-name"
+        ).value;
+
+    const address =
+        document.getElementById(
+            "ms-address"
+        ).value.trim();
+
+    const country =
+        document.getElementById(
+            "ms-country"
+        ).value.trim();
+
+    const contactName =
+        document.getElementById(
+            "ms-contact-name"
+        ).value.trim();
+
+    const contactEmail =
+        document.getElementById(
+            "ms-contact-email"
+        ).value.trim();
+
+    const website =
+        document.getElementById(
+            "ms-website"
+        ).value.trim();
+
+    const orderingMethods =
+        Array.from(
+            document.querySelectorAll(
+                ".ms-ordering-method:checked"
+            )
+        ).map(checkbox => checkbox.value);
+
+    const paymentMethod =
+        document.getElementById(
+            "ms-payment-method"
+        ).value;
+
+    const leadTimeWeeks =
+        Number(
+            document.getElementById(
+                "ms-lead-time"
+            ).value
+        ) || 0;
+
+    const message =
+        document.getElementById(
+            "modify-supplier-message"
+        );
+
+    const supplier = {
+
+        name: name,
+
+        address: address,
+
+        country: country,
+
+        contactName: contactName,
+
+        contactEmail: contactEmail,
+
+        website: website,
+
+        orderingMethods: orderingMethods,
+
+        paymentMethod: paymentMethod,
+
+        leadTimeWeeks: leadTimeWeeks
+    };
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/suppliers/modify",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify(supplier)
+                }
+            );
+
+        const responseText =
+            await response.text();
+
+        if (response.ok) {
+
+            message.textContent =
+                "Supplier successfully modified.";
+        }
+        else {
+
+            message.textContent =
+                "Error: " + responseText;
+        }
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
+    }
+}
+
+// ============================================================
+// DISPLAY SUPPLIERS
+// ============================================================
+
+async function displaySuppliers() {
+
+    const content =
+        document.getElementById(
+            "supplier-content"
+        );
+
+    content.innerHTML = `
+        <p>Loading suppliers...</p>
+    `;
+
+
+    try {
+
+        const response =
+            await fetch("/api/suppliers");
+
+
+        if (!response.ok) {
+
+            const message =
+                await response.text();
+
+            content.innerHTML = `
+                <p>
+                    Error: ${message}
+                </p>
+            `;
+
+            return;
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            !data.suppliers ||
+            data.suppliers.length === 0
+        ) {
+
+            content.innerHTML = `
+
+                <div class="empty-message">
+
+                    No suppliers available.
+
+                </div>
+            `;
+
+            return;
+        }
+
+
+        let html = `
+
+            <div class="material-table-container">
+
+                <h2>
+                    Suppliers
+                </h2>
+
+                <table class="material-table">
+
+                    <thead>
+
+                        <tr>
+
+                            <th>Name</th>
+                            <th>Country</th>
+                            <th>Contact</th>
+                            <th>Email</th>
+                            <th>Website</th>
+                            <th>Ordering</th>
+                            <th>Payment</th>
+                            <th>Lead Time</th>
+
+                        </tr>
+
+                    </thead>
+
+                    <tbody>
+        `;
+
+
+        for (const supplier of data.suppliers) {
+
+            html += `
+
+                <tr>
+
+                    <td>${escapeHtml(supplier.name)}</td>
+                    <td>${escapeHtml(supplier.country || "")}</td>
+                    <td>${escapeHtml(supplier.contactName || "")}</td>
+                    <td>${escapeHtml(supplier.contactEmail || "")}</td>
+                    <td>${escapeHtml(supplier.website || "")}</td>
+                    <td>${escapeHtml((supplier.orderingMethods || []).join(", "))}</td>
+                    <td>${escapeHtml(supplier.paymentMethod || "")}</td>
+                    <td>${supplier.leadTimeWeeks} week(s)</td>
+
+                </tr>
+            `;
+        }
+
+
+        html += `
+
+                    </tbody>
+
+                </table>
+
+            </div>
+        `;
+
+
+        content.innerHTML = html;
+
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `
+            <p>
+                Could not connect to the server.
+            </p>
+        `;
+    }
+}
+
+// ============================================================
+// DELETE SUPPLIER FORM
+// ============================================================
+
+function showDeleteSupplier() {
+
+    const content =
+        document.getElementById(
+            "supplier-content"
+        );
+
+    content.innerHTML = `
+
+        <div class="form-container">
+
+            <h2>
+                Delete Supplier
+            </h2>
+
+            <label>
+                Supplier
+            </label>
+
+            <select id="delete-supplier-name">
+                <option value="">Loading suppliers...</option>
+            </select>
+
+            <div class="form-actions">
+
+                <button onclick="deleteSupplier()">
+                    Delete Supplier
+                </button>
+
+            </div>
+
+            <div id="delete-supplier-message">
+            </div>
+
+        </div>
+    `;
+
+    populateSupplierSelect("delete-supplier-name");
+}
+
+// ============================================================
+// DELETE SUPPLIER
+// ============================================================
+
+async function deleteSupplier() {
+
+    const name =
+        document.getElementById(
+            "delete-supplier-name"
+        ).value;
+
+    const message =
+        document.getElementById(
+            "delete-supplier-message"
+        );
+
+
+    if (!name) {
+
+        message.textContent =
+            "Please select a supplier.";
+
+        return;
+    }
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/suppliers/delete",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({ name: name })
+                }
+            );
+
+
+        const responseText =
+            await response.text();
+
+
+        if (response.ok) {
+
+            message.textContent =
+                "Supplier deleted successfully.";
+
+            showDeleteSupplier();
+        }
+        else {
+
+            message.textContent =
+                "Error: " + responseText;
+        }
+
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
     }
 }
 
@@ -416,12 +1326,12 @@ function showCreateMaterial() {
             <input
                 type="text"
                 id="material-id"
-                placeholder="###-######"
+                placeholder="###-###### or ######-00"
                 maxlength="10"
             >
 
             <small>
-                Format: ###-######
+                Format: ###-###### or ######-00
             </small>
 
 
@@ -470,13 +1380,102 @@ function showCreateMaterial() {
 
 
             <label>
-                Supplier
+                Material Type
+            </label>
+
+            <select
+                id="material-type"
+                onchange="toggleDrawingNumberField('material')">
+
+                <option value="Standard Part">Standard Part</option>
+                <option value="Design Part">Design Part</option>
+                <option value="PCB">PCB</option>
+
+            </select>
+
+
+            <div id="material-drawing-number-group" class="hidden">
+
+                <label>
+                    Drawing Number
+                </label>
+
+                <input
+                    type="text"
+                    id="material-drawing-number"
+                    placeholder="e.g. 123-ASM-4567"
+                >
+
+                <small>
+                    Format: ###-ASM-####, ###-PAR-####,
+                    I-BU#-##, OWI-BU#-##, or ###-PCB-####
+                </small>
+
+            </div>
+
+
+            <label>
+                Manufacturer
             </label>
 
             <input
                 type="text"
-                id="material-supplier"
-                placeholder="Enter Supplier"
+                id="material-manufacturer"
+                placeholder="Enter Manufacturer"
+            >
+
+
+            <label>
+                Manufacturer Part Number
+            </label>
+
+            <input
+                type="text"
+                id="material-manufacturer-pn"
+                placeholder="Enter Manufacturer Part Number"
+            >
+
+
+            <label>
+                Supplier
+            </label>
+
+            <div class="combobox">
+
+                <input
+                    type="text"
+                    id="material-supplier-search"
+                    autocomplete="off"
+                    placeholder="Search supplier by name..."
+                    oninput="handleSupplierSearchInput('material')"
+                    onfocus="renderSupplierOptions('material')"
+                    onblur="hideSupplierOptionsDelayed('material')"
+                >
+
+                <input type="hidden" id="material-supplier">
+
+                <div id="material-supplier-options"
+                    class="combobox-options hidden">
+                </div>
+
+            </div>
+
+            <small>
+                No supplier listed?
+                <a href="#" onclick="openModule('suppliers'); return false;">
+                    Create one first.
+                </a>
+            </small>
+
+
+            <label>
+                Supplier Part Number
+            </label>
+
+            <input
+                type="text"
+                id="material-supplier-pn"
+                placeholder="Enter Supplier Part Number"
             >
 
 
@@ -520,6 +1519,250 @@ function showCreateMaterial() {
 
         </div>
     `;
+
+    initSupplierCombobox("material");
+}
+
+// ============================================================
+// TOGGLE DRAWING NUMBER FIELD
+// ============================================================
+// Drawing Number only applies to Design Part / PCB materials.
+
+function toggleDrawingNumberField(prefix) {
+
+    const type =
+        document.getElementById(
+            prefix + "-type"
+        ).value;
+
+    const group =
+        document.getElementById(
+            prefix + "-drawing-number-group"
+        );
+
+    const requiresDrawing =
+        (type === "Design Part" || type === "PCB");
+
+    group.classList.toggle(
+        "hidden",
+        !requiresDrawing);
+}
+
+// ============================================================
+// POPULATE SUPPLIER SELECT
+// ============================================================
+
+async function populateSupplierSelect(selectId, selectedName) {
+
+    const select =
+        document.getElementById(selectId);
+
+    if (!select) {
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch("/api/suppliers");
+
+        const data =
+            await response.json();
+
+        const suppliers =
+            data.suppliers || [];
+
+        if (suppliers.length === 0) {
+
+            select.innerHTML = `
+                <option value="">
+                    No suppliers available
+                </option>
+            `;
+
+            return;
+        }
+
+        select.innerHTML =
+            `<option value="">Select a supplier</option>` +
+            suppliers.map(supplier => `
+                <option value="${escapeHtml(supplier.name)}">
+                    ${escapeHtml(supplier.name)}
+                </option>
+            `).join("");
+
+        if (selectedName) {
+            select.value = selectedName;
+        }
+    }
+    catch (error) {
+
+        console.error(error);
+
+        select.innerHTML = `
+            <option value="">
+                Could not load suppliers
+            </option>
+        `;
+    }
+}
+
+// ============================================================
+// SUPPLIER SEARCH COMBOBOX
+// ============================================================
+// Used by the Material create/modify forms to search for an
+// existing supplier by name instead of picking from a long list.
+// The hidden "<prefix>-supplier" input only ever holds a name
+// that exactly matches an existing supplier - it is cleared
+// whenever the visible search text does not match one.
+
+let supplierCache = null;
+
+async function loadSupplierCache(forceRefresh) {
+
+    if (supplierCache && !forceRefresh) {
+        return supplierCache;
+    }
+
+    try {
+
+        const response =
+            await fetch("/api/suppliers");
+
+        const data =
+            await response.json();
+
+        supplierCache =
+            data.suppliers || [];
+    }
+    catch (error) {
+
+        console.error(error);
+
+        supplierCache = [];
+    }
+
+    return supplierCache;
+}
+
+async function initSupplierCombobox(prefix, selectedName) {
+
+    await loadSupplierCache(true);
+
+    const hiddenInput =
+        document.getElementById(prefix + "-supplier");
+
+    const searchInput =
+        document.getElementById(prefix + "-supplier-search");
+
+    if (!hiddenInput || !searchInput) {
+        return;
+    }
+
+    hiddenInput.value = selectedName || "";
+    searchInput.value = selectedName || "";
+}
+
+function renderSupplierOptions(prefix) {
+
+    const searchInput =
+        document.getElementById(prefix + "-supplier-search");
+
+    const optionsBox =
+        document.getElementById(prefix + "-supplier-options");
+
+    if (!searchInput || !optionsBox) {
+        return;
+    }
+
+    const filterText =
+        searchInput.value.trim().toLowerCase();
+
+    const suppliers =
+        supplierCache || [];
+
+    const matches =
+        suppliers.filter(supplier =>
+            supplier.name.toLowerCase().includes(filterText)
+        );
+
+    if (matches.length === 0) {
+
+        optionsBox.innerHTML = `
+            <div class="combobox-option combobox-empty">
+                No suppliers found
+            </div>
+        `;
+    }
+    else {
+
+        optionsBox.innerHTML =
+            matches.map(supplier => `
+                <div class="combobox-option"
+                    onmousedown="selectSupplierOption('${prefix}', '${escapeHtml(supplier.name)}')">
+                    ${escapeHtml(supplier.name)}
+                </div>
+            `).join("");
+    }
+
+    optionsBox.classList.remove("hidden");
+}
+
+function handleSupplierSearchInput(prefix) {
+
+    renderSupplierOptions(prefix);
+
+    const searchInput =
+        document.getElementById(prefix + "-supplier-search");
+
+    const hiddenInput =
+        document.getElementById(prefix + "-supplier");
+
+    const suppliers =
+        supplierCache || [];
+
+    const typedName =
+        searchInput.value.trim();
+
+    const exactMatch =
+        suppliers.find(supplier =>
+            supplier.name === typedName
+        );
+
+    hiddenInput.value =
+        exactMatch ? exactMatch.name : "";
+}
+
+function selectSupplierOption(prefix, name) {
+
+    document.getElementById(
+        prefix + "-supplier"
+    ).value = name;
+
+    document.getElementById(
+        prefix + "-supplier-search"
+    ).value = name;
+
+    document.getElementById(
+        prefix + "-supplier-options"
+    ).classList.add("hidden");
+}
+
+function hideSupplierOptionsDelayed(prefix) {
+
+    // Delay so a click (onmousedown) on an option
+    // still registers before the dropdown disappears.
+
+    setTimeout(() => {
+
+        const optionsBox =
+            document.getElementById(prefix + "-supplier-options");
+
+        if (optionsBox) {
+            optionsBox.classList.add("hidden");
+        }
+
+    }, 150);
 }
 
 // ============================================================
@@ -553,9 +1796,34 @@ async function createMaterial() {
             "material-category"
         ).value.trim();
 
+    const type =
+        document.getElementById(
+            "material-type"
+        ).value;
+
+    const drawingNumber =
+        document.getElementById(
+            "material-drawing-number"
+        ).value.trim();
+
+    const manufacturer =
+        document.getElementById(
+            "material-manufacturer"
+        ).value.trim();
+
+    const manufacturerPartNumber =
+        document.getElementById(
+            "material-manufacturer-pn"
+        ).value.trim();
+
     const supplier =
         document.getElementById(
             "material-supplier"
+        ).value.trim();
+
+    const supplierPartNumber =
+        document.getElementById(
+            "material-supplier-pn"
         ).value.trim();
 
     const active =
@@ -590,7 +1858,10 @@ async function createMaterial() {
     // ========================================================
 
     const idPattern =
-        /^[0-9]{3}-[0-9]{6}$/;
+        /^([0-9]{3}-[0-9]{6}|[0-9]{6}-00)$/;
+
+    const drawingNumberPattern =
+        /^([0-9]{3}-ASM-[0-9]{4}|[0-9]{3}-PAR-[0-9]{4}|I-BU[0-9]-[0-9]{2}|OWI-BU[0-9]-[0-9]{2}|[0-9]{3}-PCB-[0-9]{4})$/;
 
     const message =
         document.getElementById(
@@ -601,7 +1872,7 @@ async function createMaterial() {
     if (!idPattern.test(id)) {
 
         message.textContent =
-            "Invalid Material ID. Expected format ###-######.";
+            "Invalid Material ID. Expected format ###-###### or ######-00.";
 
         return;
     }
@@ -612,7 +1883,17 @@ async function createMaterial() {
         !supplier) {
 
         message.textContent =
-            "Please fill in all required fields.";
+            "Please fill in all required fields, including the Supplier.";
+
+        return;
+    }
+
+
+    if ((type === "Design Part" || type === "PCB") &&
+        !drawingNumberPattern.test(drawingNumber)) {
+
+        message.textContent =
+            "Invalid or missing Drawing Number for this material type.";
 
         return;
     }
@@ -634,11 +1915,21 @@ async function createMaterial() {
 
         category: category,
 
+        type: type,
+
+        drawingNumber: drawingNumber,
+
+        manufacturer: manufacturer,
+
+        manufacturerPartNumber: manufacturerPartNumber,
+
         supplier: supplier,
+
+        supplierPartNumber: supplierPartNumber,
 
         photo: photoName,
 
-        photoData: photoData,   
+        photoData: photoData,
 
         active: active
     };
@@ -698,7 +1989,33 @@ async function createMaterial() {
             ).value = "";
 
             document.getElementById(
+                "material-type"
+            ).value = "Standard Part";
+
+            document.getElementById(
+                "material-drawing-number"
+            ).value = "";
+
+            toggleDrawingNumberField("material");
+
+            document.getElementById(
+                "material-manufacturer"
+            ).value = "";
+
+            document.getElementById(
+                "material-manufacturer-pn"
+            ).value = "";
+
+            document.getElementById(
                 "material-supplier"
+            ).value = "";
+
+            document.getElementById(
+                "material-supplier-search"
+            ).value = "";
+
+            document.getElementById(
+                "material-supplier-pn"
             ).value = "";
 
             document.getElementById(
@@ -801,13 +2118,18 @@ async function displayMaterials() {
 
                         <tr>
 
-                            <th>Photo</th>    
+                            <th>Photo</th>
                             <th>ID</th>
                             <th>Name</th>
                             <th>Description</th>
                             <th>UoM</th>
                             <th>Category</th>
+                            <th>Type</th>
+                            <th>Drawing Number</th>
+                            <th>Manufacturer</th>
+                            <th>Mfr Part #</th>
                             <th>Supplier</th>
+                            <th>Supplier Part #</th>
                             <th>Active</th>
 
                         </tr>
@@ -861,7 +2183,27 @@ async function displayMaterials() {
                     </td>
 
                     <td>
+                        ${escapeHtml(material.type || "")}
+                    </td>
+
+                    <td>
+                        ${escapeHtml(material.drawingNumber || "")}
+                    </td>
+
+                    <td>
+                        ${escapeHtml(material.manufacturer || "")}
+                    </td>
+
+                    <td>
+                        ${escapeHtml(material.manufacturerPartNumber || "")}
+                    </td>
+
+                    <td>
                         ${escapeHtml(material.supplier || "")}
+                    </td>
+
+                    <td>
+                        ${escapeHtml(material.supplierPartNumber || "")}
                     </td>
 
                     <td>
@@ -966,7 +2308,7 @@ async function searchMaterial() {
 
 
     const idPattern =
-        /^[0-9]{3}-[0-9]{6}$/;
+        /^([0-9]{3}-[0-9]{6}|[0-9]{6}-00)$/;
 
 
     if (!idPattern.test(id)) {
@@ -974,7 +2316,7 @@ async function searchMaterial() {
         result.innerHTML = `
             <p>
                 Invalid Material ID.
-                Expected format ###-######.
+                Expected format ###-###### or ######-00.
             </p>
         `;
 
@@ -1047,8 +2389,37 @@ async function searchMaterial() {
                 </p>
 
                 <p>
+                    <strong>Type:</strong>
+                    ${data.type}
+                </p>
+
+                ${
+                    data.drawingNumber
+                    ? `<p>
+                        <strong>Drawing Number:</strong>
+                        ${data.drawingNumber}
+                    </p>`
+                    : ""
+                }
+
+                <p>
+                    <strong>Manufacturer:</strong>
+                    ${data.manufacturer || ""}
+                </p>
+
+                <p>
+                    <strong>Manufacturer Part Number:</strong>
+                    ${data.manufacturerPartNumber || ""}
+                </p>
+
+                <p>
                     <strong>Supplier:</strong>
                     ${data.supplier}
+                </p>
+
+                <p>
+                    <strong>Supplier Part Number:</strong>
+                    ${data.supplierPartNumber || ""}
                 </p>
 
                 <p>
@@ -1191,7 +2562,7 @@ async function loadMaterialForDelete() {
 
 
     const idPattern =
-        /^[0-9]{3}-[0-9]{6}$/;
+        /^([0-9]{3}-[0-9]{6}|[0-9]{6}-00)$/;
 
 
     if (!idPattern.test(id)) {
@@ -1199,7 +2570,7 @@ async function loadMaterialForDelete() {
         content.innerHTML = `
             <p>
                 Invalid Material ID.
-                Expected format ###-######.
+                Expected format ###-###### or ######-00.
             </p>
         `;
 
@@ -1422,7 +2793,7 @@ async function loadMaterialForModify() {
 
 
     const idPattern =
-        /^[0-9]{3}-[0-9]{6}$/;
+        /^([0-9]{3}-[0-9]{6}|[0-9]{6}-00)$/;
 
 
     if (!idPattern.test(id)) {
@@ -1430,7 +2801,7 @@ async function loadMaterialForModify() {
         modifyForm.innerHTML = `
             <p>
                 Invalid Material ID.
-                Expected format ###-######.
+                Expected format ###-###### or ######-00.
             </p>
         `;
 
@@ -1528,13 +2899,112 @@ async function loadMaterialForModify() {
 
 
                 <label>
-                    Supplier
+                    Material Type
+                </label>
+
+                <select
+                    id="modify-type"
+                    onchange="toggleDrawingNumberField('modify')">
+
+                    <option value="Standard Part"
+                        ${data.type === "Standard Part" ? "selected" : ""}>
+                        Standard Part
+                    </option>
+
+                    <option value="Design Part"
+                        ${data.type === "Design Part" ? "selected" : ""}>
+                        Design Part
+                    </option>
+
+                    <option value="PCB"
+                        ${data.type === "PCB" ? "selected" : ""}>
+                        PCB
+                    </option>
+
+                </select>
+
+
+                <div id="modify-drawing-number-group"
+                    class="${
+                        (data.type === "Design Part" || data.type === "PCB")
+                        ? ""
+                        : "hidden"
+                    }">
+
+                    <label>
+                        Drawing Number
+                    </label>
+
+                    <input
+                        type="text"
+                        id="modify-drawing-number"
+                        value="${escapeHtml(data.drawingNumber || "")}"
+                        placeholder="e.g. 123-ASM-4567"
+                    >
+
+                    <small>
+                        Format: ###-ASM-####, ###-PAR-####,
+                        I-BU#-##, OWI-BU#-##, or ###-PCB-####
+                    </small>
+
+                </div>
+
+
+                <label>
+                    Manufacturer
                 </label>
 
                 <input
                     type="text"
-                    id="modify-supplier"
-                    value="${escapeHtml(data.supplier)}"
+                    id="modify-manufacturer"
+                    value="${escapeHtml(data.manufacturer || "")}"
+                >
+
+
+                <label>
+                    Manufacturer Part Number
+                </label>
+
+                <input
+                    type="text"
+                    id="modify-manufacturer-pn"
+                    value="${escapeHtml(data.manufacturerPartNumber || "")}"
+                >
+
+
+                <label>
+                    Supplier
+                </label>
+
+                <div class="combobox">
+
+                    <input
+                        type="text"
+                        id="modify-supplier-search"
+                        autocomplete="off"
+                        placeholder="Search supplier by name..."
+                        oninput="handleSupplierSearchInput('modify')"
+                        onfocus="renderSupplierOptions('modify')"
+                        onblur="hideSupplierOptionsDelayed('modify')"
+                    >
+
+                    <input type="hidden" id="modify-supplier">
+
+                    <div id="modify-supplier-options"
+                        class="combobox-options hidden">
+                    </div>
+
+                </div>
+
+
+                <label>
+                    Supplier Part Number
+                </label>
+
+                <input
+                    type="text"
+                    id="modify-supplier-pn"
+                    value="${escapeHtml(data.supplierPartNumber || "")}"
                 >
 
                 <label>
@@ -1584,6 +3054,10 @@ async function loadMaterialForModify() {
             </div>
 
         `;
+
+        initSupplierCombobox(
+            "modify",
+            data.supplier);
     }
     catch (error) {
 
@@ -1642,9 +3116,34 @@ async function modifyMaterial() {
             "modify-category"
         ).value.trim();
 
+    const type =
+        document.getElementById(
+            "modify-type"
+        ).value;
+
+    const drawingNumber =
+        document.getElementById(
+            "modify-drawing-number"
+        ).value.trim();
+
+    const manufacturer =
+        document.getElementById(
+            "modify-manufacturer"
+        ).value.trim();
+
+    const manufacturerPartNumber =
+        document.getElementById(
+            "modify-manufacturer-pn"
+        ).value.trim();
+
     const supplier =
         document.getElementById(
             "modify-supplier"
+        ).value.trim();
+
+    const supplierPartNumber =
+        document.getElementById(
+            "modify-supplier-pn"
         ).value.trim();
 
     const active =
@@ -1677,12 +3176,30 @@ async function modifyMaterial() {
             );
     }
 
+    const message =
+        document.getElementById(
+            "modify-message"
+        );
+
+    const drawingNumberPattern =
+        /^([0-9]{3}-ASM-[0-9]{4}|[0-9]{3}-PAR-[0-9]{4}|I-BU[0-9]-[0-9]{2}|OWI-BU[0-9]-[0-9]{2}|[0-9]{3}-PCB-[0-9]{4})$/;
+
     if (!name ||
         !category ||
         !supplier) {
 
         message.textContent =
-            "Please fill in all required fields.";
+            "Please fill in all required fields, including the Supplier.";
+
+        return;
+    }
+
+
+    if ((type === "Design Part" || type === "PCB") &&
+        !drawingNumberPattern.test(drawingNumber)) {
+
+        message.textContent =
+            "Invalid or missing Drawing Number for this material type.";
 
         return;
     }
@@ -1700,7 +3217,17 @@ async function modifyMaterial() {
 
         category: category,
 
+        type: type,
+
+        drawingNumber: drawingNumber,
+
+        manufacturer: manufacturer,
+
+        manufacturerPartNumber: manufacturerPartNumber,
+
         supplier: supplier,
+
+        supplierPartNumber: supplierPartNumber,
 
         photo: photoPath,
 
@@ -2294,7 +3821,7 @@ async function goodsReceipt() {
     // --------------------------------------------------------
 
     const materialIDPattern =
-        /^[0-9]{3}-[0-9]{6}$/;
+        /^([0-9]{3}-[0-9]{6}|[0-9]{6}-00)$/;
 
 
     if (!warehouseID) {
@@ -2309,7 +3836,7 @@ async function goodsReceipt() {
     if (!materialIDPattern.test(materialID)) {
 
         message.textContent =
-            "Invalid Material ID. Expected format ###-######.";
+            "Invalid Material ID. Expected format ###-###### or ######-00.";
 
         return;
     }
@@ -2523,7 +4050,7 @@ async function goodsIssue() {
     // --------------------------------------------------------
 
     const materialIDPattern =
-        /^[0-9]{3}-[0-9]{6}$/;
+        /^([0-9]{3}-[0-9]{6}|[0-9]{6}-00)$/;
 
 
     if (!warehouseID) {
@@ -2538,7 +4065,7 @@ async function goodsIssue() {
     if (!materialIDPattern.test(materialID)) {
 
         message.textContent =
-            "Invalid Material ID. Expected format ###-######.";
+            "Invalid Material ID. Expected format ###-###### or ######-00.";
 
         return;
     }
@@ -2760,7 +4287,7 @@ async function transferMaterial() {
         );
 
     const materialIDPattern =
-        /^[0-9]{3}-[0-9]{6}$/;
+        /^([0-9]{3}-[0-9]{6}|[0-9]{6}-00)$/;
 
 
     // --------------------------------------------------------
@@ -2792,7 +4319,7 @@ async function transferMaterial() {
     if (!materialIDPattern.test(materialID)) {
 
         message.textContent =
-            "Invalid Material ID. Expected format ###-######.";
+            "Invalid Material ID. Expected format ###-###### or ######-00.";
 
         return;
     }
@@ -3470,7 +4997,7 @@ async function createProduct() {
             );
 
 
-        if (!/^[0-9]{3}-[0-9]{6}$/.test(materialID))
+        if (!/^([0-9]{3}-[0-9]{6}|[0-9]{6}-00)$/.test(materialID))
         {
             message.textContent =
                 "Invalid Material ID in BOM.";

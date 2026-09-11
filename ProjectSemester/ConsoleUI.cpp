@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 #include <limits>
+#include <vector>
 
 using namespace std;
 
@@ -46,8 +47,9 @@ void ConsoleUI::mainMenu()
         cout << "1. Material Manager" << endl;
         cout << "2. Warehouse Manager" << endl;
         cout << "3. Inventory Manager" << endl;
-        cout << "4. Save Test" << endl;
-        cout << "5. Exit" << endl;
+        cout << "4. Supplier Manager" << endl;
+        cout << "5. Save Test" << endl;
+        cout << "6. Exit" << endl;
 
         cout << endl;
         cout << "Select an option: ";
@@ -76,11 +78,17 @@ void ConsoleUI::mainMenu()
 
         case 4:
 
+            supplierMenu();
+
+            break;
+
+        case 5:
+
             saveData();
 
             break;
 
-        case 5: 
+        case 6:
 
             cout << endl;
             cout << "Exiting program..." << endl;
@@ -97,6 +105,525 @@ void ConsoleUI::mainMenu()
             break;
         }
     }
+}
+
+// ================================================================
+// *** SUPPLIER MENU ***
+// ================================================================
+
+void ConsoleUI::supplierMenu()
+{
+    int option;
+
+    bool running = true;
+
+    while (running)
+    {
+        cout << endl;
+        cout << "========================================" << endl;
+        cout << "          SUPPLIER MANAGER" << endl;
+        cout << "========================================" << endl;
+
+        cout << "1. Create Supplier" << endl;
+        cout << "2. Modify Supplier" << endl;
+        cout << "3. Display Suppliers" << endl;
+        cout << "4. Back" << endl;
+
+        cout << endl;
+        cout << "Select an option: ";
+
+        cin >> option;
+
+        switch (option)
+        {
+        case 1:
+
+            createSupplier();
+
+            break;
+
+        case 2:
+
+            modifySupplier();
+
+            break;
+
+        case 3:
+
+            displaySuppliers();
+
+            break;
+
+        case 4:
+
+            running = false;
+
+            break;
+
+        default:
+
+            cout << endl;
+            cout << "Invalid option." << endl;
+
+            break;
+        }
+    }
+}
+
+// ================================================================
+// CREATE SUPPLIER
+// ================================================================
+
+void ConsoleUI::createSupplier()
+{
+    string name;
+    string address;
+    string country;
+    string contactName;
+    string contactEmail;
+    string website;
+
+    vector<string> orderingMethods;
+
+    string paymentMethod;
+    int leadTimeWeeks;
+
+
+    cout << endl;
+    cout << "========== CREATE SUPPLIER =========="
+        << endl;
+
+    cin.ignore(
+        numeric_limits<streamsize>::max(),
+        '\n'
+    );
+
+    cout << "Name: ";
+    getline(cin, name);
+
+    cout << "Address: ";
+    getline(cin, address);
+
+    cout << "Country: ";
+    getline(cin, country);
+
+    cout << "Contact Name: ";
+    getline(cin, contactName);
+
+    cout << "Contact Email: ";
+    getline(cin, contactEmail);
+
+    cout << "Website: ";
+    getline(cin, website);
+
+
+    // ------------------------------------------------------------
+    // Ordering methods (multiple selection)
+    // ------------------------------------------------------------
+
+    char answer;
+
+    cout << "Ordering method - Online? (y/n): ";
+    cin >> answer;
+    if (answer == 'y' || answer == 'Y')
+    {
+        orderingMethods.push_back("Online");
+    }
+
+    cout << "Ordering method - Email? (y/n): ";
+    cin >> answer;
+    if (answer == 'y' || answer == 'Y')
+    {
+        orderingMethods.push_back("Email");
+    }
+
+    cout << "Ordering method - PO? (y/n): ";
+    cin >> answer;
+    if (answer == 'y' || answer == 'Y')
+    {
+        orderingMethods.push_back("PO");
+    }
+
+
+    // ------------------------------------------------------------
+    // Payment method (single selection)
+    // ------------------------------------------------------------
+
+    int paymentOption = 0;
+
+    cout << endl;
+    cout << "Payment Method:" << endl;
+    cout << "1. Invoice" << endl;
+    cout << "2. Pre-payment" << endl;
+    cout << "3. Online" << endl;
+    cout << "Select an option: ";
+    cin >> paymentOption;
+
+    switch (paymentOption)
+    {
+    case 2:
+        paymentMethod = "Pre-payment";
+        break;
+
+    case 3:
+        paymentMethod = "Online";
+        break;
+
+    case 1:
+    default:
+        paymentMethod = "Invoice";
+        break;
+    }
+
+
+    cout << "Lead Time (weeks): ";
+    cin >> leadTimeWeeks;
+
+
+    Supplier supplier(
+        name,
+        address,
+        country,
+        contactName,
+        contactEmail,
+        website,
+        orderingMethods,
+        paymentMethod,
+        leadTimeWeeks);
+
+
+    bool created =
+        system.getSupplierManager()
+        .createSupplier(supplier);
+
+
+    if (created)
+    {
+        cout << endl;
+        cout << "Supplier created successfully!"
+            << endl;
+    }
+    else
+    {
+        cout << endl;
+        cout << "ERROR: Supplier name is empty "
+            << "or already exists!"
+            << endl;
+    }
+}
+
+// ================================================================
+// MODIFY SUPPLIER
+// ================================================================
+
+void ConsoleUI::modifySupplier()
+{
+    string name;
+
+    cout << endl;
+    cout << "========== MODIFY SUPPLIER =========="
+        << endl;
+
+    cin.ignore(
+        numeric_limits<streamsize>::max(),
+        '\n'
+    );
+
+    cout << "Enter Supplier Name: ";
+
+    getline(cin, name);
+
+
+    Supplier* supplier =
+        system.getSupplierManager()
+        .findSupplier(name);
+
+
+    if (supplier == nullptr)
+    {
+        cout << endl;
+        cout << "Supplier not found."
+            << endl;
+
+        return;
+    }
+
+
+    string address;
+    string country;
+    string contactName;
+    string contactEmail;
+    string website;
+
+    vector<string> orderingMethods;
+
+    string paymentMethod;
+    int leadTimeWeeks;
+
+
+    // ============================================================
+    // ADDRESS
+    // ============================================================
+
+    cout << endl;
+
+    cout << "Current Address: "
+        << supplier->getAddress()
+        << endl;
+
+    cout << "New Address: ";
+
+    getline(cin, address);
+
+    if (address.empty())
+    {
+        address = supplier->getAddress();
+    }
+
+
+    // ============================================================
+    // COUNTRY
+    // ============================================================
+
+    cout << endl;
+
+    cout << "Current Country: "
+        << supplier->getCountry()
+        << endl;
+
+    cout << "New Country: ";
+
+    getline(cin, country);
+
+    if (country.empty())
+    {
+        country = supplier->getCountry();
+    }
+
+
+    // ============================================================
+    // CONTACT NAME
+    // ============================================================
+
+    cout << endl;
+
+    cout << "Current Contact Name: "
+        << supplier->getContactName()
+        << endl;
+
+    cout << "New Contact Name: ";
+
+    getline(cin, contactName);
+
+    if (contactName.empty())
+    {
+        contactName = supplier->getContactName();
+    }
+
+
+    // ============================================================
+    // CONTACT EMAIL
+    // ============================================================
+
+    cout << endl;
+
+    cout << "Current Contact Email: "
+        << supplier->getContactEmail()
+        << endl;
+
+    cout << "New Contact Email: ";
+
+    getline(cin, contactEmail);
+
+    if (contactEmail.empty())
+    {
+        contactEmail = supplier->getContactEmail();
+    }
+
+
+    // ============================================================
+    // WEBSITE
+    // ============================================================
+
+    cout << endl;
+
+    cout << "Current Website: "
+        << supplier->getWebsite()
+        << endl;
+
+    cout << "New Website: ";
+
+    getline(cin, website);
+
+    if (website.empty())
+    {
+        website = supplier->getWebsite();
+    }
+
+
+    // ============================================================
+    // ORDERING METHODS
+    // ============================================================
+
+    char changeOrdering;
+
+    cout << endl;
+
+    cout << "Change Ordering Methods? (y/n): ";
+
+    cin >> changeOrdering;
+
+    if (changeOrdering == 'y' || changeOrdering == 'Y')
+    {
+        char answer;
+
+        cout << "Ordering method - Online? (y/n): ";
+        cin >> answer;
+        if (answer == 'y' || answer == 'Y')
+        {
+            orderingMethods.push_back("Online");
+        }
+
+        cout << "Ordering method - Email? (y/n): ";
+        cin >> answer;
+        if (answer == 'y' || answer == 'Y')
+        {
+            orderingMethods.push_back("Email");
+        }
+
+        cout << "Ordering method - PO? (y/n): ";
+        cin >> answer;
+        if (answer == 'y' || answer == 'Y')
+        {
+            orderingMethods.push_back("PO");
+        }
+    }
+    else
+    {
+        orderingMethods = supplier->getOrderingMethods();
+    }
+
+
+    // ============================================================
+    // PAYMENT METHOD
+    // ============================================================
+
+    char changePayment;
+
+    cout << endl;
+
+    cout << "Current Payment Method: "
+        << supplier->getPaymentMethod()
+        << endl;
+
+    cout << "Change Payment Method? (y/n): ";
+
+    cin >> changePayment;
+
+    if (changePayment == 'y' || changePayment == 'Y')
+    {
+        int paymentOption = 0;
+
+        cout << "Payment Method:" << endl;
+        cout << "1. Invoice" << endl;
+        cout << "2. Pre-payment" << endl;
+        cout << "3. Online" << endl;
+        cout << "Select an option: ";
+        cin >> paymentOption;
+
+        switch (paymentOption)
+        {
+        case 2:
+            paymentMethod = "Pre-payment";
+            break;
+
+        case 3:
+            paymentMethod = "Online";
+            break;
+
+        case 1:
+        default:
+            paymentMethod = "Invoice";
+            break;
+        }
+    }
+    else
+    {
+        paymentMethod = supplier->getPaymentMethod();
+    }
+
+
+    // ============================================================
+    // LEAD TIME
+    // ============================================================
+
+    cout << endl;
+
+    cout << "Current Lead Time: "
+        << supplier->getLeadTimeWeeks()
+        << " week(s)"
+        << endl;
+
+    cout << "New Lead Time in weeks "
+        << "(enter -1 to keep current): ";
+
+    cin >> leadTimeWeeks;
+
+    if (leadTimeWeeks < 0)
+    {
+        leadTimeWeeks = supplier->getLeadTimeWeeks();
+    }
+
+
+    // ============================================================
+    // MODIFY
+    // ============================================================
+
+    Supplier updatedSupplier(
+        name,
+        address,
+        country,
+        contactName,
+        contactEmail,
+        website,
+        orderingMethods,
+        paymentMethod,
+        leadTimeWeeks);
+
+
+    bool modified =
+        system.getSupplierManager()
+        .modifySupplier(
+            name,
+            updatedSupplier);
+
+
+    if (modified)
+    {
+        cout << endl;
+        cout << "Supplier successfully modified."
+            << endl;
+    }
+    else
+    {
+        cout << endl;
+        cout << "Supplier could not be modified."
+            << endl;
+    }
+}
+
+// ================================================================
+// DISPLAY SUPPLIERS
+// ================================================================
+
+void ConsoleUI::displaySuppliers()
+{
+    cout << endl;
+    cout << "========== DISPLAY SUPPLIERS =========="
+        << endl;
+
+    system.getSupplierManager()
+        .displaySuppliers();
 }
 
 // ================================================================
@@ -180,6 +707,32 @@ void ConsoleUI::materialMenu()
 // READ MATERIAL
 // ================================================================
 
+MaterialType ConsoleUI::readMaterialType()
+{
+    int typeOption = 0;
+
+    cout << endl;
+    cout << "Material Type:" << endl;
+    cout << "1. Standard Part" << endl;
+    cout << "2. Design Part" << endl;
+    cout << "3. PCB" << endl;
+    cout << "Select an option: ";
+    cin >> typeOption;
+
+    switch (typeOption)
+    {
+    case 2:
+        return MaterialType::DesignPart;
+
+    case 3:
+        return MaterialType::PCB;
+
+    case 1:
+    default:
+        return MaterialType::StandardPart;
+    }
+}
+
 Material ConsoleUI::readMaterial()
 {
     string id;
@@ -187,7 +740,11 @@ Material ConsoleUI::readMaterial()
     string description;
     string uom;
     string category;
-    string supplier;
+    string drawingNumber;
+    string manufacturer;
+    string manufacturerPartNumber;
+    string supplierName;
+    string supplierPartNumber;
     string photoPath;
     bool active;
 
@@ -195,7 +752,7 @@ Material ConsoleUI::readMaterial()
     // ID
 
     cout << endl;
-    cout << "Material ID [###-######]: ";
+    cout << "Material ID [###-###### or ######-00]: ";
 
     cin >> id;
 
@@ -238,11 +795,80 @@ Material ConsoleUI::readMaterial()
     getline(cin, category);
 
 
+    // Material Type
+
+    MaterialType type =
+        readMaterialType();
+
+
+    // Drawing Number
+    // (only for Design Part / PCB)
+
+    if (Material::requiresDrawingNumber(type))
+    {
+        do
+        {
+            cout << "Drawing Number "
+                << "[###-ASM-####, ###-PAR-####, "
+                << "I-BU#-##, OWI-BU#-##, ###-PCB-####]: ";
+
+            cin >> drawingNumber;
+
+        } while (!Material::isValidDrawingNumber(drawingNumber));
+
+        cin.ignore(
+            numeric_limits<streamsize>::max(),
+            '\n'
+        );
+    }
+
+
+    // Manufacturer
+
+    cout << "Manufacturer: ";
+
+    getline(cin, manufacturer);
+
+
+    // Manufacturer Part Number
+
+    cout << "Manufacturer Part Number: ";
+
+    getline(cin, manufacturerPartNumber);
+
+
     // Supplier
+    // (must already exist - see Supplier Manager)
 
-    cout << "Supplier: ";
+    Supplier* supplier = nullptr;
 
-    getline(cin, supplier);
+    do
+    {
+        cout << "Supplier name "
+            << "(must already exist): ";
+
+        getline(cin, supplierName);
+
+        supplier =
+            system.getSupplierManager()
+            .findSupplier(supplierName);
+
+        if (supplier == nullptr)
+        {
+            cout << endl;
+            cout << "Supplier not found. "
+                << "Create it first from the Supplier Manager."
+                << endl;
+        }
+
+    } while (supplier == nullptr);
+
+
+    // Supplier Part Number
+
+    cout << "Supplier Part Number: ";
+
+    getline(cin, supplierPartNumber);
 
 
     // Photo
@@ -265,7 +891,12 @@ Material ConsoleUI::readMaterial()
         description,
         uom,
         category,
+        type,
+        drawingNumber,
+        manufacturer,
+        manufacturerPartNumber,
         supplier,
+        supplierPartNumber,
         photoPath,
         active
     );
@@ -349,7 +980,11 @@ void ConsoleUI::modifyMaterial()
     string description;
     string uom;
     string category;
-    string supplier;
+    string drawingNumber;
+    string manufacturer;
+    string manufacturerPartNumber;
+    string supplierName;
+    string supplierPartNumber;
     string photoPath;
 
     bool active;
@@ -436,22 +1071,154 @@ void ConsoleUI::modifyMaterial()
 
 
     // ============================================================
-    // SUPPLIER
+    // TYPE / DRAWING NUMBER
     // ============================================================
 
     cout << endl;
 
-    cout << "Current Supplier: "
-        << material->getSupplier()
+    cout << "Current Type: "
+        << Material::materialTypeToString(material->getType())
         << endl;
 
-    cout << "New Supplier: ";
+    cout << "Current Drawing Number: "
+        << material->getDrawingNumber()
+        << endl;
 
-    getline(cin, supplier);
+    cout << "Change Material Type? (y/n): ";
 
-    if (supplier.empty())
+    char changeType;
+    cin >> changeType;
+
+    MaterialType type =
+        material->getType();
+
+    if (changeType == 'y' || changeType == 'Y')
     {
-        supplier = material->getSupplier();
+        type = readMaterialType();
+    }
+
+    if (Material::requiresDrawingNumber(type))
+    {
+        do
+        {
+            cout << "Drawing Number "
+                << "[###-ASM-####, ###-PAR-####, "
+                << "I-BU#-##, OWI-BU#-##, ###-PCB-####]: ";
+
+            cin >> drawingNumber;
+
+        } while (!Material::isValidDrawingNumber(drawingNumber));
+    }
+    else
+    {
+        drawingNumber = "";
+    }
+
+    cin.ignore(
+        numeric_limits<streamsize>::max(),
+        '\n'
+    );
+
+
+    // ============================================================
+    // MANUFACTURER
+    // ============================================================
+
+    cout << endl;
+
+    cout << "Current Manufacturer: "
+        << material->getManufacturer()
+        << endl;
+
+    cout << "New Manufacturer: ";
+
+    getline(cin, manufacturer);
+
+    if (manufacturer.empty())
+    {
+        manufacturer = material->getManufacturer();
+    }
+
+
+    // ============================================================
+    // MANUFACTURER PART NUMBER
+    // ============================================================
+
+    cout << endl;
+
+    cout << "Current Manufacturer Part Number: "
+        << material->getManufacturerPartNumber()
+        << endl;
+
+    cout << "New Manufacturer Part Number: ";
+
+    getline(cin, manufacturerPartNumber);
+
+    if (manufacturerPartNumber.empty())
+    {
+        manufacturerPartNumber =
+            material->getManufacturerPartNumber();
+    }
+
+
+    // ============================================================
+    // SUPPLIER
+    // ============================================================
+
+    Supplier* currentSupplier =
+        material->getSupplier();
+
+    cout << endl;
+
+    cout << "Current Supplier: "
+        << (currentSupplier != nullptr
+            ? currentSupplier->getName()
+            : "N/A")
+        << endl;
+
+    cout << "New Supplier name "
+        << "(leave blank to keep current, must exist): ";
+
+    getline(cin, supplierName);
+
+    Supplier* supplier = currentSupplier;
+
+    if (!supplierName.empty())
+    {
+        supplier =
+            system.getSupplierManager()
+            .findSupplier(supplierName);
+
+        if (supplier == nullptr)
+        {
+            cout << endl;
+            cout << "Supplier not found. "
+                << "Keeping the current supplier."
+                << endl;
+
+            supplier = currentSupplier;
+        }
+    }
+
+
+    // ============================================================
+    // SUPPLIER PART NUMBER
+    // ============================================================
+
+    cout << endl;
+
+    cout << "Current Supplier Part Number: "
+        << material->getSupplierPartNumber()
+        << endl;
+
+    cout << "New Supplier Part Number: ";
+
+    getline(cin, supplierPartNumber);
+
+    if (supplierPartNumber.empty())
+    {
+        supplierPartNumber =
+            material->getSupplierPartNumber();
     }
 
 
@@ -511,7 +1278,12 @@ void ConsoleUI::modifyMaterial()
         description,
         uom,
         category,
+        type,
+        drawingNumber,
+        manufacturer,
+        manufacturerPartNumber,
         supplier,
+        supplierPartNumber,
         photoPath,
         active
     );
@@ -1316,6 +2088,7 @@ void ConsoleUI::saveData()
         system.getDataManager()
         .save(
             system.getMaterialManager(),
+            system.getSupplierManager(),
             system.getWarehouseManager(),
             system.getProductManager());
 
@@ -1337,6 +2110,7 @@ void ConsoleUI::loadData()
         system.getDataManager()
         .load(
             system.getMaterialManager(),
+            system.getSupplierManager(),
             system.getWarehouseManager(),
             system.getProductManager());
 
