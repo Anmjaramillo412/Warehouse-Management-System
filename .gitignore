@@ -361,3 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# 4Tex project-specific: keep test/example data and material photos local only
+ProjectSemester/warehouse_data.xlsx
+ProjectSemester/web/images/materials/
