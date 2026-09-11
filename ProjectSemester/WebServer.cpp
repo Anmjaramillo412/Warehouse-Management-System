@@ -239,7 +239,7 @@ void WebServer::run()
                     {
                         return crow::response(
                             400,
-                            "Invalid Material ID. Expected format ###-######.");
+                            "Invalid Material ID. Expected format ###-###### or ######-00.");
                     }
 
                     // ------------------------------------------------
@@ -258,8 +258,32 @@ void WebServer::run()
                     string category =
                         body["category"].s();
 
-                    string supplier =
+                    MaterialType type =
+                        Material::materialTypeFromString(
+                            body["type"].s());
+
+                    string drawingNumber =
+                        body.has("drawingNumber")
+                        ? string(body["drawingNumber"].s())
+                        : "";
+
+                    string manufacturer =
+                        body.has("manufacturer")
+                        ? string(body["manufacturer"].s())
+                        : "";
+
+                    string manufacturerPartNumber =
+                        body.has("manufacturerPartNumber")
+                        ? string(body["manufacturerPartNumber"].s())
+                        : "";
+
+                    string supplierName =
                         body["supplier"].s();
+
+                    string supplierPartNumber =
+                        body.has("supplierPartNumber")
+                        ? string(body["supplierPartNumber"].s())
+                        : "";
 
                     string photoPath =
                         body["photo"].s();
@@ -274,6 +298,44 @@ void WebServer::run()
 
                     bool active =
                         body["active"].b();
+
+                    // ------------------------------------------------
+                    // Validate drawing number
+                    // ------------------------------------------------
+
+                    if (Material::requiresDrawingNumber(type))
+                    {
+                        if (!Material::isValidDrawingNumber(drawingNumber))
+                        {
+                            return crow::response(
+                                400,
+                                "Invalid or missing Drawing Number for this material type.");
+                        }
+                    }
+                    else
+                    {
+                        // Drawing number only applies to
+                        // Design Part / PCB materials.
+                        drawingNumber = "";
+                    }
+
+                    // ------------------------------------------------
+                    // Resolve Supplier pointer
+                    // ------------------------------------------------
+
+                    SupplierManager& supplierManager =
+                        warehouseSystem->getSupplierManager();
+
+                    Supplier* supplier =
+                        supplierManager.findSupplier(
+                            supplierName);
+
+                    if (supplier == nullptr)
+                    {
+                        return crow::response(
+                            400,
+                            "Supplier not found. Please create the supplier first.");
+                    }
 
                     // ------------------------------------------------
                     // Save image
@@ -338,7 +400,12 @@ void WebServer::run()
                         description,
                         uom,
                         category,
+                        type,
+                        drawingNumber,
+                        manufacturer,
+                        manufacturerPartNumber,
                         supplier,
+                        supplierPartNumber,
                         photoPath,
                         active);
 
@@ -447,8 +514,26 @@ void WebServer::run()
                     item["category"] =
                         material->getCategory();
 
+                    item["type"] =
+                        Material::materialTypeToString(
+                            material->getType());
+
+                    item["drawingNumber"] =
+                        material->getDrawingNumber();
+
+                    item["manufacturer"] =
+                        material->getManufacturer();
+
+                    item["manufacturerPartNumber"] =
+                        material->getManufacturerPartNumber();
+
                     item["supplier"] =
-                        material->getSupplier();
+                        material->getSupplier() != nullptr
+                        ? material->getSupplier()->getName()
+                        : "";
+
+                    item["supplierPartNumber"] =
+                        material->getSupplierPartNumber();
 
                     item["photo"] =
                         material->getPhotoPath();
@@ -509,8 +594,32 @@ void WebServer::run()
                     string category =
                         body["category"].s();
 
-                    string supplier =
+                    MaterialType type =
+                        Material::materialTypeFromString(
+                            body["type"].s());
+
+                    string drawingNumber =
+                        body.has("drawingNumber")
+                        ? string(body["drawingNumber"].s())
+                        : "";
+
+                    string manufacturer =
+                        body.has("manufacturer")
+                        ? string(body["manufacturer"].s())
+                        : "";
+
+                    string manufacturerPartNumber =
+                        body.has("manufacturerPartNumber")
+                        ? string(body["manufacturerPartNumber"].s())
+                        : "";
+
+                    string supplierName =
                         body["supplier"].s();
+
+                    string supplierPartNumber =
+                        body.has("supplierPartNumber")
+                        ? string(body["supplierPartNumber"].s())
+                        : "";
 
                     string photoPath =
                         body["photo"].s();
@@ -535,7 +644,43 @@ void WebServer::run()
                     {
                         return crow::response(
                             400,
-                            "Invalid Material ID. Expected format ###-######.");
+                            "Invalid Material ID. Expected format ###-###### or ######-00.");
+                    }
+
+                    // ------------------------------------------------
+                    // Validate drawing number
+                    // ------------------------------------------------
+
+                    if (Material::requiresDrawingNumber(type))
+                    {
+                        if (!Material::isValidDrawingNumber(drawingNumber))
+                        {
+                            return crow::response(
+                                400,
+                                "Invalid or missing Drawing Number for this material type.");
+                        }
+                    }
+                    else
+                    {
+                        drawingNumber = "";
+                    }
+
+                    // ------------------------------------------------
+                    // Resolve Supplier pointer
+                    // ------------------------------------------------
+
+                    SupplierManager& supplierManager =
+                        warehouseSystem->getSupplierManager();
+
+                    Supplier* supplier =
+                        supplierManager.findSupplier(
+                            supplierName);
+
+                    if (supplier == nullptr)
+                    {
+                        return crow::response(
+                            400,
+                            "Supplier not found. Please create the supplier first.");
                     }
 
                     // ------------------------------------------------
@@ -631,7 +776,12 @@ void WebServer::run()
                         description,
                         uom,
                         category,
+                        type,
+                        drawingNumber,
+                        manufacturer,
+                        manufacturerPartNumber,
                         supplier,
+                        supplierPartNumber,
                         photoPath,
                         active);
 
@@ -734,8 +884,26 @@ void WebServer::run()
                 response["category"] =
                     material->getCategory();
 
+                response["type"] =
+                    Material::materialTypeToString(
+                        material->getType());
+
+                response["drawingNumber"] =
+                    material->getDrawingNumber();
+
+                response["manufacturer"] =
+                    material->getManufacturer();
+
+                response["manufacturerPartNumber"] =
+                    material->getManufacturerPartNumber();
+
                 response["supplier"] =
-                    material->getSupplier();
+                    material->getSupplier() != nullptr
+                    ? material->getSupplier()->getName()
+                    : "";
+
+                response["supplierPartNumber"] =
+                    material->getSupplierPartNumber();
 
                 response["photo"] =
                     material->getPhotoPath();
@@ -784,7 +952,7 @@ void WebServer::run()
                     {
                         return crow::response(
                             400,
-                            "Invalid Material ID. Expected format ###-######.");
+                            "Invalid Material ID. Expected format ###-###### or ######-00.");
                     }
 
 
@@ -864,6 +1032,477 @@ void WebServer::run()
             });
 
 // ============================================================
+// CREATE SUPPLIER
+// ============================================================
+
+    CROW_ROUTE(app, "/api/suppliers/create")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    // ------------------------------------------------
+                    // Read supplier data
+                    // ------------------------------------------------
+
+                    string name =
+                        body["name"].s();
+
+                    if (name.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Supplier name is required.");
+                    }
+
+                    string address =
+                        body.has("address")
+                        ? string(body["address"].s())
+                        : "";
+
+                    string country =
+                        body.has("country")
+                        ? string(body["country"].s())
+                        : "";
+
+                    string contactName =
+                        body.has("contactName")
+                        ? string(body["contactName"].s())
+                        : "";
+
+                    string contactEmail =
+                        body.has("contactEmail")
+                        ? string(body["contactEmail"].s())
+                        : "";
+
+                    string website =
+                        body.has("website")
+                        ? string(body["website"].s())
+                        : "";
+
+                    vector<string> orderingMethods;
+
+                    if (body.has("orderingMethods"))
+                    {
+                        for (const auto& method :
+                            body["orderingMethods"])
+                        {
+                            orderingMethods.push_back(
+                                method.s());
+                        }
+                    }
+
+                    string paymentMethod =
+                        body.has("paymentMethod")
+                        ? string(body["paymentMethod"].s())
+                        : "";
+
+                    int leadTimeWeeks =
+                        body.has("leadTimeWeeks")
+                        ? body["leadTimeWeeks"].i()
+                        : 0;
+
+                    // ------------------------------------------------
+                    // Create Supplier
+                    // ------------------------------------------------
+
+                    Supplier supplier(
+                        name,
+                        address,
+                        country,
+                        contactName,
+                        contactEmail,
+                        website,
+                        orderingMethods,
+                        paymentMethod,
+                        leadTimeWeeks);
+
+                    SupplierManager& supplierManager =
+                        warehouseSystem->getSupplierManager();
+
+                    bool success =
+                        supplierManager.createSupplier(
+                            supplier);
+
+                    if (!success)
+                    {
+                        return crow::response(
+                            409,
+                            "A supplier with this name already exists.");
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] =
+                        "Supplier created successfully.";
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
+// GET SUPPLIERS
+// ============================================================
+
+    CROW_ROUTE(app, "/api/suppliers")
+        ([warehouseSystem]()
+            {
+                crow::json::wvalue response;
+
+                crow::json::wvalue::list supplierList;
+
+                SupplierManager& supplierManager =
+                    warehouseSystem->getSupplierManager();
+
+                const vector<unique_ptr<Supplier>>& suppliers =
+                    supplierManager.getSuppliers();
+
+                for (const auto& supplier : suppliers)
+                {
+                    crow::json::wvalue item;
+
+                    item["name"] =
+                        supplier->getName();
+
+                    item["address"] =
+                        supplier->getAddress();
+
+                    item["country"] =
+                        supplier->getCountry();
+
+                    item["contactName"] =
+                        supplier->getContactName();
+
+                    item["contactEmail"] =
+                        supplier->getContactEmail();
+
+                    item["website"] =
+                        supplier->getWebsite();
+
+                    crow::json::wvalue::list orderingMethodsList;
+
+                    for (const string& method :
+                        supplier->getOrderingMethods())
+                    {
+                        orderingMethodsList.push_back(method);
+                    }
+
+                    item["orderingMethods"] =
+                        std::move(orderingMethodsList);
+
+                    item["paymentMethod"] =
+                        supplier->getPaymentMethod();
+
+                    item["leadTimeWeeks"] =
+                        supplier->getLeadTimeWeeks();
+
+                    supplierList.push_back(item);
+                }
+
+                response["suppliers"] =
+                    std::move(supplierList);
+
+                return response;
+            });
+
+// ============================================================
+// MODIFY SUPPLIER
+// ============================================================
+
+    CROW_ROUTE(app, "/api/suppliers/modify")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    // ------------------------------------------------
+                    // Read supplier name (unique key)
+                    // ------------------------------------------------
+
+                    string name =
+                        body["name"].s();
+
+                    if (name.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Supplier name is required.");
+                    }
+
+                    SupplierManager& supplierManager =
+                        warehouseSystem->getSupplierManager();
+
+                    if (supplierManager.findSupplier(name) == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Supplier not found.");
+                    }
+
+                    // ------------------------------------------------
+                    // Read remaining supplier data
+                    // ------------------------------------------------
+
+                    string address =
+                        body.has("address")
+                        ? string(body["address"].s())
+                        : "";
+
+                    string country =
+                        body.has("country")
+                        ? string(body["country"].s())
+                        : "";
+
+                    string contactName =
+                        body.has("contactName")
+                        ? string(body["contactName"].s())
+                        : "";
+
+                    string contactEmail =
+                        body.has("contactEmail")
+                        ? string(body["contactEmail"].s())
+                        : "";
+
+                    string website =
+                        body.has("website")
+                        ? string(body["website"].s())
+                        : "";
+
+                    vector<string> orderingMethods;
+
+                    if (body.has("orderingMethods"))
+                    {
+                        for (const auto& method :
+                            body["orderingMethods"])
+                        {
+                            orderingMethods.push_back(
+                                method.s());
+                        }
+                    }
+
+                    string paymentMethod =
+                        body.has("paymentMethod")
+                        ? string(body["paymentMethod"].s())
+                        : "";
+
+                    int leadTimeWeeks =
+                        body.has("leadTimeWeeks")
+                        ? body["leadTimeWeeks"].i()
+                        : 0;
+
+                    // ------------------------------------------------
+                    // Modify
+                    // ------------------------------------------------
+
+                    Supplier updatedSupplier(
+                        name,
+                        address,
+                        country,
+                        contactName,
+                        contactEmail,
+                        website,
+                        orderingMethods,
+                        paymentMethod,
+                        leadTimeWeeks);
+
+                    bool success =
+                        supplierManager.modifySupplier(
+                            name,
+                            updatedSupplier);
+
+                    if (!success)
+                    {
+                        return crow::response(
+                            400,
+                            "Supplier could not be modified.");
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] =
+                        "Supplier successfully modified.";
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
+// SEARCH SUPPLIER
+// ============================================================
+
+    CROW_ROUTE(app, "/api/suppliers/<string>")
+        ([warehouseSystem](string name)
+            {
+                SupplierManager& supplierManager =
+                    warehouseSystem->getSupplierManager();
+
+                Supplier* supplier =
+                    supplierManager.findSupplier(name);
+
+                if (supplier == nullptr)
+                {
+                    crow::json::wvalue response;
+
+                    response["message"] =
+                        "Supplier not found.";
+
+                    return crow::response(
+                        404,
+                        response);
+                }
+
+                crow::json::wvalue response;
+
+                response["name"] =
+                    supplier->getName();
+
+                response["address"] =
+                    supplier->getAddress();
+
+                response["country"] =
+                    supplier->getCountry();
+
+                response["contactName"] =
+                    supplier->getContactName();
+
+                response["contactEmail"] =
+                    supplier->getContactEmail();
+
+                response["website"] =
+                    supplier->getWebsite();
+
+                crow::json::wvalue::list orderingMethodsList;
+
+                for (const string& method :
+                    supplier->getOrderingMethods())
+                {
+                    orderingMethodsList.push_back(method);
+                }
+
+                response["orderingMethods"] =
+                    std::move(orderingMethodsList);
+
+                response["paymentMethod"] =
+                    supplier->getPaymentMethod();
+
+                response["leadTimeWeeks"] =
+                    supplier->getLeadTimeWeeks();
+
+                return crow::response(response);
+            });
+
+// ============================================================
+// DELETE SUPPLIER
+// ============================================================
+
+    CROW_ROUTE(app, "/api/suppliers/delete")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    string name =
+                        body["name"].s();
+
+                    SupplierManager& supplierManager =
+                        warehouseSystem->getSupplierManager();
+
+                    MaterialManager& materialManager =
+                        warehouseSystem->getMaterialManager();
+
+                    if (supplierManager.findSupplier(name) == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Supplier not found.");
+                    }
+
+                    // ------------------------------------------------
+                    // Prevent deleting a supplier still referenced
+                    // by a material.
+                    // ------------------------------------------------
+
+                    if (materialManager.isSupplierInUse(name))
+                    {
+                        return crow::response(
+                            409,
+                            "Supplier cannot be deleted because it is used by a material.");
+                    }
+
+                    bool success =
+                        supplierManager.deleteSupplier(name);
+
+                    if (!success)
+                    {
+                        return crow::response(
+                            400,
+                            "Supplier could not be deleted.");
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] =
+                        "Supplier deleted successfully.";
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
 // SAVE DATA
 // ============================================================
 
@@ -875,6 +1514,7 @@ void WebServer::run()
                     warehouseSystem->getDataManager()
                     .save(
                         warehouseSystem->getMaterialManager(),
+                        warehouseSystem->getSupplierManager(),
                         warehouseSystem->getWarehouseManager(),
                         warehouseSystem->getProductManager());
 
@@ -904,6 +1544,7 @@ void WebServer::run()
                     warehouseSystem->getDataManager()
                     .load(
                         warehouseSystem->getMaterialManager(),
+                        warehouseSystem->getSupplierManager(),
                         warehouseSystem->getWarehouseManager(),
                         warehouseSystem->getProductManager());
 
@@ -1175,7 +1816,7 @@ void WebServer::run()
                     {
                         return crow::response(
                             400,
-                            "Invalid Material ID. Expected format ###-######.");
+                            "Invalid Material ID. Expected format ###-###### or ######-00.");
                     }
 
 
@@ -1307,7 +1948,7 @@ void WebServer::run()
                     {
                         return crow::response(
                             400,
-                            "Invalid Material ID. Expected format ###-######.");
+                            "Invalid Material ID. Expected format ###-###### or ######-00.");
                     }
 
 
@@ -1480,7 +2121,7 @@ void WebServer::run()
                     {
                         return crow::response(
                             400,
-                            "Invalid Material ID. Expected format ###-######.");
+                            "Invalid Material ID. Expected format ###-###### or ######-00.");
                     }
 
 

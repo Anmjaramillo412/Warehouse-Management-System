@@ -4,6 +4,47 @@
 
 
 // ================================================================
+// PATTERN MATCHING HELPER
+// ================================================================
+// '#' in the pattern means "one digit".
+// Any other character must match literally.
+
+namespace
+{
+    bool matchesPattern(
+        const string& value,
+        const string& pattern)
+    {
+        if (value.length() != pattern.length())
+        {
+            return false;
+        }
+
+        for (size_t i = 0; i < pattern.length(); i++)
+        {
+            if (pattern[i] == '#')
+            {
+                if (!isdigit(
+                    static_cast<unsigned char>(value[i])))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                if (value[i] != pattern[i])
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+}
+
+
+// ================================================================
 // CONSTRUCTOR
 // ================================================================
 
@@ -13,7 +54,12 @@ Material::Material(
     string d,
     string u,
     string c,
-    string s,
+    MaterialType t,
+    string drawing,
+    string manuf,
+    string manufPartNumber,
+    Supplier* sup,
+    string supPartNumber,
     string p,
     bool a)
 {
@@ -22,7 +68,12 @@ Material::Material(
     description = d;
     UoM = u;
     category = c;
-    supplier = s;
+    type = t;
+    drawingNumber = drawing;
+    manufacturer = manuf;
+    manufacturerPartNumber = manufPartNumber;
+    supplier = sup;
+    supplierPartNumber = supPartNumber;
     photoPath = p;
     active = a;
 
@@ -42,6 +93,7 @@ Material::Material(
 
 Material::~Material()
 {
+    // Supplier is owned by SupplierManager, not by Material.
 }
 
 
@@ -51,48 +103,81 @@ Material::~Material()
 
 bool Material::isValidID(const string& id)
 {
-    // Expected format:
+    // Expected formats:
     // ###-######
+    // ######-00
 
-    if (id.length() != 10)
+    return matchesPattern(id, "###-######")
+        || matchesPattern(id, "######-00");
+}
+
+
+// ================================================================
+// DRAWING NUMBER VALIDATION
+// ================================================================
+
+bool Material::isValidDrawingNumber(const string& drawingNumber)
+{
+    // Expected formats:
+    // ###-ASM-####
+    // ###-PAR-####
+    // I-BU#-##
+    // OWI-BU#-##
+    // ###-PCB-####
+
+    return matchesPattern(drawingNumber, "###-ASM-####")
+        || matchesPattern(drawingNumber, "###-PAR-####")
+        || matchesPattern(drawingNumber, "I-BU#-##")
+        || matchesPattern(drawingNumber, "OWI-BU#-##")
+        || matchesPattern(drawingNumber, "###-PCB-####");
+}
+
+
+// ================================================================
+// REQUIRES DRAWING NUMBER
+// ================================================================
+
+bool Material::requiresDrawingNumber(MaterialType t)
+{
+    return t == MaterialType::DesignPart
+        || t == MaterialType::PCB;
+}
+
+
+// ================================================================
+// MATERIAL TYPE <-> STRING
+// ================================================================
+
+string Material::materialTypeToString(MaterialType t)
+{
+    switch (t)
     {
-        return false;
+    case MaterialType::DesignPart:
+        return "Design Part";
+
+    case MaterialType::PCB:
+        return "PCB";
+
+    case MaterialType::StandardPart:
+    default:
+        return "Standard Part";
+    }
+}
+
+
+MaterialType Material::materialTypeFromString(const string& value)
+{
+    if (value == "Design Part")
+    {
+        return MaterialType::DesignPart;
     }
 
-
-    // Position of '-'
-
-    if (id[3] != '-')
+    if (value == "PCB")
     {
-        return false;
+        return MaterialType::PCB;
     }
 
-
-    // First three characters
-
-    for (int i = 0; i < 3; i++)
-    {
-        if (!isdigit(
-            static_cast<unsigned char>(id[i])))
-        {
-            return false;
-        }
-    }
-
-
-    // Last six characters
-
-    for (int i = 4; i < 10; i++)
-    {
-        if (!isdigit(
-            static_cast<unsigned char>(id[i])))
-        {
-            return false;
-        }
-    }
-
-
-    return true;
+    return MaterialType::StandardPart;
 }
 
 
@@ -130,9 +215,39 @@ string Material::getCategory() const
 }
 
 
-string Material::getSupplier() const
+MaterialType Material::getType() const
+{
+    return type;
+}
+
+
+string Material::getDrawingNumber() const
+{
+    return drawingNumber;
+}
+
+
+string Material::getManufacturer() const
+{
+    return manufacturer;
+}
+
+
+string Material::getManufacturerPartNumber() const
+{
+    return manufacturerPartNumber;
+}
+
+
+Supplier* Material::getSupplier() const
 {
     return supplier;
+}
+
+
+string Material::getSupplierPartNumber() const
+{
+    return supplierPartNumber;
 }
 
 
@@ -187,9 +302,39 @@ void Material::setCategory(const string& c)
 }
 
 
-void Material::setSupplier(const string& s)
+void Material::setType(MaterialType t)
 {
-    supplier = s;
+    type = t;
+}
+
+
+void Material::setDrawingNumber(const string& drawing)
+{
+    drawingNumber = drawing;
+}
+
+
+void Material::setManufacturer(const string& manuf)
+{
+    manufacturer = manuf;
+}
+
+
+void Material::setManufacturerPartNumber(const string& manufPartNumber)
+{
+    manufacturerPartNumber = manufPartNumber;
+}
+
+
+void Material::setSupplier(Supplier* sup)
+{
+    supplier = sup;
+}
+
+
+void Material::setSupplierPartNumber(const string& supPartNumber)
+{
+    supplierPartNumber = supPartNumber;
 }
 
 
@@ -216,21 +361,34 @@ void Material::display() const
     cout << "----------------------------------------"
         << endl;
 
-    cout << "ID:          " << ID << endl;
+    cout << "ID:                " << ID << endl;
+    cout << "Name:              " << name << endl;
+    cout << "Description:       " << description << endl;
+    cout << "UoM:               " << UoM << endl;
+    cout << "Category:          " << category << endl;
 
-    cout << "Name:        " << name << endl;
+    cout << "Type:              "
+        << materialTypeToString(type)
+        << endl;
 
-    cout << "Description: " << description << endl;
+    cout << "Drawing Number:    " << drawingNumber << endl;
+    cout << "Manufacturer:      " << manufacturer << endl;
 
-    cout << "UoM:         " << UoM << endl;
+    cout << "Manufacturer P/N:  "
+        << manufacturerPartNumber
+        << endl;
 
-    cout << "Category:    " << category << endl;
+    cout << "Supplier:          "
+        << (supplier != nullptr
+            ? supplier->getName()
+            : "N/A")
+        << endl;
 
-    cout << "Supplier:    " << supplier << endl;
+    cout << "Supplier P/N:      " << supplierPartNumber << endl;
 
-    cout << "Photo:       " << photoPath << endl;
+    cout << "Photo:             " << photoPath << endl;
 
-    cout << "Active:      "
+    cout << "Active:            "
         << (active ? "Yes" : "No")
         << endl;
 

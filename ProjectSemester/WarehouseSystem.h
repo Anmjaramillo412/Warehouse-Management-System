@@ -1,6 +1,7 @@
 #pragma once
 
 #include "MaterialManager.h"
+#include "SupplierManager.h"
 #include "ProductManager.h"
 #include "WarehouseManager.h"
 #include "MovementLogger.h"
@@ -12,6 +13,8 @@ class WarehouseSystem
 private:
 
     MaterialManager materialManager;
+
+    SupplierManager supplierManager;
 
     ProductManager productManager;
 
@@ -28,6 +31,8 @@ public:
     WarehouseSystem();
 
     MaterialManager& getMaterialManager();
+
+    SupplierManager& getSupplierManager();
 
     ProductManager& getProductManager();
 

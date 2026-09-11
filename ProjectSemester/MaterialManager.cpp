@@ -91,8 +91,23 @@ bool MaterialManager::modifyMaterial(
     material->setCategory(
         newData.getCategory());
 
+    material->setType(
+        newData.getType());
+
+    material->setDrawingNumber(
+        newData.getDrawingNumber());
+
+    material->setManufacturer(
+        newData.getManufacturer());
+
+    material->setManufacturerPartNumber(
+        newData.getManufacturerPartNumber());
+
     material->setSupplier(
         newData.getSupplier());
+
+    material->setSupplierPartNumber(
+        newData.getSupplierPartNumber());
 
     material->setPhotoPath(
         newData.getPhotoPath());
@@ -168,6 +183,29 @@ const vector<unique_ptr<Material>>&
 MaterialManager::getMaterials() const
 {
     return materials;
+}
+
+
+// ================================================================
+// IS SUPPLIER IN USE
+// ================================================================
+
+bool MaterialManager::isSupplierInUse(
+    const string& supplierName) const
+{
+    for (const auto& material : materials)
+    {
+        Supplier* supplier =
+            material->getSupplier();
+
+        if (supplier != nullptr
+            && supplier->getName() == supplierName)
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 

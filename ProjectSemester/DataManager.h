@@ -1,6 +1,7 @@
 #pragma once
 
 #include "MaterialManager.h"
+#include "SupplierManager.h"
 #include "WarehouseManager.h"
 #include "ProductManager.h"
 #include "MovementLogger.h"
@@ -28,12 +29,14 @@ public:
     // Save
     bool save(
         MaterialManager& materialManager,
+        SupplierManager& supplierManager,
         WarehouseManager& warehouseManager,
         ProductManager& productManager);
 
     // Load
     bool load(
         MaterialManager& materialManager,
+        SupplierManager& supplierManager,
         WarehouseManager& warehouseManager,
         ProductManager& productManager);
 };
