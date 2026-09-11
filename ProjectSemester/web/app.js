@@ -259,22 +259,21 @@ function openModule(module) {
                     Load Data
                 </button>
 
-            </div>
+                <div class="data-logging-option">
 
+                    <label>
 
-            <div class="data-logging-option">
+                        <input
+                            type="checkbox"
+                            id="log-data-operations"
+                            onchange="setDataLogging()"
+                        >
 
-                <label>
+                        Log Save/Load operations
 
-                    <input
-                        type="checkbox"
-                        id="log-data-operations"
-                        onchange="setDataLogging()"
-                    >
+                    </label>
 
-                    Log Save/Load operations
-
-                </label>
+                </div>
 
             </div>
 
@@ -2112,25 +2111,21 @@ async function displayMaterials() {
                     Materials
                 </h2>
 
-                <table class="material-table">
+                <table class="material-table material-table-clickable">
 
                     <thead>
 
                         <tr>
 
                             <th>Photo</th>
-                            <th>ID</th>
+                            <th>Material ID</th>
                             <th>Name</th>
-                            <th>Description</th>
                             <th>UoM</th>
-                            <th>Category</th>
-                            <th>Type</th>
                             <th>Drawing Number</th>
                             <th>Manufacturer</th>
                             <th>Mfr Part #</th>
                             <th>Supplier</th>
                             <th>Supplier Part #</th>
-                            <th>Active</th>
 
                         </tr>
 
@@ -2146,7 +2141,9 @@ async function displayMaterials() {
 
             html += `
 
-                <tr>
+                <tr
+                    onclick="showMaterialDetail('${escapeHtml(material.id)}')"
+                    title="Click to view full material details">
 
                     <td>
 
@@ -2171,19 +2168,7 @@ async function displayMaterials() {
                     </td>
 
                     <td>
-                        ${escapeHtml(material.description || "")}
-                    </td>
-
-                    <td>
                         ${escapeHtml(material.uom || "")}
-                    </td>
-
-                    <td>
-                        ${escapeHtml(material.category || "")}
-                    </td>
-
-                    <td>
-                        ${escapeHtml(material.type || "")}
                     </td>
 
                     <td>
@@ -2206,10 +2191,6 @@ async function displayMaterials() {
                         ${escapeHtml(material.supplierPartNumber || "")}
                     </td>
 
-                    <td>
-                        ${material.active ? "Yes" : "No"}
-                    </td>
-
                 </tr>
             `;
         }
@@ -2226,6 +2207,160 @@ async function displayMaterials() {
 
 
         content.innerHTML = html;
+
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `
+            <p>
+                Could not connect to the server.
+            </p>
+        `;
+    }
+}
+
+// ============================================================
+// MATERIAL DETAIL DASHBOARD
+// ============================================================
+
+async function showMaterialDetail(id) {
+
+    const content =
+        document.getElementById(
+            "material-content"
+        );
+
+    content.innerHTML = `
+        <p>Loading material...</p>
+    `;
+
+
+    try {
+
+        const response =
+            await fetch(
+                `/api/materials/${encodeURIComponent(id)}`
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (!response.ok) {
+
+            content.innerHTML = `
+                <p>
+                    ${escapeHtml(data.message || "Material not found.")}
+                </p>
+
+                <div class="module-buttons">
+                    <button onclick="displayMaterials()">
+                        ← Back to Materials
+                    </button>
+                </div>
+            `;
+
+            return;
+        }
+
+
+        content.innerHTML = `
+
+            <div class="material-detail">
+
+                <div class="module-buttons material-detail-back">
+                    <button onclick="displayMaterials()">
+                        ← Back to Materials
+                    </button>
+                </div>
+
+                <div class="material-detail-header">
+
+                    <div class="material-detail-photo">
+                        ${
+                            data.photo
+                            ? `<img
+                                    src="/${data.photo}"
+                                    alt="Material photo"
+                               >`
+                            : `<div class="material-detail-photo-placeholder">
+                                    No photo
+                               </div>`
+                        }
+                    </div>
+
+                    <div class="material-detail-title">
+
+                        <h2>
+                            ${escapeHtml(data.name)}
+                        </h2>
+
+                        <p class="material-detail-id">
+                            ${escapeHtml(data.id)}
+                        </p>
+
+                        <span class="status-badge ${data.active ? "status-active" : "status-inactive"}">
+                            ${data.active ? "Active" : "Inactive"}
+                        </span>
+
+                    </div>
+
+                </div>
+
+                <div class="material-detail-grid">
+
+                    <div class="detail-field">
+                        <div class="detail-label">Description</div>
+                        <div class="detail-value">${escapeHtml(data.description || "—")}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Unit of Measure</div>
+                        <div class="detail-value">${escapeHtml(data.uom || "—")}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Category</div>
+                        <div class="detail-value">${escapeHtml(data.category || "—")}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Type</div>
+                        <div class="detail-value">${escapeHtml(data.type || "—")}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Drawing Number</div>
+                        <div class="detail-value">${escapeHtml(data.drawingNumber || "—")}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Manufacturer</div>
+                        <div class="detail-value">${escapeHtml(data.manufacturer || "—")}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Manufacturer Part Number</div>
+                        <div class="detail-value">${escapeHtml(data.manufacturerPartNumber || "—")}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Supplier</div>
+                        <div class="detail-value">${escapeHtml(data.supplier || "—")}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Supplier Part Number</div>
+                        <div class="detail-value">${escapeHtml(data.supplierPartNumber || "—")}</div>
+                    </div>
+
+                </div>
+
+            </div>
+        `;
 
     }
     catch (error) {
