@@ -129,7 +129,7 @@ body {
 ============================================================ */
 
 .module-view {
-    max-width: 1100px;
+    max-width: 1300px;
     margin: 40px auto;
     padding: 0 25px;
 }
@@ -238,6 +238,11 @@ body {
 }
 
 
+.form-container-wide {
+    max-width: 800px;
+}
+
+
     .form-container h2 {
         margin-top: 0;
     }
@@ -316,6 +321,106 @@ body {
     .combobox-empty:hover {
         background: white;
     }
+
+
+/* ============================================================
+   GOODS RECEIPT / ISSUE - MULTIPLE MATERIAL LINES
+============================================================ */
+
+.multi-line-items {
+    margin-top: 18px;
+}
+
+
+.multi-line-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 18px;
+}
+
+
+    .multi-line-header label {
+        margin: 0 !important;
+    }
+
+
+.add-line-button {
+    padding: 8px 14px;
+    border: 1px solid #1f2937;
+    border-radius: 6px;
+    background: white;
+    color: #1f2937;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+
+    .add-line-button:hover {
+        background: #1f2937;
+        color: white;
+    }
+
+
+.line-item {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 14px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+}
+
+
+.line-item-field {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+
+    .line-item-field label {
+        margin-top: 0 !important;
+    }
+
+
+.line-item-field-qty {
+    flex: 0 0 110px;
+}
+
+
+.remove-line-button {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    background: #fee2e2;
+    color: #b91c1c;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+
+    .remove-line-button:hover {
+        background: #fecaca;
+    }
+
+
+@media (max-width: 600px) {
+
+    .line-item {
+        flex-wrap: wrap;
+    }
+
+
+    .line-item-field-qty {
+        flex: 1 1 100%;
+    }
+}
 
 
     .checkbox-group .checkbox-label {
@@ -403,19 +508,21 @@ footer {
     width: 100%;
     border-collapse: collapse;
     background: white;
+    font-size: 14px;
 }
 
 
     .material-table th {
         background: #1f2937;
         color: white;
-        padding: 14px;
+        padding: 10px 12px;
         text-align: left;
+        white-space: nowrap;
     }
 
 
     .material-table td {
-        padding: 14px;
+        padding: 8px 12px;
         border-bottom: 1px solid #e5e7eb;
     }
 
@@ -511,8 +618,8 @@ footer {
 ============================================================ */
 
 .material-thumbnail {
-    width: 60px;
-    height: 60px;
+    width: 44px;
+    height: 44px;
     object-fit: cover;
     border-radius: 6px;
     border: 1px solid #d1d5db;
