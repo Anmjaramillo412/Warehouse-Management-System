@@ -259,22 +259,21 @@ function openModule(module) {
                     Load Data
                 </button>
 
-            </div>
+                <div class="data-logging-option">
 
+                    <label>
 
-            <div class="data-logging-option">
+                        <input
+                            type="checkbox"
+                            id="log-data-operations"
+                            onchange="setDataLogging()"
+                        >
 
-                <label>
+                        Log Save/Load operations
 
-                    <input
-                        type="checkbox"
-                        id="log-data-operations"
-                        onchange="setDataLogging()"
-                    >
+                    </label>
 
-                    Log Save/Load operations
-
-                </label>
+                </div>
 
             </div>
 
@@ -1766,6 +1765,207 @@ function hideSupplierOptionsDelayed(prefix) {
 }
 
 // ============================================================
+// MATERIAL SEARCH COMBOBOX
+// ============================================================
+// Generic Material ID lookup, used anywhere a Material ID needs
+// to be entered (Search/Delete/Modify Material, Transfer Material,
+// Goods Receipt/Issue line items), so materials can be found by
+// typing part of the ID or name instead of remembering the exact
+// ID. The hidden "<prefix>-material-id" input only ever holds an
+// ID that exactly matches an existing material - it is cleared
+// whenever the visible search text does not match one exactly.
+
+let materialCache = null;
+
+async function loadMaterialCache(forceRefresh) {
+
+    if (materialCache && !forceRefresh) {
+        return materialCache;
+    }
+
+    try {
+
+        const response =
+            await fetch("/api/materials");
+
+        const data =
+            await response.json();
+
+        materialCache =
+            data.materials || [];
+    }
+    catch (error) {
+
+        console.error(error);
+
+        materialCache = [];
+    }
+
+    return materialCache;
+}
+
+async function initMaterialCombobox(prefix, selectedID) {
+
+    await loadMaterialCache();
+
+    const hiddenInput =
+        document.getElementById(prefix + "-material-id");
+
+    const searchInput =
+        document.getElementById(prefix + "-material-id-search");
+
+    if (!hiddenInput || !searchInput) {
+        return;
+    }
+
+    hiddenInput.value = selectedID || "";
+    searchInput.value = selectedID || "";
+}
+
+function renderMaterialOptions(prefix) {
+
+    const searchInput =
+        document.getElementById(prefix + "-material-id-search");
+
+    const optionsBox =
+        document.getElementById(prefix + "-material-id-options");
+
+    if (!searchInput || !optionsBox) {
+        return;
+    }
+
+    const filterText =
+        searchInput.value.trim().toLowerCase();
+
+    const materials =
+        materialCache || [];
+
+    const matches =
+        materials.filter(material =>
+            material.id.toLowerCase().includes(filterText) ||
+            (material.name || "").toLowerCase().includes(filterText)
+        );
+
+    if (matches.length === 0) {
+
+        optionsBox.innerHTML = `
+            <div class="combobox-option combobox-empty">
+                No materials found
+            </div>
+        `;
+    }
+    else {
+
+        const limited =
+            matches.slice(0, 30);
+
+        optionsBox.innerHTML =
+            limited.map(material => `
+                <div class="combobox-option"
+                    onmousedown="selectMaterialOption('${prefix}', '${escapeHtml(material.id)}')">
+                    <strong>${escapeHtml(material.id)}</strong>
+                    &nbsp;&mdash;&nbsp;${escapeHtml(material.name)}
+                </div>
+            `).join("") +
+            (matches.length > limited.length
+                ? `<div class="combobox-option combobox-empty">
+                        ${matches.length - limited.length} more - keep typing to narrow down
+                   </div>`
+                : "");
+    }
+
+    optionsBox.classList.remove("hidden");
+}
+
+function handleMaterialSearchInput(prefix) {
+
+    renderMaterialOptions(prefix);
+
+    const searchInput =
+        document.getElementById(prefix + "-material-id-search");
+
+    const hiddenInput =
+        document.getElementById(prefix + "-material-id");
+
+    const materials =
+        materialCache || [];
+
+    const typedText =
+        searchInput.value.trim();
+
+    const exactMatch =
+        materials.find(material =>
+            material.id === typedText
+        );
+
+    hiddenInput.value =
+        exactMatch ? exactMatch.id : "";
+}
+
+function selectMaterialOption(prefix, id) {
+
+    document.getElementById(
+        prefix + "-material-id"
+    ).value = id;
+
+    document.getElementById(
+        prefix + "-material-id-search"
+    ).value = id;
+
+    document.getElementById(
+        prefix + "-material-id-options"
+    ).classList.add("hidden");
+}
+
+function hideMaterialOptionsDelayed(prefix) {
+
+    // Delay so a click (onmousedown) on an option
+    // still registers before the dropdown disappears.
+
+    setTimeout(() => {
+
+        const optionsBox =
+            document.getElementById(prefix + "-material-id-options");
+
+        if (optionsBox) {
+            optionsBox.classList.add("hidden");
+        }
+
+    }, 150);
+}
+
+// ============================================================
+// MATERIAL ID COMBOBOX MARKUP HELPER
+// ============================================================
+// Returns the HTML for a Material ID search box with the given
+// prefix, so every form that needs one builds it the same way.
+
+function materialComboboxHtml(prefix, placeholder) {
+
+    return `
+        <div class="combobox">
+
+            <input
+                type="text"
+                id="${prefix}-material-id-search"
+                autocomplete="off"
+                placeholder="${placeholder || "Search by ID or name..."}"
+                oninput="handleMaterialSearchInput('${prefix}')"
+                onfocus="renderMaterialOptions('${prefix}')"
+                onblur="hideMaterialOptionsDelayed('${prefix}')"
+            >
+
+            <input type="hidden" id="${prefix}-material-id">
+
+            <div id="${prefix}-material-id-options"
+                class="combobox-options hidden">
+            </div>
+
+        </div>
+    `;
+}
+
+// ============================================================
 // CREATE MATERIAL
 // ============================================================
 
@@ -2112,25 +2312,21 @@ async function displayMaterials() {
                     Materials
                 </h2>
 
-                <table class="material-table">
+                <table class="material-table material-table-clickable">
 
                     <thead>
 
                         <tr>
 
                             <th>Photo</th>
-                            <th>ID</th>
+                            <th>Material ID</th>
                             <th>Name</th>
-                            <th>Description</th>
                             <th>UoM</th>
-                            <th>Category</th>
-                            <th>Type</th>
                             <th>Drawing Number</th>
                             <th>Manufacturer</th>
                             <th>Mfr Part #</th>
                             <th>Supplier</th>
                             <th>Supplier Part #</th>
-                            <th>Active</th>
 
                         </tr>
 
@@ -2146,7 +2342,9 @@ async function displayMaterials() {
 
             html += `
 
-                <tr>
+                <tr
+                    onclick="showMaterialDetail('${escapeHtml(material.id)}')"
+                    title="Click to view full material details">
 
                     <td>
 
@@ -2171,19 +2369,7 @@ async function displayMaterials() {
                     </td>
 
                     <td>
-                        ${escapeHtml(material.description || "")}
-                    </td>
-
-                    <td>
                         ${escapeHtml(material.uom || "")}
-                    </td>
-
-                    <td>
-                        ${escapeHtml(material.category || "")}
-                    </td>
-
-                    <td>
-                        ${escapeHtml(material.type || "")}
                     </td>
 
                     <td>
@@ -2206,10 +2392,6 @@ async function displayMaterials() {
                         ${escapeHtml(material.supplierPartNumber || "")}
                     </td>
 
-                    <td>
-                        ${material.active ? "Yes" : "No"}
-                    </td>
-
                 </tr>
             `;
         }
@@ -2226,6 +2408,167 @@ async function displayMaterials() {
 
 
         content.innerHTML = html;
+
+        const tableContainer =
+            content.querySelector(".material-table-container");
+
+        if (tableContainer) {
+            tableContainer.scrollLeft = 0;
+        }
+
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `
+            <p>
+                Could not connect to the server.
+            </p>
+        `;
+    }
+}
+
+// ============================================================
+// MATERIAL DETAIL DASHBOARD
+// ============================================================
+
+async function showMaterialDetail(id) {
+
+    const content =
+        document.getElementById(
+            "material-content"
+        );
+
+    content.innerHTML = `
+        <p>Loading material...</p>
+    `;
+
+
+    try {
+
+        const response =
+            await fetch(
+                `/api/materials/${encodeURIComponent(id)}`
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (!response.ok) {
+
+            content.innerHTML = `
+                <p>
+                    ${escapeHtml(data.message || "Material not found.")}
+                </p>
+
+                <div class="module-buttons">
+                    <button onclick="displayMaterials()">
+                        ← Back to Materials
+                    </button>
+                </div>
+            `;
+
+            return;
+        }
+
+
+        content.innerHTML = `
+
+            <div class="material-detail">
+
+                <div class="module-buttons material-detail-back">
+                    <button onclick="displayMaterials()">
+                        ← Back to Materials
+                    </button>
+                </div>
+
+                <div class="material-detail-header">
+
+                    <div class="material-detail-photo">
+                        ${
+                            data.photo
+                            ? `<img
+                                    src="/${data.photo}"
+                                    alt="Material photo"
+                               >`
+                            : `<div class="material-detail-photo-placeholder">
+                                    No photo
+                               </div>`
+                        }
+                    </div>
+
+                    <div class="material-detail-title">
+
+                        <h2>
+                            ${escapeHtml(data.name)}
+                        </h2>
+
+                        <p class="material-detail-id">
+                            ${escapeHtml(data.id)}
+                        </p>
+
+                        <span class="status-badge ${data.active ? "status-active" : "status-inactive"}">
+                            ${data.active ? "Active" : "Inactive"}
+                        </span>
+
+                    </div>
+
+                </div>
+
+                <div class="material-detail-grid">
+
+                    <div class="detail-field">
+                        <div class="detail-label">Description</div>
+                        <div class="detail-value">${escapeHtml(data.description || "—")}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Unit of Measure</div>
+                        <div class="detail-value">${escapeHtml(data.uom || "—")}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Category</div>
+                        <div class="detail-value">${escapeHtml(data.category || "—")}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Type</div>
+                        <div class="detail-value">${escapeHtml(data.type || "—")}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Drawing Number</div>
+                        <div class="detail-value">${escapeHtml(data.drawingNumber || "—")}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Manufacturer</div>
+                        <div class="detail-value">${escapeHtml(data.manufacturer || "—")}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Manufacturer Part Number</div>
+                        <div class="detail-value">${escapeHtml(data.manufacturerPartNumber || "—")}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Supplier</div>
+                        <div class="detail-value">${escapeHtml(data.supplier || "—")}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Supplier Part Number</div>
+                        <div class="detail-value">${escapeHtml(data.supplierPartNumber || "—")}</div>
+                    </div>
+
+                </div>
+
+            </div>
+        `;
 
     }
     catch (error) {
@@ -2263,12 +2606,7 @@ function showSearchMaterial() {
                 Material ID
             </label>
 
-            <input
-                type="text"
-                id="search-material-id"
-                placeholder="###-######"
-                maxlength="10"
-            >
+            ${materialComboboxHtml("search")}
 
             <div class="form-actions">
 
@@ -2286,6 +2624,8 @@ function showSearchMaterial() {
 
         </div>
     `;
+
+    initMaterialCombobox("search");
 }
 
 
@@ -2467,12 +2807,7 @@ function showModifyMaterial() {
                 Material ID
             </label>
 
-            <input
-                type="text"
-                id="modify-material-id"
-                placeholder="###-######"
-                maxlength="10"
-            >
+            ${materialComboboxHtml("modify")}
 
             <div class="form-actions">
 
@@ -2490,6 +2825,8 @@ function showModifyMaterial() {
 
         </div>
     `;
+
+    initMaterialCombobox("modify");
 }
 
 // ============================================================
@@ -2516,12 +2853,7 @@ function showDeleteMaterial() {
                 Material ID
             </label>
 
-            <input
-                type="text"
-                id="delete-material-id"
-                placeholder="###-######"
-                maxlength="10"
-            >
+            ${materialComboboxHtml("delete")}
 
 
             <div class="form-actions">
@@ -2541,6 +2873,8 @@ function showDeleteMaterial() {
 
         </div>
     `;
+
+    initMaterialCombobox("delete");
 }
 
 // ============================================================
@@ -3714,7 +4048,7 @@ function showGoodsReceipt() {
 
     content.innerHTML = `
 
-        <div class="form-container">
+        <div class="form-container form-container-wide">
 
             <h2>
                 Goods Receipt
@@ -3732,28 +4066,30 @@ function showGoodsReceipt() {
             >
 
 
-            <label>
-                Material ID
-            </label>
+            <div class="multi-line-items">
 
-            <input
-                type="text"
-                id="receipt-material-id"
-                placeholder="###-######"
-                maxlength="10"
-            >
+                <div class="multi-line-header">
 
+                    <label>
+                        Materials
+                    </label>
 
-            <label>
-                Quantity
-            </label>
+                    <button
+                        type="button"
+                        class="add-line-button"
+                        onclick="addGoodsLine('receipt')">
 
-            <input
-                type="number"
-                id="receipt-quantity"
-                min="1"
-                placeholder="Enter Quantity"
-            >
+                        + Add Material
+
+                    </button>
+
+                </div>
+
+                <div id="receipt-lines">
+                </div>
+
+            </div>
+
 
             <label>
                 Comment
@@ -3762,7 +4098,7 @@ function showGoodsReceipt() {
             <textarea
                 id="receipt-comment"
                 rows="4"
-                placeholder="Reason or additional information"></textarea>
+                placeholder="General comment for this receipt (applies to all materials above)"></textarea>
 
 
             <div class="form-actions">
@@ -3782,6 +4118,8 @@ function showGoodsReceipt() {
 
         </div>
     `;
+
+    initGoodsLines("receipt");
 }
 
 // ============================================================
@@ -3793,16 +4131,6 @@ async function goodsReceipt() {
     const warehouseID =
         document.getElementById(
             "receipt-warehouse-id"
-        ).value;
-
-    const materialID =
-        document.getElementById(
-            "receipt-material-id"
-        ).value.trim();
-
-    const quantity =
-        document.getElementById(
-            "receipt-quantity"
         ).value;
 
     const comment =
@@ -3820,10 +4148,6 @@ async function goodsReceipt() {
     // Validation
     // --------------------------------------------------------
 
-    const materialIDPattern =
-        /^([0-9]{3}-[0-9]{6}|[0-9]{6}-00)$/;
-
-
     if (!warehouseID) {
 
         message.textContent =
@@ -3833,99 +4157,47 @@ async function goodsReceipt() {
     }
 
 
-    if (!materialIDPattern.test(materialID)) {
+    const lines =
+        collectGoodsLines("receipt", message);
 
-        message.textContent =
-            "Invalid Material ID. Expected format ###-###### or ######-00.";
-
-        return;
-    }
-
-
-    if (!quantity ||
-        Number(quantity) <= 0) {
-
-        message.textContent =
-            "Quantity must be greater than zero.";
-
+    if (!lines) {
         return;
     }
 
 
     // --------------------------------------------------------
-    // Prepare request
+    // Send each line to C++ (same endpoint, one call per
+    // material, sharing the same warehouse and comment)
     // --------------------------------------------------------
 
-    const receipt = {
+    message.textContent =
+        "Processing...";
 
-        warehouseID:
-            Number(warehouseID),
+    const results =
+        await submitGoodsLines(
+            "/api/inventory/receipt",
+            warehouseID,
+            comment,
+            lines
+        );
 
-        materialID:
-            materialID,
+    reportGoodsLinesResult(
+        message,
+        results,
+        "Goods receipt"
+    );
 
-        quantity:
-            Number(quantity),
+    if (results.every(result => result.ok)) {
 
-        comment:
-            comment
+        document.getElementById(
+            "receipt-warehouse-id"
+        ).value = "";
 
-    };
+        document.getElementById(
+            "receipt-comment"
+        ).value = "";
 
-
-    // --------------------------------------------------------
-    // Send to C++
-    // --------------------------------------------------------
-
-    try {
-
-        const response =
-            await fetch(
-                "/api/inventory/receipt",
-                {
-                    method: "POST",
-
-                    headers: {
-                        "Content-Type":
-                            "application/json"
-                    },
-
-                    body:
-                        JSON.stringify(receipt)
-                }
-            );
-
-
-        const responseText =
-            await response.text();
-
-
-        if (response.ok) {
-
-            message.textContent =
-                "Goods receipt completed successfully.";
-
-            clearInputFields([
-                "receipt-warehouse-id",
-                "receipt-material-id",
-                "receipt-quantity",
-                "receipt-comment"
-            ]);
-
-        }
-        else {
-
-            message.textContent =
-                "Error: " + responseText;
-        }
-
-    }
-    catch (error) {
-
-        console.error(error);
-
-        message.textContent =
-            "Could not connect to the server.";
+        initGoodsLines("receipt");
     }
 }
 
@@ -3942,7 +4214,7 @@ function showGoodsIssue() {
 
     content.innerHTML = `
 
-        <div class="form-container">
+        <div class="form-container form-container-wide">
 
             <h2>
                 Goods Issue
@@ -3960,28 +4232,30 @@ function showGoodsIssue() {
             >
 
 
-            <label>
-                Material ID
-            </label>
+            <div class="multi-line-items">
 
-            <input
-                type="text"
-                id="issue-material-id"
-                placeholder="###-######"
-                maxlength="10"
-            >
+                <div class="multi-line-header">
 
+                    <label>
+                        Materials
+                    </label>
 
-            <label>
-                Quantity
-            </label>
+                    <button
+                        type="button"
+                        class="add-line-button"
+                        onclick="addGoodsLine('issue')">
 
-            <input
-                type="number"
-                id="issue-quantity"
-                min="1"
-                placeholder="Enter Quantity"
-            >
+                        + Add Material
+
+                    </button>
+
+                </div>
+
+                <div id="issue-lines">
+                </div>
+
+            </div>
+
 
             <label>
                 Comment
@@ -3990,7 +4264,7 @@ function showGoodsIssue() {
             <textarea
                 id="issue-comment"
                 rows="4"
-                placeholder="Reason or additional information"></textarea>
+                placeholder="General comment for this issue (applies to all materials above)"></textarea>
 
 
             <div class="form-actions">
@@ -4010,6 +4284,8 @@ function showGoodsIssue() {
 
         </div>
     `;
+
+    initGoodsLines("issue");
 }
 
 // ============================================================
@@ -4023,21 +4299,10 @@ async function goodsIssue() {
             "issue-warehouse-id"
         ).value;
 
-    const materialID =
-        document.getElementById(
-            "issue-material-id"
-        ).value.trim();
-
-    const quantity =
-        document.getElementById(
-            "issue-quantity"
-        ).value;
-
     const comment =
         document.getElementById(
             "issue-comment"
         ).value.trim();
-
 
     const message =
         document.getElementById(
@@ -4049,10 +4314,6 @@ async function goodsIssue() {
     // Validation
     // --------------------------------------------------------
 
-    const materialIDPattern =
-        /^([0-9]{3}-[0-9]{6}|[0-9]{6}-00)$/;
-
-
     if (!warehouseID) {
 
         message.textContent =
@@ -4062,99 +4323,322 @@ async function goodsIssue() {
     }
 
 
-    if (!materialIDPattern.test(materialID)) {
+    const lines =
+        collectGoodsLines("issue", message);
 
-        message.textContent =
-            "Invalid Material ID. Expected format ###-###### or ######-00.";
-
-        return;
-    }
-
-
-    if (!quantity ||
-        Number(quantity) <= 0) {
-
-        message.textContent =
-            "Quantity must be greater than zero.";
-
+    if (!lines) {
         return;
     }
 
 
     // --------------------------------------------------------
-    // Prepare request
+    // Send each line to C++ (same endpoint, one call per
+    // material, sharing the same warehouse and comment)
     // --------------------------------------------------------
 
-    const issue = {
+    message.textContent =
+        "Processing...";
 
-        warehouseID:
-            Number(warehouseID),
+    const results =
+        await submitGoodsLines(
+            "/api/inventory/issue",
+            warehouseID,
+            comment,
+            lines
+        );
 
-        materialID:
-            materialID,
+    reportGoodsLinesResult(
+        message,
+        results,
+        "Goods issue"
+    );
 
-        quantity:
-            Number(quantity),
+    if (results.every(result => result.ok)) {
 
-        comment:
-            comment
-    };
+        document.getElementById(
+            "issue-warehouse-id"
+        ).value = "";
 
+        document.getElementById(
+            "issue-comment"
+        ).value = "";
 
-    // --------------------------------------------------------
-    // Send request
-    // --------------------------------------------------------
-
-    try {
-
-        const response =
-            await fetch(
-                "/api/inventory/issue",
-                {
-                    method: "POST",
-
-                    headers: {
-                        "Content-Type":
-                            "application/json"
-                    },
-
-                    body:
-                        JSON.stringify(issue)
-                }
-            );
-
-
-        const responseText =
-            await response.text();
-
-
-        if (response.ok) {
-
-            message.textContent =
-                "Goods issue completed successfully.";
-
-            clearInputFields([
-                "issue-warehouse-id",
-                "issue-material-id",
-                "issue-quantity",
-                "issue-comment"
-            ]);
-
-        }
-        else {
-
-            message.textContent =
-                "Error: " + responseText;
-        }
-
+        initGoodsLines("issue");
     }
-    catch (error) {
+}
 
-        console.error(error);
+// ============================================================
+// GOODS RECEIPT / ISSUE - MULTIPLE MATERIAL LINES
+// ============================================================
+// Both forms let the user add several materials at once under
+// one Warehouse ID and one general Comment. Each line keeps its
+// own Material ID (via the shared combobox) and Quantity. The
+// backend still only knows how to receive/issue one material at
+// a time, so each line is sent as its own request to the same
+// endpoint, reusing the shared warehouse and comment.
+
+let goodsLineCounters = {
+    receipt: 0,
+    issue: 0
+};
+
+function goodsLineRowHtml(type, rowIndex) {
+
+    const prefix =
+        `${type}-line-${rowIndex}`;
+
+    return `
+        <div class="line-item" id="${prefix}-row">
+
+            <div class="line-item-field">
+
+                <label>
+                    Material ID
+                </label>
+
+                ${materialComboboxHtml(prefix)}
+
+            </div>
+
+            <div class="line-item-field line-item-field-qty">
+
+                <label>
+                    Quantity
+                </label>
+
+                <input
+                    type="number"
+                    id="${prefix}-quantity"
+                    min="1"
+                    placeholder="Qty"
+                >
+
+            </div>
+
+            <button
+                type="button"
+                class="remove-line-button"
+                title="Remove this material"
+                onclick="removeGoodsLine('${type}', ${rowIndex})">
+
+                &times;
+
+            </button>
+
+        </div>
+    `;
+}
+
+function initGoodsLines(type) {
+
+    goodsLineCounters[type] = 0;
+
+    const container =
+        document.getElementById(`${type}-lines`);
+
+    if (!container) {
+        return;
+    }
+
+    container.innerHTML = "";
+
+    addGoodsLine(type);
+}
+
+function addGoodsLine(type) {
+
+    const rowIndex =
+        goodsLineCounters[type]++;
+
+    const container =
+        document.getElementById(`${type}-lines`);
+
+    if (!container) {
+        return;
+    }
+
+    container.insertAdjacentHTML(
+        "beforeend",
+        goodsLineRowHtml(type, rowIndex)
+    );
+
+    initMaterialCombobox(`${type}-line-${rowIndex}`);
+}
+
+function removeGoodsLine(type, rowIndex) {
+
+    const container =
+        document.getElementById(`${type}-lines`);
+
+    const row =
+        document.getElementById(`${type}-line-${rowIndex}-row`);
+
+    if (!container || !row) {
+        return;
+    }
+
+    // Always keep at least one line on the form.
+    if (container.children.length <= 1) {
+        return;
+    }
+
+    row.remove();
+}
+
+function collectGoodsLines(type, message) {
+
+    const materialIDPattern =
+        /^([0-9]{3}-[0-9]{6}|[0-9]{6}-00)$/;
+
+    const rows =
+        Array.from(
+            document.querySelectorAll(`#${type}-lines .line-item`)
+        );
+
+    if (rows.length === 0) {
 
         message.textContent =
-            "Could not connect to the server.";
+            "Please add at least one material.";
+
+        return null;
     }
+
+    const lines = [];
+    const seenIDs = new Set();
+
+    for (const row of rows) {
+
+        const materialID =
+            row.querySelector(
+                "input[id$='-material-id']"
+            ).value.trim();
+
+        const quantity =
+            row.querySelector(
+                "input[id$='-quantity']"
+            ).value;
+
+        if (!materialIDPattern.test(materialID)) {
+
+            message.textContent =
+                "Please select a valid Material ID (from the list) for every line.";
+
+            return null;
+        }
+
+        if (!quantity ||
+            Number(quantity) <= 0) {
+
+            message.textContent =
+                `Quantity must be greater than zero for material ${materialID}.`;
+
+            return null;
+        }
+
+        if (seenIDs.has(materialID)) {
+
+            message.textContent =
+                `Material ${materialID} appears more than once. Combine it into a single line.`;
+
+            return null;
+        }
+
+        seenIDs.add(materialID);
+
+        lines.push({
+            materialID: materialID,
+            quantity: Number(quantity)
+        });
+    }
+
+    return lines;
+}
+
+async function submitGoodsLines(endpoint, warehouseID, comment, lines) {
+
+    const results = [];
+
+    for (const line of lines) {
+
+        const payload = {
+
+            warehouseID:
+                Number(warehouseID),
+
+            materialID:
+                line.materialID,
+
+            quantity:
+                line.quantity,
+
+            comment:
+                comment
+        };
+
+        try {
+
+            const response =
+                await fetch(
+                    endpoint,
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body:
+                            JSON.stringify(payload)
+                    }
+                );
+
+            const responseText =
+                await response.text();
+
+            results.push({
+                materialID: line.materialID,
+                ok: response.ok,
+                detail: responseText
+            });
+        }
+        catch (error) {
+
+            console.error(error);
+
+            results.push({
+                materialID: line.materialID,
+                ok: false,
+                detail: "Could not connect to the server."
+            });
+        }
+    }
+
+    return results;
+}
+
+function reportGoodsLinesResult(message, results, label) {
+
+    const succeeded =
+        results.filter(result => result.ok);
+
+    const failed =
+        results.filter(result => !result.ok);
+
+    if (failed.length === 0) {
+
+        message.textContent =
+            `${label} completed successfully for ${succeeded.length} material(s).`;
+
+        return;
+    }
+
+    message.innerHTML =
+        `${succeeded.length} of ${results.length} material(s) processed successfully.<br>` +
+        "Errors:<br>" +
+        failed.map(result =>
+            `${escapeHtml(result.materialID)}: ${escapeHtml(result.detail)}`
+        ).join("<br>");
 }
 
 // ============================================================
@@ -4203,12 +4687,7 @@ function showTransferMaterial() {
                 Material ID
             </label>
 
-            <input
-                type="text"
-                id="transfer-material-id"
-                placeholder="###-######"
-                maxlength="10"
-            >
+            ${materialComboboxHtml("transfer")}
 
 
             <label>
@@ -4248,6 +4727,8 @@ function showTransferMaterial() {
 
         </div>
     `;
+
+    initMaterialCombobox("transfer");
 }
 
 // ============================================================
@@ -4389,6 +4870,7 @@ async function transferMaterial() {
                 "transfer-source",
                 "transfer-destination",
                 "transfer-material-id",
+                "transfer-material-id-search",
                 "transfer-quantity",
                 "transfer-comment"
             ]);

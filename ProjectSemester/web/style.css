@@ -129,7 +129,7 @@ body {
 ============================================================ */
 
 .module-view {
-    max-width: 1100px;
+    max-width: 1300px;
     margin: 40px auto;
     padding: 0 25px;
 }
@@ -170,6 +170,7 @@ body {
 .module-buttons {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 15px;
     margin-top: 30px;
 }
@@ -192,6 +193,39 @@ body {
 
 
 /* ============================================================
+   DATA LOGGING OPTION
+============================================================ */
+
+.data-logging-option {
+    display: flex;
+    align-items: center;
+    padding: 12px 18px;
+    background: #f8fafc;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+}
+
+
+    .data-logging-option label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+        font-size: 15px;
+        font-weight: normal;
+        color: #1f2937;
+        cursor: pointer;
+    }
+
+
+    .data-logging-option input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+    }
+
+
+/* ============================================================
    MATERIAL FORM
 ============================================================ */
 
@@ -201,6 +235,11 @@ body {
     padding: 30px;
     background: #f8fafc;
     border-radius: 10px;
+}
+
+
+.form-container-wide {
+    max-width: 800px;
 }
 
 
@@ -284,6 +323,106 @@ body {
     }
 
 
+/* ============================================================
+   GOODS RECEIPT / ISSUE - MULTIPLE MATERIAL LINES
+============================================================ */
+
+.multi-line-items {
+    margin-top: 18px;
+}
+
+
+.multi-line-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 18px;
+}
+
+
+    .multi-line-header label {
+        margin: 0 !important;
+    }
+
+
+.add-line-button {
+    padding: 8px 14px;
+    border: 1px solid #1f2937;
+    border-radius: 6px;
+    background: white;
+    color: #1f2937;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+
+    .add-line-button:hover {
+        background: #1f2937;
+        color: white;
+    }
+
+
+.line-item {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 14px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+}
+
+
+.line-item-field {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+
+    .line-item-field label {
+        margin-top: 0 !important;
+    }
+
+
+.line-item-field-qty {
+    flex: 0 0 110px;
+}
+
+
+.remove-line-button {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    background: #fee2e2;
+    color: #b91c1c;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+
+    .remove-line-button:hover {
+        background: #fecaca;
+    }
+
+
+@media (max-width: 600px) {
+
+    .line-item {
+        flex-wrap: wrap;
+    }
+
+
+    .line-item-field-qty {
+        flex: 1 1 100%;
+    }
+}
+
+
     .checkbox-group .checkbox-label {
         margin-top: 0 !important;
     }
@@ -349,86 +488,6 @@ footer {
     }
 }
 
-// ============================================================
-// MODULE NAVIGATION
-// ============================================================
-
-function openModule(module) {
-    const dashboard = document.querySelector(".dashboard");
-    const moduleView = document.getElementById("module-view");
-    const content = document.getElementById("module-content");
-    dashboard .style.display = "none";
-    moduleView .classList.remove("hidden");
-    // ======================================================== // MATERIAL MANAGER // ======================================================== if (module === "materials")
-
-{
-    content .innerHTML = ` <h1> Material Manager </h1> <p> Manage materials stored in the system. </p> <div class="module-buttons"> <button onclick="showCreateMaterial()"> Create Material </button> <button> Modify Material </button> <button> Delete Material </button> <button> Search Material </button> <button> Display Materials </button> </div> <div id="material-form"> </div> `;
-}
-
-
-// ========================================================
-// WAREHOUSE MANAGER
-// ========================================================
-
-else if (module === "warehouses") {
-    content .innerHTML = ` <h1> Warehouse Manager </h1> <p> Manage warehouses and storage locations. </p> <div class="module-buttons"> <button> Create Warehouse </button> <button> Delete Warehouse </button> <button> Display Warehouses </button> </div> `;
-}
-
-
-// ========================================================
-// INVENTORY MANAGER
-// ========================================================
-
-else if (module === "inventory") {
-    content .innerHTML = ` <h1> Inventory Manager </h1> <p> Manage material movements and inventory. </p> <div class="module-buttons"> <button> Goods Receipt </button> <button> Goods Issue </button> <button> Transfer Material </button> <button> Display Inventory </button> <button> Inventory Check </button> </div> `;
-}
-
-
-// ========================================================
-// DATA MANAGEMENT
-// ========================================================
-
-else if (module === "data") {
-    content .innerHTML = ` <h1> Data Management </h1> <p> Save and recover system data. </p> <div class="module-buttons"> <button> Save Data </button> <button> Load Data </button> </div> `;
-}
-
-}
-
-
-// ============================================================
-// CREATE MATERIAL FORM
-// ============================================================
-
-function showCreateMaterial() {
-    const form = document.getElementById("material-form");
-    form .innerHTML = ` <div class="form-container"> <h2> Create Material </h2>
-    <!-- MATERIAL ID -->
-    <label> Material ID </label> <input type="number" id="material-id" placeholder="Enter Material ID" >
-    <!-- MATERIAL NAME -->
-    <label> Material Name </label> <input type="text" id="material-name" placeholder="Enter Material Name" >
-    <!-- UNIT OF MEASURE -->
-    <label> Unit of Measure </label> <input type="text" id="material-uom" value="pcs" placeholder="pcs" >
-    <!-- CATEGORY -->
-    <label> Category </label> <input type="text" id="material-category" placeholder="Enter Category" >
-    <!-- SUPPLIER -->
-    <label> Supplier </label> <input type="text" id="material-supplier" placeholder="Enter Supplier" >
-    <!-- CREATE BUTTON -->
-    <div class="form-actions"> <button onclick="createMaterial()"> Create Material </button> </div>
-    <!-- MESSAGE -->
-    <div id="material-message"> </div> </div> `;
-}
-
-// ============================================================
-// BACK TO DASHBOARD
-// ============================================================
-
-function closeModule() {
-    const dashboard = document.querySelector(".dashboard");
-    const moduleView = document.getElementById("module-view");
-    moduleView .classList.add("hidden");
-    dashboard .style.display = "grid";
-}
-
 /* ============================================================
    MATERIAL TABLE
 ============================================================ */
@@ -449,19 +508,21 @@ function closeModule() {
     width: 100%;
     border-collapse: collapse;
     background: white;
+    font-size: 14px;
 }
 
 
     .material-table th {
         background: #1f2937;
         color: white;
-        padding: 14px;
+        padding: 10px 12px;
         text-align: left;
+        white-space: nowrap;
     }
 
 
     .material-table td {
-        padding: 14px;
+        padding: 8px 12px;
         border-bottom: 1px solid #e5e7eb;
     }
 
@@ -557,10 +618,139 @@ function closeModule() {
 ============================================================ */
 
 .material-thumbnail {
-    width: 60px;
-    height: 60px;
+    width: 44px;
+    height: 44px;
     object-fit: cover;
     border-radius: 6px;
     border: 1px solid #d1d5db;
     display: block;
+}
+
+/* ============================================================
+   CLICKABLE MATERIAL ROWS
+============================================================ */
+
+.material-table-clickable tbody tr {
+    cursor: pointer;
+}
+
+/* ============================================================
+   MATERIAL DETAIL DASHBOARD
+============================================================ */
+
+.material-detail {
+    margin-top: 10px;
+}
+
+
+.material-detail-back {
+    margin-top: 0;
+    margin-bottom: 25px;
+}
+
+
+.material-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 30px;
+    margin-bottom: 30px;
+    padding-bottom: 25px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+
+.material-detail-photo img,
+.material-detail-photo-placeholder {
+    width: 140px;
+    height: 140px;
+    border-radius: 10px;
+    border: 1px solid #d1d5db;
+    object-fit: cover;
+    display: flex;
+}
+
+
+.material-detail-photo-placeholder {
+    align-items: center;
+    justify-content: center;
+    background: #f8fafc;
+    color: #6b7280;
+    font-size: 14px;
+    text-align: center;
+}
+
+
+.material-detail-title h2 {
+    margin: 0 0 6px;
+}
+
+
+.material-detail-id {
+    margin: 0 0 12px;
+    color: #6b7280;
+    font-size: 15px;
+}
+
+
+.status-badge {
+    display: inline-block;
+    padding: 5px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+
+.status-active {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+
+.status-inactive {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+
+.material-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px 40px;
+}
+
+
+.detail-field {
+    padding-bottom: 12px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+
+.detail-label {
+    font-size: 13px;
+    font-weight: bold;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+
+.detail-value {
+    font-size: 16px;
+    color: #1f2937;
+}
+
+
+@media (max-width: 750px) {
+
+    .material-detail-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+
+    .material-detail-grid {
+        grid-template-columns: 1fr;
+    }
 }
