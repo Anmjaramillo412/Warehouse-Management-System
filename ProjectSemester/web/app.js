@@ -233,6 +233,39 @@ function openModule(module) {
     }
 
     // ========================================================
+    // PROCUREMENT
+    // ========================================================
+
+    else if (module === "procurement") {
+
+        content.innerHTML = `
+
+            <h1>
+                Procurement
+            </h1>
+
+            <p>
+                Project production needs and manage purchase orders.
+            </p>
+
+            <div class="module-buttons">
+
+                <button onclick="showProjection()">
+                    Production Projection
+                </button>
+
+                <button onclick="showProcurementOrders()">
+                    Procurement Orders
+                </button>
+
+            </div>
+
+            <div id="procurement-content">
+            </div>
+        `;
+    }
+
+    // ========================================================
     // DATA MANAGEMENT
     // ========================================================
 
@@ -6241,4 +6274,1112 @@ function closeModule() {
 
     dashboard.style.display =
         "grid";
+}
+
+// ============================================================
+// PRODUCT SEARCH COMBOBOX
+// ============================================================
+// Same pattern as the Material combobox, used by Production
+// Projection to pick a Product by ID or name.
+
+let productCache = null;
+
+async function loadProductCache(forceRefresh) {
+
+    if (productCache && !forceRefresh) {
+        return productCache;
+    }
+
+    try {
+
+        const response =
+            await fetch("/api/products");
+
+        const data =
+            await response.json();
+
+        productCache =
+            data.products || [];
+    }
+    catch (error) {
+
+        console.error(error);
+
+        productCache = [];
+    }
+
+    return productCache;
+}
+
+async function initProductCombobox(prefix, selectedID) {
+
+    await loadProductCache(true);
+
+    const hiddenInput =
+        document.getElementById(prefix + "-product-id");
+
+    const searchInput =
+        document.getElementById(prefix + "-product-id-search");
+
+    if (!hiddenInput || !searchInput) {
+        return;
+    }
+
+    hiddenInput.value = selectedID || "";
+    searchInput.value = selectedID || "";
+}
+
+function renderProductOptions(prefix) {
+
+    const searchInput =
+        document.getElementById(prefix + "-product-id-search");
+
+    const optionsBox =
+        document.getElementById(prefix + "-product-id-options");
+
+    if (!searchInput || !optionsBox) {
+        return;
+    }
+
+    const filterText =
+        searchInput.value.trim().toLowerCase();
+
+    const products =
+        productCache || [];
+
+    const matches =
+        products.filter(product =>
+            product.id.toLowerCase().includes(filterText) ||
+            (product.name || "").toLowerCase().includes(filterText)
+        );
+
+    if (matches.length === 0) {
+
+        optionsBox.innerHTML = `
+            <div class="combobox-option combobox-empty">
+                No products found
+            </div>
+        `;
+    }
+    else {
+
+        optionsBox.innerHTML =
+            matches.map(product => `
+                <div class="combobox-option"
+                    onmousedown="selectProductOption('${prefix}', '${escapeHtml(product.id)}')">
+                    <strong>${escapeHtml(product.id)}</strong>
+                    &nbsp;&mdash;&nbsp;${escapeHtml(product.name)}
+                </div>
+            `).join("");
+    }
+
+    optionsBox.classList.remove("hidden");
+}
+
+function handleProductSearchInput(prefix) {
+
+    renderProductOptions(prefix);
+
+    const searchInput =
+        document.getElementById(prefix + "-product-id-search");
+
+    const hiddenInput =
+        document.getElementById(prefix + "-product-id");
+
+    const products =
+        productCache || [];
+
+    const typedText =
+        searchInput.value.trim();
+
+    const exactMatch =
+        products.find(product =>
+            product.id === typedText
+        );
+
+    hiddenInput.value =
+        exactMatch ? exactMatch.id : "";
+}
+
+function selectProductOption(prefix, id) {
+
+    document.getElementById(
+        prefix + "-product-id"
+    ).value = id;
+
+    document.getElementById(
+        prefix + "-product-id-search"
+    ).value = id;
+
+    document.getElementById(
+        prefix + "-product-id-options"
+    ).classList.add("hidden");
+}
+
+function hideProductOptionsDelayed(prefix) {
+
+    setTimeout(() => {
+
+        const optionsBox =
+            document.getElementById(prefix + "-product-id-options");
+
+        if (optionsBox) {
+            optionsBox.classList.add("hidden");
+        }
+
+    }, 150);
+}
+
+function productComboboxHtml(prefix, placeholder) {
+
+    return `
+        <div class="combobox">
+
+            <input
+                type="text"
+                id="${prefix}-product-id-search"
+                autocomplete="off"
+                placeholder="${placeholder || "Search by ID or name..."}"
+                oninput="handleProductSearchInput('${prefix}')"
+                onfocus="renderProductOptions('${prefix}')"
+                onblur="hideProductOptionsDelayed('${prefix}')"
+            >
+
+            <input type="hidden" id="${prefix}-product-id">
+
+            <div id="${prefix}-product-id-options"
+                class="combobox-options hidden">
+            </div>
+
+        </div>
+    `;
+}
+
+// ============================================================
+// PRODUCTION PROJECTION - FORM
+// ============================================================
+
+function showProjection() {
+
+    const content =
+        document.getElementById(
+            "procurement-content"
+        );
+
+    content.innerHTML = `
+
+        <div class="form-container form-container-wide">
+
+            <h2>
+                Production Projection
+            </h2>
+
+            <label>
+                Product
+            </label>
+
+            ${productComboboxHtml("projection")}
+
+            <label>
+                Warehouse ID (destination for orders placed below)
+            </label>
+
+            <input
+                type="number"
+                id="projection-warehouse-id"
+                placeholder="Enter Warehouse ID"
+            >
+
+            <label>
+                Manufacturing Deadline
+            </label>
+
+            <input
+                type="date"
+                id="projection-deadline"
+            >
+
+            <label>
+                Quantity to Manufacture
+            </label>
+
+            <input
+                type="number"
+                id="projection-quantity"
+                min="1"
+                placeholder="Enter Quantity"
+            >
+
+            <div class="form-actions">
+
+                <button
+                    onclick="calculateProjection()">
+
+                    Calculate Needs
+
+                </button>
+
+            </div>
+
+            <div id="projection-message">
+            </div>
+
+            <div id="projection-result">
+            </div>
+
+        </div>
+    `;
+
+    initProductCombobox("projection");
+}
+
+// ============================================================
+// PRODUCTION PROJECTION - CALCULATE
+// ============================================================
+// BOM quantity x units to manufacture, minus current stock
+// (summed across every warehouse), for every component of the
+// selected Product. Purely a read of /api/products + /api/
+// materials + /api/inventory - no backend change needed for this
+// part.
+
+async function calculateProjection() {
+
+    const productID =
+        document.getElementById(
+            "projection-product-id"
+        ).value.trim();
+
+    const warehouseID =
+        document.getElementById(
+            "projection-warehouse-id"
+        ).value;
+
+    const quantity =
+        document.getElementById(
+            "projection-quantity"
+        ).value;
+
+    const message =
+        document.getElementById(
+            "projection-message"
+        );
+
+    const result =
+        document.getElementById(
+            "projection-result"
+        );
+
+    result.innerHTML = "";
+
+
+    if (!productID) {
+
+        message.textContent =
+            "Please select a valid Product from the list.";
+
+        return;
+    }
+
+    if (!warehouseID) {
+
+        message.textContent =
+            "Please enter a Warehouse ID.";
+
+        return;
+    }
+
+    if (!quantity ||
+        Number(quantity) <= 0) {
+
+        message.textContent =
+            "Quantity to Manufacture must be greater than zero.";
+
+        return;
+    }
+
+
+    message.textContent =
+        "Calculating...";
+
+
+    try {
+
+        const [productsResponse, inventoryResponse, materialsResponse] =
+            await Promise.all([
+                fetch("/api/products"),
+                fetch("/api/inventory"),
+                fetch("/api/materials")
+            ]);
+
+        const productsData =
+            await productsResponse.json();
+
+        const inventoryData =
+            await inventoryResponse.json();
+
+        const materialsData =
+            await materialsResponse.json();
+
+
+        const product =
+            (productsData.products || []).find(
+                p => p.id === productID
+            );
+
+        if (!product) {
+
+            message.textContent =
+                "Product not found.";
+
+            return;
+        }
+
+        if (!product.bom ||
+            product.bom.length === 0) {
+
+            message.textContent =
+                "This product has no Bill of Materials.";
+
+            return;
+        }
+
+
+        // Sum stock per material across every warehouse
+
+        const stockByMaterial = {};
+
+        for (const warehouse of (inventoryData.warehouses || [])) {
+
+            for (const item of (warehouse.inventory || [])) {
+
+                stockByMaterial[item.materialID] =
+                    (stockByMaterial[item.materialID] || 0) +
+                    item.quantity;
+            }
+        }
+
+
+        const materialsByID = {};
+
+        for (const material of (materialsData.materials || [])) {
+            materialsByID[material.id] = material;
+        }
+
+
+        const manufactureQty =
+            Number(quantity);
+
+        const shortfalls = [];
+
+        for (const bomItem of product.bom) {
+
+            const required =
+                bomItem.quantity * manufactureQty;
+
+            const inStock =
+                stockByMaterial[bomItem.materialID] || 0;
+
+            const shortfall =
+                Math.max(0, required - inStock);
+
+            if (shortfall > 0) {
+
+                shortfalls.push({
+                    materialID: bomItem.materialID,
+                    material: materialsByID[bomItem.materialID] || {},
+                    required: required,
+                    inStock: inStock,
+                    shortfall: shortfall
+                });
+            }
+        }
+
+
+        message.textContent = "";
+
+
+        if (shortfalls.length === 0) {
+
+            result.innerHTML = `
+                <div class="empty-message">
+                    Enough stock for all materials - nothing to order.
+                </div>
+            `;
+
+            return;
+        }
+
+
+        let html = `
+
+            <div class="material-table-container">
+
+                <h2>
+                    Materials to Order
+                </h2>
+
+                <table class="material-table">
+
+                    <thead>
+
+                        <tr>
+                            <th>Photo</th>
+                            <th>Material ID</th>
+                            <th>Name</th>
+                            <th>UoM</th>
+                            <th>In Stock</th>
+                            <th>Needed</th>
+                            <th>Shortfall</th>
+                            <th>Order Date</th>
+                            <th>Qty to Order</th>
+                            <th></th>
+                        </tr>
+
+                    </thead>
+
+                    <tbody>
+        `;
+
+
+        for (const line of shortfalls) {
+
+            const rowID =
+                "proj-" + line.materialID;
+
+            html += `
+
+                <tr id="${rowID}-row">
+
+                    <td>
+                        ${
+                            line.material.photo
+                            ? `<img
+                                    src="/${line.material.photo}"
+                                    class="material-thumbnail"
+                                    alt="Material photo"
+                               >`
+                            : "No photo"
+                        }
+                    </td>
+
+                    <td>${escapeHtml(line.materialID)}</td>
+                    <td>${escapeHtml(line.material.name || "")}</td>
+                    <td>${escapeHtml(line.material.uom || "")}</td>
+                    <td>${line.inStock}</td>
+                    <td>${line.required}</td>
+                    <td><strong>${line.shortfall}</strong></td>
+
+                    <td>
+                        <input type="date" id="${rowID}-date">
+                    </td>
+
+                    <td>
+                        <input
+                            type="number"
+                            min="1"
+                            id="${rowID}-qty"
+                            value="${line.shortfall}"
+                        >
+                    </td>
+
+                    <td>
+                        <button
+                            type="button"
+                            onclick="registerProcurementOrder('${escapeHtml(line.materialID)}', '${escapeHtml(productID)}')">
+
+                            Register Order
+
+                        </button>
+                    </td>
+
+                </tr>
+            `;
+        }
+
+
+        html += `
+
+                    </tbody>
+
+                </table>
+
+            </div>
+        `;
+
+        result.innerHTML = html;
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
+    }
+}
+
+// ============================================================
+// PRODUCTION PROJECTION - REGISTER ORDER
+// ============================================================
+
+async function registerProcurementOrder(materialID, productID) {
+
+    const rowID =
+        "proj-" + materialID;
+
+    const warehouseID =
+        document.getElementById(
+            "projection-warehouse-id"
+        ).value;
+
+    const orderDate =
+        document.getElementById(
+            rowID + "-date"
+        ).value;
+
+    const quantity =
+        document.getElementById(
+            rowID + "-qty"
+        ).value;
+
+    const message =
+        document.getElementById(
+            "projection-message"
+        );
+
+    const row =
+        document.getElementById(
+            rowID + "-row"
+        );
+
+
+    if (!warehouseID) {
+
+        message.textContent =
+            "Please enter a Warehouse ID at the top of the form.";
+
+        return;
+    }
+
+    if (!orderDate) {
+
+        message.textContent =
+            `Please enter an Order Date for material ${materialID}.`;
+
+        return;
+    }
+
+    if (!quantity ||
+        Number(quantity) <= 0) {
+
+        message.textContent =
+            `Quantity to Order must be greater than zero for material ${materialID}.`;
+
+        return;
+    }
+
+
+    const payload = {
+
+        productID: productID,
+
+        materialID: materialID,
+
+        warehouseID: Number(warehouseID),
+
+        orderDate: orderDate,
+
+        orderedQuantity: Number(quantity),
+
+        comment: ""
+    };
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/procurement/create",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify(payload)
+                }
+            );
+
+        const responseText =
+            await response.text();
+
+        if (response.ok) {
+
+            message.textContent = "";
+
+            if (row) {
+
+                row.innerHTML = `
+                    <td colspan="10">
+                        &#10003; Order registered for
+                        ${escapeHtml(materialID)}
+                    </td>
+                `;
+            }
+        }
+        else {
+
+            message.textContent =
+                "Error: " + responseText;
+        }
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
+    }
+}
+
+// ============================================================
+// PROCUREMENT ORDERS - LIST
+// ============================================================
+
+async function showProcurementOrders() {
+
+    const content =
+        document.getElementById(
+            "procurement-content"
+        );
+
+    content.innerHTML = `
+        <p>Loading Procurement Orders...</p>
+    `;
+
+    await displayProcurementOrders();
+}
+
+async function displayProcurementOrders() {
+
+    const content =
+        document.getElementById(
+            "procurement-content"
+        );
+
+    try {
+
+        const response =
+            await fetch("/api/procurement");
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            content.innerHTML = `
+                <p>Error: ${escapeHtml(errorMessage)}</p>
+            `;
+
+            return;
+        }
+
+        const data =
+            await response.json();
+
+        const orders =
+            data.orders || [];
+
+        if (orders.length === 0) {
+
+            content.innerHTML = `
+                <div class="empty-message">
+                    No Procurement Orders yet.
+                </div>
+            `;
+
+            return;
+        }
+
+        let html =
+            `<div class="procurement-list">`;
+
+        for (const order of orders) {
+            html += renderProcurementCard(order);
+        }
+
+        html += `</div>`;
+
+        content.innerHTML = html;
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `
+            <p>Could not connect to the server.</p>
+        `;
+    }
+}
+
+// ============================================================
+// PROCUREMENT ORDERS - STATUS BADGE CLASS
+// ============================================================
+
+function procurementStatusClass(status) {
+
+    if (status === "Completed") {
+        return "status-completed";
+    }
+
+    if (status === "Partially Received") {
+        return "status-partial";
+    }
+
+    if (status === "Confirmed") {
+        return "status-confirmed";
+    }
+
+    return "status-ordered";
+}
+
+// ============================================================
+// PROCUREMENT ORDERS - CARD MARKUP
+// ============================================================
+
+function renderProcurementCard(order) {
+
+    const pending =
+        order.pendingQuantity;
+
+    const canReceive =
+        pending > 0;
+
+    let receiptsHtml = "";
+
+    if (order.receipts &&
+        order.receipts.length > 0) {
+
+        receiptsHtml = `
+            <div class="procurement-receipts">
+
+                <div class="detail-label">
+                    Receipt History
+                </div>
+
+                ${order.receipts.map(receipt => `
+                    <div class="procurement-receipt-row">
+                        ${escapeHtml(receipt.receiptDate)}
+                        &mdash;
+                        ${receipt.receivedQuantity}
+                        ${receipt.comment
+                            ? "(" + escapeHtml(receipt.comment) + ")"
+                            : ""}
+                    </div>
+                `).join("")}
+
+            </div>
+        `;
+    }
+
+    return `
+
+        <div class="procurement-card" id="order-${order.id}">
+
+            <div class="procurement-card-header">
+
+                <div>
+                    <strong>${escapeHtml(order.id)}</strong>
+                    &mdash;
+                    ${escapeHtml(order.materialID)}
+                    ${escapeHtml(order.materialName || "")}
+                </div>
+
+                <span class="status-badge ${procurementStatusClass(order.status)}">
+                    ${escapeHtml(order.status)}
+                </span>
+
+            </div>
+
+            <div class="material-detail-grid procurement-grid">
+
+                <div class="detail-field">
+                    <div class="detail-label">Warehouse</div>
+                    <div class="detail-value">${order.warehouseID}</div>
+                </div>
+
+                <div class="detail-field">
+                    <div class="detail-label">Order Date</div>
+                    <div class="detail-value">${escapeHtml(order.orderDate)}</div>
+                </div>
+
+                <div class="detail-field">
+                    <div class="detail-label">Ordered Qty</div>
+                    <div class="detail-value">${order.orderedQuantity}</div>
+                </div>
+
+                <div class="detail-field">
+                    <div class="detail-label">Received / Pending</div>
+                    <div class="detail-value">${order.totalReceivedQuantity} / ${pending}</div>
+                </div>
+
+            </div>
+
+            <div class="procurement-section">
+
+                <div class="detail-label">
+                    Confirmation
+                </div>
+
+                <div class="procurement-inline-form">
+
+                    <input
+                        type="date"
+                        id="${order.id}-confirm-date"
+                        value="${escapeHtml(order.confirmationDate || "")}"
+                    >
+
+                    <input
+                        type="number"
+                        min="1"
+                        id="${order.id}-confirm-qty"
+                        placeholder="Confirmed Qty"
+                        value="${order.confirmedQuantity > 0 ? order.confirmedQuantity : ""}"
+                    >
+
+                    <button
+                        type="button"
+                        onclick="saveProcurementConfirmation('${order.id}')">
+
+                        Save Confirmation
+
+                    </button>
+
+                </div>
+
+            </div>
+
+            ${canReceive ? `
+
+                <div class="procurement-section">
+
+                    <div class="detail-label">
+                        Add Receipt
+                    </div>
+
+                    <div class="procurement-inline-form">
+
+                        <input
+                            type="date"
+                            id="${order.id}-receipt-date"
+                        >
+
+                        <input
+                            type="number"
+                            min="1"
+                            id="${order.id}-receipt-qty"
+                            placeholder="Received Qty"
+                        >
+
+                        <input
+                            type="text"
+                            id="${order.id}-receipt-comment"
+                            placeholder="Comment (optional)"
+                        >
+
+                        <button
+                            type="button"
+                            onclick="saveProcurementReceipt('${order.id}')">
+
+                            Material Receipt
+
+                        </button>
+
+                    </div>
+
+                </div>
+
+            ` : ""}
+
+            ${receiptsHtml}
+
+            <div id="${order.id}-message" class="procurement-card-message">
+            </div>
+
+        </div>
+    `;
+}
+
+// ============================================================
+// PROCUREMENT ORDERS - SAVE CONFIRMATION
+// ============================================================
+
+async function saveProcurementConfirmation(id) {
+
+    const confirmationDate =
+        document.getElementById(
+            id + "-confirm-date"
+        ).value;
+
+    const confirmedQuantity =
+        document.getElementById(
+            id + "-confirm-qty"
+        ).value;
+
+    const message =
+        document.getElementById(
+            id + "-message"
+        );
+
+
+    if (!confirmationDate) {
+
+        message.textContent =
+            "Please enter a Confirmation Date.";
+
+        return;
+    }
+
+    if (!confirmedQuantity ||
+        Number(confirmedQuantity) <= 0) {
+
+        message.textContent =
+            "Confirmed Quantity must be greater than zero.";
+
+        return;
+    }
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/procurement/confirm",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        id: id,
+                        confirmationDate: confirmationDate,
+                        confirmedQuantity: Number(confirmedQuantity)
+                    })
+                }
+            );
+
+        const responseText =
+            await response.text();
+
+        if (response.ok) {
+
+            await displayProcurementOrders();
+        }
+        else {
+
+            message.textContent =
+                "Error: " + responseText;
+        }
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
+    }
+}
+
+// ============================================================
+// PROCUREMENT ORDERS - SAVE RECEIPT (triggers Goods Receipt)
+// ============================================================
+
+async function saveProcurementReceipt(id) {
+
+    const receiptDate =
+        document.getElementById(
+            id + "-receipt-date"
+        ).value;
+
+    const receivedQuantity =
+        document.getElementById(
+            id + "-receipt-qty"
+        ).value;
+
+    const comment =
+        document.getElementById(
+            id + "-receipt-comment"
+        ).value.trim();
+
+    const message =
+        document.getElementById(
+            id + "-message"
+        );
+
+
+    if (!receiptDate) {
+
+        message.textContent =
+            "Please enter a Receipt Date.";
+
+        return;
+    }
+
+    if (!receivedQuantity ||
+        Number(receivedQuantity) <= 0) {
+
+        message.textContent =
+            "Received Quantity must be greater than zero.";
+
+        return;
+    }
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/procurement/receive",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        id: id,
+                        receiptDate: receiptDate,
+                        receivedQuantity: Number(receivedQuantity),
+                        comment: comment
+                    })
+                }
+            );
+
+        const responseText =
+            await response.text();
+
+        if (response.ok) {
+
+            await displayProcurementOrders();
+        }
+        else {
+
+            message.textContent =
+                "Error: " + responseText;
+        }
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
+    }
 }

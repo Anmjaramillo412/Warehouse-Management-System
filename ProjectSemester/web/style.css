@@ -713,6 +713,30 @@ footer {
 }
 
 
+.status-ordered {
+    background: #e5e7eb;
+    color: #374151;
+}
+
+
+.status-confirmed {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+
+.status-partial {
+    background: #fef3c7;
+    color: #b45309;
+}
+
+
+.status-completed {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+
 .material-detail-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -751,6 +775,124 @@ footer {
 
 
     .material-detail-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+
+/* ============================================================
+   PROCUREMENT
+============================================================ */
+
+.procurement-list {
+    margin-top: 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+
+.procurement-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 20px 25px;
+}
+
+
+.procurement-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding-bottom: 15px;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+
+.procurement-grid {
+    grid-template-columns: repeat(4, 1fr);
+    margin-bottom: 10px;
+}
+
+
+.procurement-section {
+    margin-top: 18px;
+    padding-top: 15px;
+    border-top: 1px solid #f1f5f9;
+}
+
+
+.procurement-inline-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+
+    .procurement-inline-form input {
+        width: auto;
+        min-width: 130px;
+        padding: 10px 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 14px;
+        font-family: Arial, Helvetica, sans-serif;
+    }
+
+
+    .procurement-inline-form button {
+        padding: 10px 16px;
+        border: none;
+        border-radius: 6px;
+        background: #1f2937;
+        color: white;
+        cursor: pointer;
+        font-size: 14px;
+    }
+
+
+    .procurement-inline-form button:hover {
+        background: #374151;
+    }
+
+
+.procurement-receipts {
+    margin-top: 15px;
+    padding-top: 12px;
+    border-top: 1px solid #f1f5f9;
+}
+
+
+.procurement-receipt-row {
+    font-size: 14px;
+    color: #374151;
+    padding: 3px 0;
+}
+
+
+.procurement-card-message {
+    margin-top: 10px;
+    font-weight: bold;
+    color: #b91c1c;
+}
+
+
+@media (max-width: 750px) {
+
+    .procurement-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+
+@media (max-width: 500px) {
+
+    .procurement-grid {
         grid-template-columns: 1fr;
     }
 }
