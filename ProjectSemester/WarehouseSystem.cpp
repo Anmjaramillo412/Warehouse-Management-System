@@ -6,10 +6,13 @@
 // ================================================================
 
 WarehouseSystem::WarehouseSystem()
-    : productManager(&materialManager), 
+    : productManager(&materialManager),
     inventoryManager(
         &warehouseManager,
-        &movementLogger)
+        &movementLogger),
+    procurementManager(
+        &materialManager,
+        &inventoryManager)
 {
     dataManager.setMovementLogger(
         &movementLogger);
@@ -85,6 +88,16 @@ MovementLogger&
 WarehouseSystem::getMovementLogger()
 {
     return movementLogger;
+}
+
+// ================================================================
+// PROCUREMENT MANAGER
+// ================================================================
+
+ProcurementManager&
+WarehouseSystem::getProcurementManager()
+{
+    return procurementManager;
 }
 
 // ================================================================

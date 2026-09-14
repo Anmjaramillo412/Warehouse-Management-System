@@ -2798,6 +2798,496 @@ void WebServer::run()
             });
 
 // ============================================================
+// PROCUREMENT - LIST
+// ============================================================
+
+    CROW_ROUTE(app, "/api/procurement")
+        ([warehouseSystem]()
+            {
+                crow::json::wvalue response;
+
+                crow::json::wvalue::list orderList;
+
+
+                ProcurementManager& procurementManager =
+                    warehouseSystem->getProcurementManager();
+
+                MaterialManager& materialManager =
+                    warehouseSystem->getMaterialManager();
+
+
+                for (const auto& order :
+                    procurementManager.getOrders())
+                {
+                    crow::json::wvalue item;
+
+                    item["id"] =
+                        order->getID();
+
+                    item["productID"] =
+                        order->getProductID();
+
+                    item["materialID"] =
+                        order->getMaterialID();
+
+
+                    Material* material =
+                        materialManager.findMaterial(
+                            order->getMaterialID());
+
+                    item["materialName"] =
+                        (material != nullptr) ?
+                        material->getName() : "";
+
+
+                    item["warehouseID"] =
+                        order->getWarehouseID();
+
+                    item["orderDate"] =
+                        order->getOrderDate();
+
+                    item["orderedQuantity"] =
+                        order->getOrderedQuantity();
+
+                    item["comment"] =
+                        order->getComment();
+
+                    item["confirmationDate"] =
+                        order->getConfirmationDate();
+
+                    item["confirmedQuantity"] =
+                        order->getConfirmedQuantity();
+
+                    item["totalReceivedQuantity"] =
+                        order->getTotalReceivedQuantity();
+
+                    item["pendingQuantity"] =
+                        order->getPendingQuantity();
+
+                    item["status"] =
+                        order->getStatus();
+
+
+                    crow::json::wvalue::list receiptList;
+
+                    for (const auto& receipt :
+                        order->getReceipts())
+                    {
+                        crow::json::wvalue r;
+
+                        r["receiptDate"] =
+                            receipt.receiptDate;
+
+                        r["receivedQuantity"] =
+                            receipt.receivedQuantity;
+
+                        r["comment"] =
+                            receipt.comment;
+
+                        receiptList.push_back(
+                            std::move(r));
+                    }
+
+                    item["receipts"] =
+                        std::move(receiptList);
+
+
+                    orderList.push_back(
+                        std::move(item));
+                }
+
+
+                response["orders"] =
+                    std::move(orderList);
+
+
+                return response;
+            });
+
+// ============================================================
+// PROCUREMENT - CREATE ORDER
+// ============================================================
+
+    CROW_ROUTE(app, "/api/procurement/create")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+
+                    // ------------------------------------------------
+                    // Read data
+                    // ------------------------------------------------
+
+                    string productID = "";
+
+                    if (body.has("productID"))
+                    {
+                        productID =
+                            body["productID"].s();
+                    }
+
+                    string materialID =
+                        body["materialID"].s();
+
+                    int warehouseID =
+                        body["warehouseID"].i();
+
+                    string orderDate =
+                        body["orderDate"].s();
+
+                    int orderedQuantity =
+                        body["orderedQuantity"].i();
+
+                    string comment = "";
+
+                    if (body.has("comment"))
+                    {
+                        comment =
+                            body["comment"].s();
+                    }
+
+
+                    // ------------------------------------------------
+                    // Validate
+                    // ------------------------------------------------
+
+                    if (!Material::isValidID(materialID))
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid Material ID. Expected format ###-###### or ######-00.");
+                    }
+
+
+                    MaterialManager& materialManager =
+                        warehouseSystem->getMaterialManager();
+
+
+                    if (materialManager.findMaterial(materialID) == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Material not found.");
+                    }
+
+
+                    WarehouseManager& warehouseManager =
+                        warehouseSystem->getWarehouseManager();
+
+
+                    if (warehouseManager.findWarehouse(warehouseID) == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Warehouse not found.");
+                    }
+
+
+                    if (orderDate.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Order Date is required.");
+                    }
+
+
+                    if (orderedQuantity <= 0)
+                    {
+                        return crow::response(
+                            400,
+                            "Ordered Quantity must be greater than zero.");
+                    }
+
+
+                    // ------------------------------------------------
+                    // Create order
+                    // ------------------------------------------------
+
+                    ProcurementManager& procurementManager =
+                        warehouseSystem->getProcurementManager();
+
+
+                    ProcurementOrder* order =
+                        procurementManager.createOrder(
+                            productID,
+                            materialID,
+                            warehouseID,
+                            orderDate,
+                            orderedQuantity,
+                            comment);
+
+
+                    if (order == nullptr)
+                    {
+                        return crow::response(
+                            400,
+                            "Could not create Procurement Order.");
+                    }
+
+
+                    // ------------------------------------------------
+                    // Response
+                    // ------------------------------------------------
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["id"] =
+                        order->getID();
+
+                    response["message"] =
+                        "Procurement Order created successfully.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
+// PROCUREMENT - CONFIRM ORDER
+// ============================================================
+
+    CROW_ROUTE(app, "/api/procurement/confirm")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+
+                    string id =
+                        body["id"].s();
+
+                    string confirmationDate =
+                        body["confirmationDate"].s();
+
+                    int confirmedQuantity =
+                        body["confirmedQuantity"].i();
+
+
+                    if (id.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Procurement Order ID is required.");
+                    }
+
+
+                    if (confirmationDate.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Confirmation Date is required.");
+                    }
+
+
+                    if (confirmedQuantity <= 0)
+                    {
+                        return crow::response(
+                            400,
+                            "Confirmed Quantity must be greater than zero.");
+                    }
+
+
+                    ProcurementManager& procurementManager =
+                        warehouseSystem->getProcurementManager();
+
+
+                    if (procurementManager.findOrder(id) == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Procurement Order not found.");
+                    }
+
+
+                    bool success =
+                        procurementManager.confirmOrder(
+                            id,
+                            confirmationDate,
+                            confirmedQuantity);
+
+
+                    if (!success)
+                    {
+                        return crow::response(
+                            400,
+                            "Could not confirm Procurement Order.");
+                    }
+
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] =
+                        "Procurement Order confirmed successfully.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
+// PROCUREMENT - RECEIVE (creates a partial or final receipt and
+// performs the matching Goods Receipt)
+// ============================================================
+
+    CROW_ROUTE(app, "/api/procurement/receive")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+
+                    string id =
+                        body["id"].s();
+
+                    string receiptDate =
+                        body["receiptDate"].s();
+
+                    int receivedQuantity =
+                        body["receivedQuantity"].i();
+
+                    string comment = "";
+
+                    if (body.has("comment"))
+                    {
+                        comment =
+                            body["comment"].s();
+                    }
+
+
+                    if (id.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Procurement Order ID is required.");
+                    }
+
+
+                    if (receiptDate.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Receipt Date is required.");
+                    }
+
+
+                    if (receivedQuantity <= 0)
+                    {
+                        return crow::response(
+                            400,
+                            "Received Quantity must be greater than zero.");
+                    }
+
+
+                    ProcurementManager& procurementManager =
+                        warehouseSystem->getProcurementManager();
+
+
+                    ProcurementOrder* order =
+                        procurementManager.findOrder(id);
+
+
+                    if (order == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Procurement Order not found.");
+                    }
+
+
+                    if (order->getPendingQuantity() <= 0)
+                    {
+                        return crow::response(
+                            409,
+                            "This Procurement Order is already completed.");
+                    }
+
+
+                    bool success =
+                        procurementManager.receiveOrder(
+                            id,
+                            receiptDate,
+                            receivedQuantity,
+                            comment);
+
+
+                    if (!success)
+                    {
+                        return crow::response(
+                            400,
+                            "Goods receipt failed. Check warehouse and material.");
+                    }
+
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] =
+                        "Receipt recorded and goods received successfully.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+
+// ============================================================
 // MATERIAL IMAGES
 // ============================================================
 
