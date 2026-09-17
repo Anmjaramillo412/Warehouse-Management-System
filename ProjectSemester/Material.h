@@ -2,10 +2,29 @@
 
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "Supplier.h"
 
 using namespace std;
+
+
+// ================================================================
+// MATERIAL SUPPLIER LINK
+// ================================================================
+// One extra (non-primary) Supplier a Material can also be purchased
+// from, with its own Supplier Part Number. The Material's "main"
+// Supplier stays in the existing supplier/supplierPartNumber fields
+// below (unchanged, so every place that already reads
+// getSupplier()/getSupplierPartNumber() keeps working) - this is
+// only for the additional ones.
+
+struct MaterialSupplierLink
+{
+    Supplier* supplier;
+
+    string supplierPartNumber;
+};
 
 
 // ================================================================
@@ -46,6 +65,11 @@ private:
     Supplier* supplier;
 
     string supplierPartNumber;
+
+    // Non-primary Suppliers this Material can also be purchased from
+    // - see MaterialSupplierLink above. The primary one stays in
+    // supplier/supplierPartNumber above.
+    vector<MaterialSupplierLink> additionalSuppliers;
 
     string photoPath;
     bool active;
@@ -97,6 +121,7 @@ public:
     string getManufacturerPartNumber() const;
     Supplier* getSupplier() const;
     string getSupplierPartNumber() const;
+    const vector<MaterialSupplierLink>& getAdditionalSuppliers() const;
     string getPhotoPath() const;
     bool isActive() const;
 
@@ -112,6 +137,8 @@ public:
     void setManufacturerPartNumber(const string& manufPartNumber);
     void setSupplier(Supplier* sup);
     void setSupplierPartNumber(const string& supPartNumber);
+    void setAdditionalSuppliers(
+        const vector<MaterialSupplierLink>& links);
     void setPhotoPath(const string& p);
     void setActive(bool a);
 

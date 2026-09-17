@@ -58,6 +58,10 @@ function openModule(module) {
                     Display Materials
                 </button>
 
+                <button class="button-muted" onclick="displayArchivedMaterials()">
+                    Archived Materials
+                </button>
+
             </div>
 
             <div id="material-content">
@@ -1489,7 +1493,7 @@ function showCreateMaterial() {
 
 
             <label>
-                Supplier
+                Primary Supplier
             </label>
 
             <div class="combobox">
@@ -1521,7 +1525,7 @@ function showCreateMaterial() {
 
 
             <label>
-                Supplier Part Number
+                Primary Supplier Part Number
             </label>
 
             <input
@@ -1529,6 +1533,27 @@ function showCreateMaterial() {
                 id="material-supplier-pn"
                 placeholder="Enter Supplier Part Number"
             >
+
+
+            <label>
+                Additional Suppliers (optional)
+            </label>
+
+            <small>
+                This Material can also be purchased from other
+                suppliers besides the primary one above.
+            </small>
+
+            <div id="material-addsup-lines">
+            </div>
+
+            <button
+                type="button"
+                onclick="addAdditionalSupplierRow('material')">
+
+                + Add Supplier
+
+            </button>
 
 
             <label>
@@ -1573,6 +1598,8 @@ function showCreateMaterial() {
     `;
 
     initSupplierCombobox("material");
+
+    additionalSupplierCounters["material"] = 0;
 }
 
 // ============================================================
@@ -1815,6 +1842,164 @@ function hideSupplierOptionsDelayed(prefix) {
         }
 
     }, 150);
+}
+
+// ============================================================
+// SUPPLIER COMBOBOX MARKUP HELPER
+// ============================================================
+// Same combobox markup used inline for the primary Supplier field,
+// factored out so each Additional Supplier row can build one too.
+
+function supplierComboboxHtml(prefix, placeholder) {
+
+    return `
+        <div class="combobox">
+
+            <input
+                type="text"
+                id="${prefix}-supplier-search"
+                autocomplete="off"
+                placeholder="${placeholder || "Search supplier by name..."}"
+                oninput="handleSupplierSearchInput('${prefix}')"
+                onfocus="renderSupplierOptions('${prefix}')"
+                onblur="hideSupplierOptionsDelayed('${prefix}')"
+            >
+
+            <input type="hidden" id="${prefix}-supplier">
+
+            <div id="${prefix}-supplier-options"
+                class="combobox-options hidden">
+            </div>
+
+        </div>
+    `;
+}
+
+// ============================================================
+// ADDITIONAL SUPPLIERS - REPEATABLE ROWS (Create/Modify Material)
+// ============================================================
+// A Material can be purchased from several Suppliers, but only one
+// (the "Primary Supplier" field above) is the main one. These rows
+// hold the rest - each with its own Supplier (via the same combobox
+// pattern as everywhere else) and its own Supplier Part Number.
+
+let additionalSupplierCounters = {};
+
+function additionalSupplierRowHtml(
+    formPrefix,
+    rowIndex,
+    selectedName,
+    partNumber) {
+
+    const rowPrefix =
+        `${formPrefix}-addsup-${rowIndex}`;
+
+    return `
+        <div class="bom-row" id="${rowPrefix}-row">
+
+            ${supplierComboboxHtml(rowPrefix, "Search supplier by name...")}
+
+            <input
+                type="text"
+                id="${rowPrefix}-pn"
+                placeholder="Supplier Part Number"
+                value="${escapeHtml(partNumber || "")}"
+            >
+
+            <button
+                type="button"
+                onclick="document.getElementById('${rowPrefix}-row').remove()">
+
+                Remove
+
+            </button>
+
+        </div>
+    `;
+}
+
+function addAdditionalSupplierRow(
+    formPrefix,
+    selectedName,
+    partNumber) {
+
+    const container =
+        document.getElementById(
+            `${formPrefix}-addsup-lines`
+        );
+
+    if (!container) {
+        return;
+    }
+
+    if (!(formPrefix in additionalSupplierCounters)) {
+        additionalSupplierCounters[formPrefix] = 0;
+    }
+
+    const rowIndex =
+        additionalSupplierCounters[formPrefix]++;
+
+    const wrapper =
+        document.createElement("div");
+
+    wrapper.innerHTML =
+        additionalSupplierRowHtml(
+            formPrefix,
+            rowIndex,
+            selectedName,
+            partNumber
+        ).trim();
+
+    container.appendChild(
+        wrapper.firstElementChild
+    );
+
+    initSupplierCombobox(
+        `${formPrefix}-addsup-${rowIndex}`,
+        selectedName
+    );
+}
+
+// Reads every Additional Supplier row currently in the form back
+// into a plain [{ supplier, supplierPartNumber }, ...] array, ready
+// to send to the backend. Rows left empty (never given a Supplier)
+// are skipped rather than sent as blank entries.
+
+function collectAdditionalSuppliers(formPrefix) {
+
+    const rows =
+        document.querySelectorAll(
+            `[id^="${formPrefix}-addsup-"][id$="-row"]`
+        );
+
+    const result = [];
+
+    for (const row of rows) {
+
+        const hiddenInput =
+            row.querySelector(
+                'input[type="hidden"][id$="-supplier"]'
+            );
+
+        const supplierName =
+            hiddenInput ? hiddenInput.value.trim() : "";
+
+        if (!supplierName) {
+            continue;
+        }
+
+        const partNumberInput =
+            row.querySelector('input[id$="-pn"]');
+
+        result.push({
+            supplier: supplierName,
+            supplierPartNumber:
+                partNumberInput ?
+                partNumberInput.value.trim() : ""
+        });
+    }
+
+    return result;
 }
 
 // ============================================================
@@ -2180,6 +2365,9 @@ async function createMaterial() {
 
         supplierPartNumber: supplierPartNumber,
 
+        additionalSuppliers:
+            collectAdditionalSuppliers("material"),
+
         photo: photoName,
 
         photoData: photoData,
@@ -2302,6 +2490,38 @@ async function createMaterial() {
 
 async function displayMaterials() {
 
+    await renderMaterialsList(
+        material => material.active !== false,
+        "Materials",
+        "No active materials available. Check Archived Materials " +
+        "for materials marked inactive."
+    );
+}
+
+// ============================================================
+// ARCHIVED MATERIALS (inactive materials only)
+// ============================================================
+// Materials are never hard-deleted while still referenced anywhere
+// in the system (Delete Material refuses that) - marking a Material
+// inactive via its "Active Material" checkbox is how a discontinued
+// or no-longer-purchased material is taken out of the everyday
+// Display Materials list without losing its history.
+
+async function displayArchivedMaterials() {
+
+    await renderMaterialsList(
+        material => material.active === false,
+        "Archived Materials",
+        "No archived (inactive) materials."
+    );
+}
+
+// ============================================================
+// MATERIALS TABLE - SHARED RENDERING (active or archived)
+// ============================================================
+
+async function renderMaterialsList(filterFn, headingText, emptyText) {
+
     const content =
         document.getElementById(
             "material-content"
@@ -2338,17 +2558,17 @@ async function displayMaterials() {
         const data =
             await response.json();
 
+        const materials =
+            (data.materials || []).filter(filterFn);
 
-        if (
-            !data.materials ||
-            data.materials.length === 0
-        ) {
+
+        if (materials.length === 0) {
 
             content.innerHTML = `
 
                 <div class="empty-message">
 
-                    No materials available.
+                    ${escapeHtml(emptyText)}
 
                 </div>
             `;
@@ -2362,7 +2582,7 @@ async function displayMaterials() {
             <div class="material-table-container">
 
                 <h2>
-                    Materials
+                    ${escapeHtml(headingText)}
                 </h2>
 
                 <table class="material-table material-table-clickable">
@@ -2390,7 +2610,7 @@ async function displayMaterials() {
 
 
         for (
-            const material of data.materials
+            const material of materials
         ) {
 
             html += `
@@ -2439,6 +2659,15 @@ async function displayMaterials() {
 
                     <td>
                         ${escapeHtml(material.supplier || "")}
+                        ${
+                            (material.additionalSuppliers || []).length > 0
+                            ? ` <span class="status-badge" title="${
+                                    escapeHtml(material.additionalSuppliers
+                                        .map(link => link.supplier)
+                                        .join(", "))
+                                }">+${material.additionalSuppliers.length}</span>`
+                            : ""
+                        }
                     </td>
 
                     <td>
@@ -2609,16 +2838,50 @@ async function showMaterialDetail(id) {
                     </div>
 
                     <div class="detail-field">
-                        <div class="detail-label">Supplier</div>
+                        <div class="detail-label">Primary Supplier</div>
                         <div class="detail-value">${escapeHtml(data.supplier || "—")}</div>
                     </div>
 
                     <div class="detail-field">
-                        <div class="detail-label">Supplier Part Number</div>
+                        <div class="detail-label">Primary Supplier Part Number</div>
                         <div class="detail-value">${escapeHtml(data.supplierPartNumber || "—")}</div>
                     </div>
 
                 </div>
+
+                ${
+                    (data.additionalSuppliers || []).length > 0
+                    ? `
+                        <div class="procurement-section">
+
+                            <h3>
+                                Additional Suppliers
+                            </h3>
+
+                            <table class="material-table">
+
+                                <thead>
+                                    <tr>
+                                        <th>Supplier</th>
+                                        <th>Supplier Part Number</th>
+                                    </tr>
+                                </thead>
+
+                                <tbody>
+                                    ${data.additionalSuppliers.map(link => `
+                                        <tr>
+                                            <td>${escapeHtml(link.supplier)}</td>
+                                            <td>${escapeHtml(link.supplierPartNumber || "—")}</td>
+                                        </tr>
+                                    `).join("")}
+                                </tbody>
+
+                            </table>
+
+                        </div>
+                    `
+                    : ""
+                }
 
             </div>
         `;
@@ -2806,14 +3069,25 @@ async function searchMaterial() {
                 </p>
 
                 <p>
-                    <strong>Supplier:</strong>
+                    <strong>Primary Supplier:</strong>
                     ${data.supplier}
                 </p>
 
                 <p>
-                    <strong>Supplier Part Number:</strong>
+                    <strong>Primary Supplier Part Number:</strong>
                     ${data.supplierPartNumber || ""}
                 </p>
+
+                ${
+                    (data.additionalSuppliers || []).length > 0
+                    ? `<p>
+                        <strong>Additional Suppliers:</strong>
+                        ${data.additionalSuppliers
+                            .map(link => escapeHtml(link.supplier))
+                            .join(", ")}
+                    </p>`
+                    : ""
+                }
 
                 <p>
                     <strong>Active:</strong>
@@ -3360,7 +3634,7 @@ async function loadMaterialForModify() {
 
 
                 <label>
-                    Supplier
+                    Primary Supplier
                 </label>
 
                 <div class="combobox">
@@ -3385,7 +3659,7 @@ async function loadMaterialForModify() {
 
 
                 <label>
-                    Supplier Part Number
+                    Primary Supplier Part Number
                 </label>
 
                 <input
@@ -3393,6 +3667,26 @@ async function loadMaterialForModify() {
                     id="modify-supplier-pn"
                     value="${escapeHtml(data.supplierPartNumber || "")}"
                 >
+
+                <label>
+                    Additional Suppliers (optional)
+                </label>
+
+                <small>
+                    This Material can also be purchased from other
+                    suppliers besides the primary one above.
+                </small>
+
+                <div id="modify-addsup-lines">
+                </div>
+
+                <button
+                    type="button"
+                    onclick="addAdditionalSupplierRow('modify')">
+
+                    + Add Supplier
+
+                </button>
 
                 <label>
                     Material Photo
@@ -3445,6 +3739,17 @@ async function loadMaterialForModify() {
         initSupplierCombobox(
             "modify",
             data.supplier);
+
+        additionalSupplierCounters["modify"] = 0;
+
+        for (const link of (data.additionalSuppliers || [])) {
+
+            addAdditionalSupplierRow(
+                "modify",
+                link.supplier,
+                link.supplierPartNumber
+            );
+        }
     }
     catch (error) {
 
@@ -3701,6 +4006,9 @@ async function modifyMaterial() {
         supplier: supplier,
 
         supplierPartNumber: supplierPartNumber,
+
+        additionalSuppliers:
+            collectAdditionalSuppliers("modify"),
 
         photo: photoPath,
 

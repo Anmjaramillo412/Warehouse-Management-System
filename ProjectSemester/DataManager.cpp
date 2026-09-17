@@ -2,7 +2,32 @@
 #include <xlnt/xlnt.hpp>
 #include <iostream>
 #include <filesystem>
+#include <algorithm>
+#include <sstream>
 using namespace std;
+
+
+// ================================================================
+// FIELD SANITIZING (for the packed "Additional Suppliers" cell)
+// ================================================================
+// That one cell packs several Supplier entries as
+// "Name,PartNumber~Name,PartNumber" - a comma or "~" inside a
+// Supplier name or Part Number would be misread as a separator, so
+// strip them here the same way ProcurementManager sanitizes its own
+// packed fields.
+
+namespace
+{
+    string sanitizePackedField(const string& value)
+    {
+        string result = value;
+
+        replace(result.begin(), result.end(), ',', ';');
+        replace(result.begin(), result.end(), '~', ' ');
+
+        return result;
+    }
+}
 
 
 // ================================================================
@@ -76,6 +101,7 @@ bool DataManager::save(
         materialsSheet.cell("K1").value("Supplier Part Number");
         materialsSheet.cell("L1").value("Photo");
         materialsSheet.cell("M1").value("Active");
+        materialsSheet.cell("N1").value("Additional Suppliers");
 
 
         int materialRow = 2;
@@ -146,6 +172,35 @@ bool DataManager::save(
                     material->isActive()
                     ? "YES"
                     : "NO");
+
+            // Additional (non-primary) Suppliers, each as
+            // "Name,Supplier Part Number", joined by "~" - same
+            // convention as Procurement's receipts field.
+            string additionalSuppliersField = "";
+
+            const auto& additionalSuppliers =
+                material->getAdditionalSuppliers();
+
+            for (size_t i = 0; i < additionalSuppliers.size(); i++)
+            {
+                if (i > 0)
+                {
+                    additionalSuppliersField += "~";
+                }
+
+                additionalSuppliersField +=
+                    sanitizePackedField(
+                        additionalSuppliers[i].supplier != nullptr
+                        ? additionalSuppliers[i].supplier->getName()
+                        : "") +
+                    "," +
+                    sanitizePackedField(
+                        additionalSuppliers[i].supplierPartNumber);
+            }
+
+            materialsSheet.cell(
+                "N" + to_string(materialRow))
+                .value(additionalSuppliersField);
 
             materialRow++;
         }
@@ -634,6 +689,14 @@ bool DataManager::load(
                 (activeValue == "YES");
 
 
+            // "Additional Suppliers" (column N) is a newer column -
+            // an older file simply has nothing written in that cell,
+            // which xlnt reads back as an empty string (same as any
+            // other column here, none of which are length-guarded).
+            string additionalSuppliersField =
+                row[13].value<string>();
+
+
             Supplier* supplier =
                 supplierName.empty()
                 ? nullptr
@@ -652,6 +715,60 @@ bool DataManager::load(
             }
 
 
+            vector<MaterialSupplierLink> additionalSuppliers;
+
+            if (!additionalSuppliersField.empty())
+            {
+                stringstream additionalStream(
+                    additionalSuppliersField);
+
+                string entry;
+
+                while (getline(additionalStream, entry, '~'))
+                {
+                    if (entry.empty())
+                    {
+                        continue;
+                    }
+
+                    size_t commaPosition =
+                        entry.find(',');
+
+                    string additionalSupplierName =
+                        commaPosition == string::npos ?
+                        entry : entry.substr(0, commaPosition);
+
+                    string additionalPartNumber =
+                        commaPosition == string::npos ?
+                        "" : entry.substr(commaPosition + 1);
+
+                    Supplier* additionalSupplier =
+                        supplierManager.findSupplier(
+                            additionalSupplierName);
+
+                    if (additionalSupplier == nullptr)
+                    {
+                        cout << endl;
+
+                        cout << "Warning: Additional Supplier "
+                            << additionalSupplierName
+                            << " not found for material "
+                            << id
+                            << endl;
+
+                        continue;
+                    }
+
+                    MaterialSupplierLink link;
+
+                    link.supplier = additionalSupplier;
+                    link.supplierPartNumber = additionalPartNumber;
+
+                    additionalSuppliers.push_back(link);
+                }
+            }
+
+
             Material material(
                 id,
                 name,
@@ -666,6 +783,9 @@ bool DataManager::load(
                 supplierPartNumber,
                 photoPath,
                 active);
+
+            material.setAdditionalSuppliers(
+                additionalSuppliers);
 
 
             if (!materialManager.createMaterial(material))

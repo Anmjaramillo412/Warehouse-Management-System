@@ -109,6 +109,9 @@ bool MaterialManager::modifyMaterial(
     material->setSupplierPartNumber(
         newData.getSupplierPartNumber());
 
+    material->setAdditionalSuppliers(
+        newData.getAdditionalSuppliers());
+
     material->setPhotoPath(
         newData.getPhotoPath());
 
