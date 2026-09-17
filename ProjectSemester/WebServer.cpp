@@ -276,6 +276,72 @@ string decodeBase64(
 }
 
 // ================================================================
+// RESOLVE ADDITIONAL SUPPLIERS (Create/Modify Material)
+// ================================================================
+// Reads the optional "additionalSuppliers" array from a Create/
+// Modify Material request body - each entry is a non-primary
+// Supplier this Material can also be purchased from. The primary
+// Supplier (already resolved separately) is skipped here if it was
+// also listed as an additional one, so it is never duplicated.
+// Returns false with errorMessage set if any listed Supplier name
+// does not exist.
+
+bool resolveAdditionalSuppliers(
+    const crow::json::rvalue& body,
+    SupplierManager& supplierManager,
+    const string& primarySupplierName,
+    vector<MaterialSupplierLink>& out,
+    string& errorMessage)
+{
+    out.clear();
+
+    if (!body.has("additionalSuppliers"))
+    {
+        return true;
+    }
+
+    for (const auto& entry : body["additionalSuppliers"])
+    {
+        string supplierName =
+            entry["supplier"].s();
+
+        if (supplierName.empty() ||
+            supplierName == primarySupplierName)
+        {
+            // Empty row from the form, or the same Supplier already
+            // chosen as primary - skip instead of erroring out.
+            continue;
+        }
+
+        Supplier* supplier =
+            supplierManager.findSupplier(supplierName);
+
+        if (supplier == nullptr)
+        {
+            errorMessage =
+                "Additional Supplier not found: " + supplierName +
+                ". Please create the supplier first.";
+
+            return false;
+        }
+
+        string partNumber =
+            entry.has("supplierPartNumber")
+            ? string(entry["supplierPartNumber"].s())
+            : "";
+
+        MaterialSupplierLink link;
+
+        link.supplier = supplier;
+        link.supplierPartNumber = partNumber;
+
+        out.push_back(link);
+    }
+
+    return true;
+}
+
+// ================================================================
 // RUN
 // ================================================================
 
@@ -505,6 +571,25 @@ void WebServer::run()
                     }
 
                     // ------------------------------------------------
+                    // Resolve additional (non-primary) Suppliers
+                    // ------------------------------------------------
+
+                    vector<MaterialSupplierLink> additionalSuppliers;
+                    string additionalSuppliersError;
+
+                    if (!resolveAdditionalSuppliers(
+                        body,
+                        supplierManager,
+                        supplierName,
+                        additionalSuppliers,
+                        additionalSuppliersError))
+                    {
+                        return crow::response(
+                            400,
+                            additionalSuppliersError);
+                    }
+
+                    // ------------------------------------------------
                     // Save image
                     // ------------------------------------------------
 
@@ -575,6 +660,9 @@ void WebServer::run()
                         supplierPartNumber,
                         photoPath,
                         active);
+
+                    material.setAdditionalSuppliers(
+                        additionalSuppliers);
 
                     // ------------------------------------------------
                     // Get MaterialManager
@@ -707,6 +795,28 @@ void WebServer::run()
 
                     item["active"] =
                         material->isActive();
+
+
+                    crow::json::wvalue::list additionalSupplierList;
+
+                    for (const auto& link :
+                        material->getAdditionalSuppliers())
+                    {
+                        crow::json::wvalue linkItem;
+
+                        linkItem["supplier"] =
+                            link.supplier != nullptr ?
+                            link.supplier->getName() : "";
+
+                        linkItem["supplierPartNumber"] =
+                            link.supplierPartNumber;
+
+                        additionalSupplierList.push_back(
+                            linkItem);
+                    }
+
+                    item["additionalSuppliers"] =
+                        std::move(additionalSupplierList);
 
                     materialList.push_back(
                         item);
@@ -851,6 +961,25 @@ void WebServer::run()
                     }
 
                     // ------------------------------------------------
+                    // Resolve additional (non-primary) Suppliers
+                    // ------------------------------------------------
+
+                    vector<MaterialSupplierLink> additionalSuppliers;
+                    string additionalSuppliersError;
+
+                    if (!resolveAdditionalSuppliers(
+                        body,
+                        supplierManager,
+                        supplierName,
+                        additionalSuppliers,
+                        additionalSuppliersError))
+                    {
+                        return crow::response(
+                            400,
+                            additionalSuppliersError);
+                    }
+
+                    // ------------------------------------------------
                     // Save new image if provided
                     // ------------------------------------------------
 
@@ -951,6 +1080,9 @@ void WebServer::run()
                         supplierPartNumber,
                         photoPath,
                         active);
+
+                    updatedMaterial.setAdditionalSuppliers(
+                        additionalSuppliers);
 
 
                     // ------------------------------------------------

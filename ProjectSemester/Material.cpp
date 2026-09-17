@@ -74,6 +74,7 @@ Material::Material(
     manufacturerPartNumber = manufPartNumber;
     supplier = sup;
     supplierPartNumber = supPartNumber;
+    additionalSuppliers.clear();
     photoPath = p;
     active = a;
 
@@ -251,6 +252,13 @@ string Material::getSupplierPartNumber() const
 }
 
 
+const vector<MaterialSupplierLink>&
+Material::getAdditionalSuppliers() const
+{
+    return additionalSuppliers;
+}
+
+
 string Material::getPhotoPath() const
 {
     return photoPath;
@@ -335,6 +343,13 @@ void Material::setSupplier(Supplier* sup)
 void Material::setSupplierPartNumber(const string& supPartNumber)
 {
     supplierPartNumber = supPartNumber;
+}
+
+
+void Material::setAdditionalSuppliers(
+    const vector<MaterialSupplierLink>& links)
+{
+    additionalSuppliers = links;
 }
 
 
