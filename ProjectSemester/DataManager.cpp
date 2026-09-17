@@ -1,6 +1,7 @@
 #include "DataManager.h"
 #include <xlnt/xlnt.hpp>
 #include <iostream>
+#include <filesystem>
 using namespace std;
 
 
@@ -36,6 +37,19 @@ bool DataManager::save(
 {
     try
     {
+        // ------------------------------------------------
+        // Make sure the target directory exists
+        // (e.g. "data/") before xlnt tries to write to it
+        // ------------------------------------------------
+
+        std::filesystem::path targetPath(filename);
+
+        if (targetPath.has_parent_path())
+        {
+            std::filesystem::create_directories(
+                targetPath.parent_path());
+        }
+
         xlnt::workbook workbook;
 
 

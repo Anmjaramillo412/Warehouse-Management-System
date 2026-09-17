@@ -7,6 +7,8 @@
 #include <sstream>
 #include <filesystem>
 #include <string>
+#include <ctime>
+#include <algorithm>
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -29,6 +31,171 @@ string readFile(const string& filename)
     buffer << file.rdbuf();
 
     return buffer.str();
+}
+
+
+// ================================================================
+// DATE HELPERS (plain "YYYY-MM-DD" strings, as used by <input
+// type="date">) - used to work out whether it is still on time to
+// place an order given a Projection's deadline and a Supplier's
+// lead time.
+// ================================================================
+
+static bool parseISODate(
+    const string& dateStr,
+    tm& result)
+{
+    if (dateStr.size() < 10)
+    {
+        return false;
+    }
+
+    result = tm();
+
+    result.tm_year =
+        atoi(dateStr.substr(0, 4).c_str()) - 1900;
+
+    result.tm_mon =
+        atoi(dateStr.substr(5, 2).c_str()) - 1;
+
+    result.tm_mday =
+        atoi(dateStr.substr(8, 2).c_str());
+
+    // Noon, to stay clear of daylight-saving edge cases when the
+    // time_t gets shifted by whole days below.
+    result.tm_hour = 12;
+
+    return true;
+}
+
+static string formatISODate(
+    time_t t)
+{
+    tm* localTm = localtime(&t);
+
+    char buffer[11];
+
+    strftime(
+        buffer,
+        sizeof(buffer),
+        "%Y-%m-%d",
+        localTm);
+
+    return string(buffer);
+}
+
+// Compares "today" against (deadline - leadTimeWeeks). Returns
+// "On Time", "Overdue", "No Supplier" (material has none assigned)
+// or "No Deadline" (Projection/date fields are empty or unreadable).
+static void computeOrderTiming(
+    const string& deadline,
+    Supplier* supplier,
+    string& status,
+    string& orderByDate)
+{
+    if (supplier == nullptr)
+    {
+        status = "No Supplier";
+        orderByDate = "";
+        return;
+    }
+
+    tm deadlineTm;
+
+    if (deadline.empty() ||
+        !parseISODate(deadline, deadlineTm))
+    {
+        status = "No Deadline";
+        orderByDate = "";
+        return;
+    }
+
+    time_t deadlineTime =
+        mktime(&deadlineTm);
+
+    time_t orderByTime =
+        deadlineTime -
+        (time_t)(supplier->getLeadTimeWeeks() * 7 * 86400);
+
+    orderByDate =
+        formatISODate(orderByTime);
+
+
+    time_t now = time(nullptr);
+
+    tm nowTm = *localtime(&now);
+
+    nowTm.tm_hour = 12;
+    nowTm.tm_min = 0;
+    nowTm.tm_sec = 0;
+
+    time_t todayNoon =
+        mktime(&nowTm);
+
+    status =
+        (todayNoon > orderByTime) ?
+        "Overdue" : "On Time";
+}
+
+
+// ================================================================
+// ORDERED COVERAGE (how much of a Projection's need is actually
+// covered by real Procurement Orders)
+// ================================================================
+// A Procurement Order can be registered two ways: tied to one
+// specific Projection (projectionID set, from that Projection's
+// "Register Order" button), or untied/general (projectionID empty,
+// e.g. registered straight from Procurement Orders). Summing every
+// order's quantity globally for a material - regardless of which
+// Projection it was tied to - let the SAME order satisfy several
+// different Projections' needs for that material at once, so
+// everything read "Fully Ordered" even when only one of them had
+// actually been covered.
+//
+// By decision, an untied order does NOT count as coverage for any
+// Projection - it sits in Procurement as unassigned stock-on-order
+// until someone links it (or it is received, at which point it
+// becomes real stock and shows up through getVirtualStock instead).
+// Only an order tied directly to a Projection counts toward that
+// Projection's "Fully Ordered" status.
+
+static int sumDirectOrdered(
+    const string& materialID,
+    const string& projectionID,
+    ProcurementManager& procurementManager)
+{
+    int total = 0;
+
+    for (const auto& order : procurementManager.getOrders())
+    {
+        if (order->getMaterialID() == materialID &&
+            order->getProjectionID() == projectionID)
+        {
+            total += order->getOrderedQuantity();
+        }
+    }
+
+    return total;
+}
+
+static int computeOrderedCoverage(
+    const string& materialID,
+    int requiredQuantity,
+    const string& projectionID,
+    ProjectionManager& projectionManager,
+    ProcurementManager& procurementManager)
+{
+    // requiredQuantity, projectionManager are kept as parameters so
+    // every call site stays unchanged even though only the directly
+    // tied orders count now - see the comment block above.
+
+    (void)requiredQuantity;
+    (void)projectionManager;
+
+    return sumDirectOrdered(
+        materialID,
+        projectionID,
+        procurementManager);
 }
 
 
@@ -2554,6 +2721,9 @@ void WebServer::run()
                 ProductManager& productManager =
                     warehouseSystem->getProductManager();
 
+                MaterialManager& materialManager =
+                    warehouseSystem->getMaterialManager();
+
 
                 const auto& products =
                     productManager.getProducts();
@@ -2584,6 +2754,14 @@ void WebServer::run()
 
                         bom["materialID"] =
                             bomItem.materialID;
+
+                        Material* material =
+                            materialManager.findMaterial(
+                                bomItem.materialID);
+
+                        bom["materialName"] =
+                            (material != nullptr) ?
+                            material->getName() : "";
 
                         bom["quantity"] =
                             bomItem.quantity;
@@ -2835,9 +3013,23 @@ void WebServer::run()
                         materialManager.findMaterial(
                             order->getMaterialID());
 
+                    // Prefer the live catalog name (picks up a
+                    // rename), but fall back to the name snapshot
+                    // saved on the order itself if the Material was
+                    // since deleted from the catalog.
                     item["materialName"] =
                         (material != nullptr) ?
-                        material->getName() : "";
+                        material->getName() :
+                        order->getMaterialName();
+
+
+                    Supplier* supplier =
+                        (material != nullptr) ?
+                        material->getSupplier() : nullptr;
+
+                    item["supplierName"] =
+                        (supplier != nullptr) ?
+                        supplier->getName() : "No Supplier";
 
 
                     item["warehouseID"] =
@@ -2905,6 +3097,621 @@ void WebServer::run()
             });
 
 // ============================================================
+// PROJECTIONS - LIST
+// ============================================================
+
+    CROW_ROUTE(app, "/api/projections")
+        ([warehouseSystem]()
+            {
+                crow::json::wvalue response;
+
+                crow::json::wvalue::list projectionList;
+
+
+                ProjectionManager& projectionManager =
+                    warehouseSystem->getProjectionManager();
+
+                ProcurementManager& procurementManager =
+                    warehouseSystem->getProcurementManager();
+
+                ProductManager& productManager =
+                    warehouseSystem->getProductManager();
+
+
+                for (const auto& projection :
+                    projectionManager.getProjections())
+                {
+                    crow::json::wvalue item;
+
+                    item["id"] =
+                        projection->getID();
+
+                    item["productID"] =
+                        projection->getProductID();
+
+
+                    Product* product =
+                        productManager.findProduct(
+                            projection->getProductID());
+
+                    item["productName"] =
+                        (product != nullptr) ?
+                        product->getName() : "";
+
+
+                    item["warehouseID"] =
+                        projection->getWarehouseID();
+
+                    item["deadline"] =
+                        projection->getDeadline();
+
+                    item["manufactureQuantity"] =
+                        projection->getManufactureQuantity();
+
+                    item["creationDate"] =
+                        projection->getCreationDate();
+
+
+                    // Status: "Fully Ordered" once every item's
+                    // required quantity is actually covered - see
+                    // computeOrderedCoverage() above for why a plain
+                    // global sum over-credited shared orders to more
+                    // than one Projection at once.
+
+                    bool fullyOrdered = true;
+
+                    for (const auto& projItem :
+                        projection->getItems())
+                    {
+                        int ordered =
+                            computeOrderedCoverage(
+                                projItem.materialID,
+                                projItem.requiredQuantity,
+                                projection->getID(),
+                                projectionManager,
+                                procurementManager);
+
+                        if (ordered < projItem.requiredQuantity)
+                        {
+                            fullyOrdered = false;
+                            break;
+                        }
+                    }
+
+                    item["status"] =
+                        fullyOrdered ?
+                        "Fully Ordered" : "Pending Orders";
+
+                    item["completed"] =
+                        projection->isCompleted();
+
+                    item["producedQuantity"] =
+                        projection->getProducedQuantity();
+
+                    item["completionDate"] =
+                        projection->getCompletionDate();
+
+
+                    projectionList.push_back(
+                        std::move(item));
+                }
+
+
+                response["projections"] =
+                    std::move(projectionList);
+
+
+                return response;
+            });
+
+// ============================================================
+// PROJECTIONS - DETAIL
+// ============================================================
+
+    CROW_ROUTE(app, "/api/projections/<string>")
+        ([warehouseSystem](const string& id)
+            {
+                ProjectionManager& projectionManager =
+                    warehouseSystem->getProjectionManager();
+
+                Projection* projection =
+                    projectionManager.findProjection(id);
+
+                if (projection == nullptr)
+                {
+                    return crow::response(
+                        404,
+                        "Projection not found.");
+                }
+
+
+                ProcurementManager& procurementManager =
+                    warehouseSystem->getProcurementManager();
+
+                MaterialManager& materialManager =
+                    warehouseSystem->getMaterialManager();
+
+                ProductManager& productManager =
+                    warehouseSystem->getProductManager();
+
+
+                crow::json::wvalue response;
+
+                response["id"] =
+                    projection->getID();
+
+                response["productID"] =
+                    projection->getProductID();
+
+
+                Product* product =
+                    productManager.findProduct(
+                        projection->getProductID());
+
+                response["productName"] =
+                    (product != nullptr) ?
+                    product->getName() : "";
+
+
+                response["warehouseID"] =
+                    projection->getWarehouseID();
+
+                response["deadline"] =
+                    projection->getDeadline();
+
+                response["manufactureQuantity"] =
+                    projection->getManufactureQuantity();
+
+                response["creationDate"] =
+                    projection->getCreationDate();
+
+
+                crow::json::wvalue::list itemList;
+
+                bool fullyOrdered = true;
+
+                for (const auto& projItem :
+                    projection->getItems())
+                {
+                    // Coverage from real Procurement Orders - orders
+                    // tied to this Projection count for it directly;
+                    // untied orders are shared with every other still
+                    // open Projection that also needs this material,
+                    // so the same units are never credited twice (see
+                    // computeOrderedCoverage() above).
+
+                    int ordered =
+                        computeOrderedCoverage(
+                            projItem.materialID,
+                            projItem.requiredQuantity,
+                            projection->getID(),
+                            projectionManager,
+                            procurementManager);
+
+                    int pending =
+                        projItem.requiredQuantity - ordered;
+
+                    if (pending < 0)
+                    {
+                        pending = 0;
+                    }
+
+                    if (pending > 0)
+                    {
+                        fullyOrdered = false;
+                    }
+
+
+                    crow::json::wvalue itemJson;
+
+                    itemJson["materialID"] =
+                        projItem.materialID;
+
+
+                    Material* material =
+                        materialManager.findMaterial(
+                            projItem.materialID);
+
+                    itemJson["materialName"] =
+                        (material != nullptr) ?
+                        material->getName() : "";
+
+                    itemJson["uom"] =
+                        (material != nullptr) ?
+                        material->getUoM() : "";
+
+                    itemJson["photo"] =
+                        (material != nullptr) ?
+                        material->getPhotoPath() : "";
+
+
+                    itemJson["requiredQuantity"] =
+                        projItem.requiredQuantity;
+
+                    itemJson["stockAtCreation"] =
+                        projItem.stockAtCreation;
+
+
+                    // Virtual stock (live, not the snapshot taken
+                    // when the projection was created): total stock
+                    // minus what every other still-active Projection
+                    // has already reserved for this material - see
+                    // ProjectionManager::getVirtualStock(). This
+                    // Projection's own reservation is excluded so it
+                    // is not subtracted from itself.
+
+                    itemJson["currentStock"] =
+                        projectionManager.getVirtualStock(
+                            projItem.materialID,
+                            projection->getID());
+
+
+                    itemJson["orderedQuantity"] =
+                        ordered;
+
+                    itemJson["pendingQuantity"] =
+                        pending;
+
+
+                    // Order-by timing: deadline minus this
+                    // material's current supplier's lead time.
+
+                    string timingStatus;
+                    string orderByDate;
+
+                    computeOrderTiming(
+                        projection->getDeadline(),
+                        (material != nullptr) ?
+                            material->getSupplier() : nullptr,
+                        timingStatus,
+                        orderByDate);
+
+                    itemJson["orderByDate"] =
+                        orderByDate;
+
+                    itemJson["timingStatus"] =
+                        timingStatus;
+
+
+                    itemList.push_back(
+                        std::move(itemJson));
+                }
+
+                response["items"] =
+                    std::move(itemList);
+
+                response["status"] =
+                    fullyOrdered ?
+                    "Fully Ordered" : "Pending Orders";
+
+                response["completed"] =
+                    projection->isCompleted();
+
+                response["producedQuantity"] =
+                    projection->getProducedQuantity();
+
+                response["completionDate"] =
+                    projection->getCompletionDate();
+
+
+                return crow::response(response);
+            });
+
+// ============================================================
+// PROJECTIONS - COMPLETE (confirm production, issue BOM)
+// ============================================================
+
+    CROW_ROUTE(app, "/api/projections/complete")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    string id =
+                        body["id"].s();
+
+                    int producedQuantity =
+                        body["producedQuantity"].i();
+
+                    string completionDate =
+                        body["completionDate"].s();
+
+                    if (id.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Projection ID is required.");
+                    }
+
+                    if (completionDate.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Completion Date is required.");
+                    }
+
+                    if (producedQuantity <= 0)
+                    {
+                        return crow::response(
+                            400,
+                            "Produced Quantity must be greater than zero.");
+                    }
+
+                    ProjectionManager& projectionManager =
+                        warehouseSystem->getProjectionManager();
+
+                    Projection* projection =
+                        projectionManager.findProjection(id);
+
+                    if (projection == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Projection not found.");
+                    }
+
+                    if (projection->isCompleted())
+                    {
+                        return crow::response(
+                            409,
+                            "This Projection has already been completed.");
+                    }
+
+                    bool success =
+                        projectionManager.completeProjection(
+                            id,
+                            producedQuantity,
+                            completionDate);
+
+                    if (!success)
+                    {
+                        return crow::response(
+                            400,
+                            "Could not confirm production. Check that every BOM material has enough stock for the produced quantity.");
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] =
+                        "Production confirmed and materials issued.";
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
+// PROJECTIONS - DELETE
+// ============================================================
+// Scraps a Projection plan outright. Procurement Orders already
+// placed from it are left alone (see ProjectionManager::
+// deleteProjection) - only the still-open plan disappears.
+
+    CROW_ROUTE(app, "/api/projections/delete")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    string id =
+                        body["id"].s();
+
+                    if (id.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Projection ID is required.");
+                    }
+
+                    ProjectionManager& projectionManager =
+                        warehouseSystem->getProjectionManager();
+
+                    Projection* projection =
+                        projectionManager.findProjection(id);
+
+                    if (projection == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Projection not found.");
+                    }
+
+                    if (projection->isCompleted())
+                    {
+                        return crow::response(
+                            409,
+                            "This Projection has already been completed and archived - it cannot be deleted.");
+                    }
+
+                    bool success =
+                        projectionManager.deleteProjection(id);
+
+                    if (!success)
+                    {
+                        return crow::response(
+                            400,
+                            "Could not delete this Projection.");
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] =
+                        "Projection deleted successfully.";
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
+// PROJECTIONS - CREATE
+// ============================================================
+
+    CROW_ROUTE(app, "/api/projections/create")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+
+                    string productID =
+                        body["productID"].s();
+
+                    int warehouseID =
+                        body["warehouseID"].i();
+
+                    string deadline = "";
+
+                    if (body.has("deadline"))
+                    {
+                        deadline =
+                            body["deadline"].s();
+                    }
+
+                    int manufactureQuantity =
+                        body["manufactureQuantity"].i();
+
+
+                    // ------------------------------------------------
+                    // Validate
+                    // ------------------------------------------------
+
+                    ProductManager& productManager =
+                        warehouseSystem->getProductManager();
+
+                    if (productManager.findProduct(productID) == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Product not found.");
+                    }
+
+
+                    WarehouseManager& warehouseManager =
+                        warehouseSystem->getWarehouseManager();
+
+                    if (warehouseManager.findWarehouse(warehouseID) == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Warehouse not found.");
+                    }
+
+
+                    if (manufactureQuantity <= 0)
+                    {
+                        return crow::response(
+                            400,
+                            "Quantity to Manufacture must be greater than zero.");
+                    }
+
+
+                    // ------------------------------------------------
+                    // Create projection
+                    // ------------------------------------------------
+
+                    time_t now = time(nullptr);
+                    char dateBuffer[11];
+
+                    strftime(
+                        dateBuffer,
+                        sizeof(dateBuffer),
+                        "%Y-%m-%d",
+                        localtime(&now));
+
+
+                    ProjectionManager& projectionManager =
+                        warehouseSystem->getProjectionManager();
+
+                    Projection* projection =
+                        projectionManager.createProjection(
+                            productID,
+                            warehouseID,
+                            deadline,
+                            manufactureQuantity,
+                            string(dateBuffer));
+
+
+                    if (projection == nullptr)
+                    {
+                        return crow::response(
+                            400,
+                            "Nothing to order: enough stock for all materials, "
+                            "or the Product has no Bill of Materials.");
+                    }
+
+
+                    // ------------------------------------------------
+                    // Response
+                    // ------------------------------------------------
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["id"] =
+                        projection->getID();
+
+                    response["message"] =
+                        "Projection created successfully.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
 // PROCUREMENT - CREATE ORDER
 // ============================================================
 
@@ -2956,6 +3763,16 @@ void WebServer::run()
                     {
                         comment =
                             body["comment"].s();
+                    }
+
+                    // Internal only - which Projection batch (if
+                    // any) this order comes from. Not required.
+                    string projectionID = "";
+
+                    if (body.has("projectionID"))
+                    {
+                        projectionID =
+                            body["projectionID"].s();
                     }
 
 
@@ -3026,7 +3843,8 @@ void WebServer::run()
                             warehouseID,
                             orderDate,
                             orderedQuantity,
-                            comment);
+                            comment,
+                            projectionID);
 
 
                     if (order == nullptr)
@@ -3047,6 +3865,194 @@ void WebServer::run()
 
                     response["id"] =
                         order->getID();
+
+                    response["message"] =
+                        "Procurement Order created successfully.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
+// PROCUREMENT - CREATE BATCH (several materials, one shared
+// "PRC-######" number - one action = one Procurement Order)
+// ============================================================
+// Body: { productID, warehouseID, orderDate, comment, projectionID,
+//         lines: [ { materialID, orderedQuantity }, ... ] }
+// All lines are created under one reserved ID. If any line fails
+// validation the whole batch is rejected before anything is
+// created, so a bad line can't leave a half-created order behind.
+
+    CROW_ROUTE(app, "/api/procurement/create-batch")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+
+                    string productID = "";
+
+                    if (body.has("productID"))
+                    {
+                        productID =
+                            body["productID"].s();
+                    }
+
+                    int warehouseID =
+                        body["warehouseID"].i();
+
+                    string orderDate =
+                        body["orderDate"].s();
+
+                    string comment = "";
+
+                    if (body.has("comment"))
+                    {
+                        comment =
+                            body["comment"].s();
+                    }
+
+                    string projectionID = "";
+
+                    if (body.has("projectionID"))
+                    {
+                        projectionID =
+                            body["projectionID"].s();
+                    }
+
+
+                    if (orderDate.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Order Date is required.");
+                    }
+
+
+                    if (!body.has("lines"))
+                    {
+                        return crow::response(
+                            400,
+                            "At least one material line is required.");
+                    }
+
+
+                    WarehouseManager& warehouseManager =
+                        warehouseSystem->getWarehouseManager();
+
+                    if (warehouseManager.findWarehouse(warehouseID) == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Warehouse not found.");
+                    }
+
+
+                    MaterialManager& materialManager =
+                        warehouseSystem->getMaterialManager();
+
+
+                    // ------------------------------------------------
+                    // Validate every line before creating anything
+                    // ------------------------------------------------
+
+                    struct BatchLine
+                    {
+                        string materialID;
+                        int orderedQuantity;
+                    };
+
+                    vector<BatchLine> lines;
+
+                    for (const auto& lineJson : body["lines"])
+                    {
+                        string materialID =
+                            lineJson["materialID"].s();
+
+                        int orderedQuantity =
+                            lineJson["orderedQuantity"].i();
+
+                        if (!Material::isValidID(materialID))
+                        {
+                            return crow::response(
+                                400,
+                                "Invalid Material ID: " + materialID);
+                        }
+
+                        if (materialManager.findMaterial(materialID) == nullptr)
+                        {
+                            return crow::response(
+                                404,
+                                "Material not found: " + materialID);
+                        }
+
+                        if (orderedQuantity <= 0)
+                        {
+                            return crow::response(
+                                400,
+                                "Ordered Quantity must be greater than "
+                                "zero for material " + materialID);
+                        }
+
+                        lines.push_back({materialID, orderedQuantity});
+                    }
+
+
+                    if (lines.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "At least one material line is required.");
+                    }
+
+
+                    // ------------------------------------------------
+                    // Create - all lines share one reserved ID
+                    // ------------------------------------------------
+
+                    ProcurementManager& procurementManager =
+                        warehouseSystem->getProcurementManager();
+
+                    string batchID =
+                        procurementManager.reserveNextID();
+
+                    for (const auto& line : lines)
+                    {
+                        procurementManager.createOrder(
+                            productID,
+                            line.materialID,
+                            warehouseID,
+                            orderDate,
+                            line.orderedQuantity,
+                            comment,
+                            projectionID,
+                            batchID);
+                    }
+
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["id"] = batchID;
 
                     response["message"] =
                         "Procurement Order created successfully.";
@@ -3087,6 +4093,9 @@ void WebServer::run()
                     string id =
                         body["id"].s();
 
+                    string materialID =
+                        body["materialID"].s();
+
                     string confirmationDate =
                         body["confirmationDate"].s();
 
@@ -3102,6 +4111,14 @@ void WebServer::run()
                     }
 
 
+                    if (materialID.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Material ID is required.");
+                    }
+
+
                     if (confirmationDate.empty())
                     {
                         return crow::response(
@@ -3110,11 +4127,11 @@ void WebServer::run()
                     }
 
 
-                    if (confirmedQuantity <= 0)
+                    if (confirmedQuantity < 0)
                     {
                         return crow::response(
                             400,
-                            "Confirmed Quantity must be greater than zero.");
+                            "Confirmed Quantity cannot be negative.");
                     }
 
 
@@ -3122,17 +4139,52 @@ void WebServer::run()
                         warehouseSystem->getProcurementManager();
 
 
-                    if (procurementManager.findOrder(id) == nullptr)
+                    if (procurementManager.findOrder(id, materialID) == nullptr)
                     {
                         return crow::response(
                             404,
                             "Procurement Order not found.");
                     }
 
+                    // A confirmed quantity of 0 means this material
+                    // line was never actually needed - delete it
+                    // outright instead of "confirming" a zero
+                    // quantity. Kept as its own branch here (rather
+                    // than moved into confirmOrder) so a 0 always
+                    // goes through the same receipts-guard as an
+                    // explicit delete call.
+
+                    if (confirmedQuantity == 0)
+                    {
+                        bool deleted =
+                            procurementManager.deleteOrder(id, materialID);
+
+                        if (!deleted)
+                        {
+                            return crow::response(
+                                400,
+                                "Could not delete Procurement Order line "
+                                "(it may already have receipts recorded "
+                                "against it, or already be confirmed).");
+                        }
+
+                        crow::json::wvalue response;
+
+                        response["success"] = true;
+
+                        response["deleted"] = true;
+
+                        response["message"] =
+                            "Procurement Order line deleted.";
+
+                        return crow::response(response);
+                    }
+
 
                     bool success =
                         procurementManager.confirmOrder(
                             id,
+                            materialID,
                             confirmationDate,
                             confirmedQuantity);
 
@@ -3151,6 +4203,99 @@ void WebServer::run()
 
                     response["message"] =
                         "Procurement Order confirmed successfully.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
+// PROCUREMENT - DELETE ORDER
+// ============================================================
+// Separate explicit endpoint for deleting an order outright, used
+// by the "0 = delete" confirmation flow above and available for the
+// UI to call directly. Refuses orders that already have receipts.
+
+    CROW_ROUTE(app, "/api/procurement/delete")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+
+                    string id =
+                        body["id"].s();
+
+                    string materialID =
+                        body["materialID"].s();
+
+
+                    if (id.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Procurement Order ID is required.");
+                    }
+
+
+                    if (materialID.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Material ID is required.");
+                    }
+
+
+                    ProcurementManager& procurementManager =
+                        warehouseSystem->getProcurementManager();
+
+
+                    if (procurementManager.findOrder(id, materialID) == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Procurement Order not found.");
+                    }
+
+
+                    bool success =
+                        procurementManager.deleteOrder(id, materialID);
+
+
+                    if (!success)
+                    {
+                        return crow::response(
+                            400,
+                            "Could not delete Procurement Order "
+                            "(it may already have receipts recorded "
+                            "against it, or already be confirmed - "
+                            "cancel or close it instead).");
+                    }
+
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] =
+                        "Procurement Order deleted.";
 
                     return crow::response(response);
                 }
@@ -3189,6 +4334,9 @@ void WebServer::run()
                     string id =
                         body["id"].s();
 
+                    string materialID =
+                        body["materialID"].s();
+
                     string receiptDate =
                         body["receiptDate"].s();
 
@@ -3209,6 +4357,14 @@ void WebServer::run()
                         return crow::response(
                             400,
                             "Procurement Order ID is required.");
+                    }
+
+
+                    if (materialID.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Material ID is required.");
                     }
 
 
@@ -3233,7 +4389,7 @@ void WebServer::run()
 
 
                     ProcurementOrder* order =
-                        procurementManager.findOrder(id);
+                        procurementManager.findOrder(id, materialID);
 
 
                     if (order == nullptr)
@@ -3255,6 +4411,7 @@ void WebServer::run()
                     bool success =
                         procurementManager.receiveOrder(
                             id,
+                            materialID,
                             receiptDate,
                             receivedQuantity,
                             comment);
@@ -3274,6 +4431,157 @@ void WebServer::run()
 
                     response["message"] =
                         "Receipt recorded and goods received successfully.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+
+// ============================================================
+// PROCUREMENT ORDERS - CLOSE (mark as never arriving in full)
+// ============================================================
+// The supplier is not going to deliver the rest of this order (lost
+// goods, discontinued item, cancelled after a partial delivery...).
+// Closes every material line still pending under this "PRC-######"
+// id - whatever was already received stays in inventory - and the
+// whole order moves out of Confirmed Orders into Archived Orders,
+// labeled "Closed (Incomplete)" instead of "Completed".
+
+    CROW_ROUTE(app, "/api/procurement/close")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    string id =
+                        body["id"].s();
+
+                    if (id.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Procurement Order ID is required.");
+                    }
+
+                    ProcurementManager& procurementManager =
+                        warehouseSystem->getProcurementManager();
+
+                    if (procurementManager.findOrder(id) == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Procurement Order not found.");
+                    }
+
+                    bool success =
+                        procurementManager.closeOrder(id);
+
+                    if (!success)
+                    {
+                        return crow::response(
+                            409,
+                            "Nothing pending left to close on this order.");
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] =
+                        "Order closed. Materials already received stay in "
+                        "inventory; the rest no longer counts as pending.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+
+// ============================================================
+// PROCUREMENT - CANCEL ORDER
+// ============================================================
+// For an order still fully unconfirmed (Open Orders) that will
+// never be confirmed. Moves it to Archived Orders as "Cancelled" -
+// distinct from "Closed (Incomplete)", which is for an order that
+// was confirmed and partially received before the rest stopped
+// coming.
+
+    CROW_ROUTE(app, "/api/procurement/cancel")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    string id =
+                        body["id"].s();
+
+                    if (id.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Procurement Order ID is required.");
+                    }
+
+                    ProcurementManager& procurementManager =
+                        warehouseSystem->getProcurementManager();
+
+                    if (procurementManager.findOrder(id) == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Procurement Order not found.");
+                    }
+
+                    bool success =
+                        procurementManager.cancelOrder(id);
+
+                    if (!success)
+                    {
+                        return crow::response(
+                            409,
+                            "Nothing left to cancel on this order (it may "
+                            "already be confirmed).");
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] =
+                        "Order cancelled and moved to Archived Orders.";
 
                     return crow::response(response);
                 }

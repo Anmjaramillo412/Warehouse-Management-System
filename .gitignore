@@ -362,9 +362,9 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 
-# 4Tex project-specific: keep test/example data and material photos local only
-ProjectSemester/warehouse_data.xlsx
-ProjectSemester/web/images/materials/
+# Project-specific: everything under data/ and web/images/ is local
+# runtime/working data (real inventory data, receipts, photos) and must
+# never be tracked or overwritten by a git sync (pull/checkout/merge).
 Claude outputs/
-ProjectSemester/data/movement_history.txt
-ProjectSemester/data/procurement_orders.txt
+ProjectSemester/data/
+ProjectSemester/web/images/

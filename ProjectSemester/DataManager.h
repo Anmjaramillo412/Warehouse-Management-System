@@ -21,7 +21,7 @@ public:
 
     // Constructor
     DataManager(
-        string file = "warehouse_data.xlsx");
+        string file = "data/warehouse_data.xlsx");
 
     void setMovementLogger(
         MovementLogger* logger);

@@ -250,12 +250,32 @@ function openModule(module) {
 
             <div class="module-buttons">
 
-                <button onclick="showProjection()">
-                    Production Projection
+                <button onclick="showNewProjection()">
+                    New Projection
                 </button>
 
-                <button onclick="showProcurementOrders()">
-                    Procurement Orders
+                <button onclick="showProjections()">
+                    Open Projections
+                </button>
+
+                <button class="button-muted" onclick="showArchivedProjections()">
+                    Archived Projections
+                </button>
+
+                <button class="button-accent" onclick="showNewProcurementOrder()">
+                    New Order
+                </button>
+
+                <button class="button-accent" onclick="showProcurementOrders()">
+                    Open Orders
+                </button>
+
+                <button class="button-accent" onclick="showConfirmedOrders()">
+                    Confirmed Orders
+                </button>
+
+                <button class="button-muted" onclick="showArchivedOrders()">
+                    Archived Orders
                 </button>
 
             </div>
@@ -3453,6 +3473,92 @@ function escapeHtml(value) {
 }
 
 // ============================================================
+// CONFIRM DIALOG (in-page, instead of the browser's own
+// window.confirm popup - built once and reused for every call)
+// ============================================================
+
+function showConfirmDialog(message) {
+
+    return new Promise((resolve) => {
+
+        let overlay =
+            document.getElementById(
+                "app-confirm-overlay"
+            );
+
+        if (!overlay) {
+
+            overlay =
+                document.createElement("div");
+
+            overlay.id =
+                "app-confirm-overlay";
+
+            overlay.className =
+                "app-modal-overlay hidden";
+
+            overlay.innerHTML = `
+                <div class="app-modal-box">
+
+                    <p id="app-confirm-message">
+                    </p>
+
+                    <div class="app-modal-actions">
+
+                        <button
+                            type="button"
+                            id="app-confirm-cancel"
+                            class="app-modal-button-secondary">
+
+                            Cancel
+
+                        </button>
+
+                        <button
+                            type="button"
+                            id="app-confirm-ok"
+                            class="app-modal-button-primary">
+
+                            OK
+
+                        </button>
+
+                    </div>
+
+                </div>
+            `;
+
+            document.body.appendChild(overlay);
+        }
+
+        document.getElementById(
+            "app-confirm-message"
+        ).textContent = message;
+
+        overlay.classList.remove("hidden");
+
+        const okButton =
+            document.getElementById("app-confirm-ok");
+
+        const cancelButton =
+            document.getElementById("app-confirm-cancel");
+
+        function finish(result) {
+
+            overlay.classList.add("hidden");
+
+            okButton.onclick = null;
+            cancelButton.onclick = null;
+
+            resolve(result);
+        }
+
+        okButton.onclick = () => finish(true);
+        cancelButton.onclick = () => finish(false);
+    });
+}
+
+// ============================================================
 // MODIFY MATERIAL
 // ============================================================
 
@@ -5728,6 +5834,10 @@ async function showDisplayProducts() {
                                 </th>
 
                                 <th>
+                                    Name
+                                </th>
+
+                                <th>
                                     Quantity
                                 </th>
 
@@ -5750,6 +5860,12 @@ async function showDisplayProducts() {
                             <td>
                                 ${escapeHtml(
                                     item.materialID
+                                )}
+                            </td>
+
+                            <td>
+                                ${escapeHtml(
+                                    item.materialName || ""
                                 )}
                             </td>
 
@@ -6456,10 +6572,10 @@ function productComboboxHtml(prefix, placeholder) {
 }
 
 // ============================================================
-// PRODUCTION PROJECTION - FORM
+// NEW PROJECTION - FORM
 // ============================================================
 
-function showProjection() {
+function showNewProjection() {
 
     const content =
         document.getElementById(
@@ -6471,7 +6587,7 @@ function showProjection() {
         <div class="form-container form-container-wide">
 
             <h2>
-                Production Projection
+                New Production Projection
             </h2>
 
             <label>
@@ -6481,7 +6597,7 @@ function showProjection() {
             ${productComboboxHtml("projection")}
 
             <label>
-                Warehouse ID (destination for orders placed below)
+                Warehouse ID (destination for orders placed from this batch)
             </label>
 
             <input
@@ -6513,18 +6629,15 @@ function showProjection() {
             <div class="form-actions">
 
                 <button
-                    onclick="calculateProjection()">
+                    onclick="createProjectionSubmit()">
 
-                    Calculate Needs
+                    Calculate &amp; Save Projection
 
                 </button>
 
             </div>
 
             <div id="projection-message">
-            </div>
-
-            <div id="projection-result">
             </div>
 
         </div>
@@ -6534,15 +6647,14 @@ function showProjection() {
 }
 
 // ============================================================
-// PRODUCTION PROJECTION - CALCULATE
+// NEW PROJECTION - SUBMIT
 // ============================================================
-// BOM quantity x units to manufacture, minus current stock
-// (summed across every warehouse), for every component of the
-// selected Product. Purely a read of /api/products + /api/
-// materials + /api/inventory - no backend change needed for this
-// part.
+// Creates a persisted Projection batch on the backend: BOM
+// quantity x units to manufacture, minus current stock (summed
+// across every warehouse), frozen at creation time. Only materials
+// with an actual shortfall are stored.
 
-async function calculateProjection() {
+async function createProjectionSubmit() {
 
     const productID =
         document.getElementById(
@@ -6554,6 +6666,11 @@ async function calculateProjection() {
             "projection-warehouse-id"
         ).value;
 
+    const deadline =
+        document.getElementById(
+            "projection-deadline"
+        ).value;
+
     const quantity =
         document.getElementById(
             "projection-quantity"
@@ -6563,13 +6680,6 @@ async function calculateProjection() {
         document.getElementById(
             "projection-message"
         );
-
-    const result =
-        document.getElementById(
-            "projection-result"
-        );
-
-    result.innerHTML = "";
 
 
     if (!productID) {
@@ -6602,137 +6712,431 @@ async function calculateProjection() {
         "Calculating...";
 
 
+    const payload = {
+
+        productID: productID,
+
+        warehouseID: Number(warehouseID),
+
+        deadline: deadline,
+
+        manufactureQuantity: Number(quantity)
+    };
+
+
     try {
 
-        const [productsResponse, inventoryResponse, materialsResponse] =
-            await Promise.all([
-                fetch("/api/products"),
-                fetch("/api/inventory"),
-                fetch("/api/materials")
-            ]);
+        const response =
+            await fetch(
+                "/api/projections/create",
+                {
+                    method: "POST",
 
-        const productsData =
-            await productsResponse.json();
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
 
-        const inventoryData =
-            await inventoryResponse.json();
-
-        const materialsData =
-            await materialsResponse.json();
-
-
-        const product =
-            (productsData.products || []).find(
-                p => p.id === productID
+                    body:
+                        JSON.stringify(payload)
+                }
             );
 
-        if (!product) {
+        const responseData =
+            await response.json()
+                .catch(() => null);
+
+        if (response.ok &&
+            responseData &&
+            responseData.id) {
+
+            message.textContent = "";
+
+            await openProjectionDetail(
+                responseData.id);
+        }
+        else {
+
+            const responseText =
+                (responseData && responseData.message) ||
+                await response.text()
+                    .catch(() => "");
 
             message.textContent =
-                "Product not found.";
+                responseText ||
+                "Enough stock for all materials - nothing to order.";
+        }
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
+    }
+}
+
+// ============================================================
+// PROJECTIONS - LIST
+// ============================================================
+
+async function showProjections() {
+
+    const content =
+        document.getElementById(
+            "procurement-content"
+        );
+
+    content.innerHTML = `
+        <p>Loading Projections...</p>
+    `;
+
+    await displayProjections();
+}
+
+async function displayProjections() {
+
+    const content =
+        document.getElementById(
+            "procurement-content"
+        );
+
+    try {
+
+        const response =
+            await fetch("/api/projections");
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            content.innerHTML = `
+                <p>Error: ${escapeHtml(errorMessage)}</p>
+            `;
 
             return;
         }
 
-        if (!product.bom ||
-            product.bom.length === 0) {
+        const data =
+            await response.json();
 
-            message.textContent =
-                "This product has no Bill of Materials.";
+        const projections =
+            (data.projections || []).filter(
+                projection => !projection.completed
+            );
 
-            return;
-        }
+        if (projections.length === 0) {
 
-
-        // Sum stock per material across every warehouse
-
-        const stockByMaterial = {};
-
-        for (const warehouse of (inventoryData.warehouses || [])) {
-
-            for (const item of (warehouse.inventory || [])) {
-
-                stockByMaterial[item.materialID] =
-                    (stockByMaterial[item.materialID] || 0) +
-                    item.quantity;
-            }
-        }
-
-
-        const materialsByID = {};
-
-        for (const material of (materialsData.materials || [])) {
-            materialsByID[material.id] = material;
-        }
-
-
-        const manufactureQty =
-            Number(quantity);
-
-        const shortfalls = [];
-
-        for (const bomItem of product.bom) {
-
-            const required =
-                bomItem.quantity * manufactureQty;
-
-            const inStock =
-                stockByMaterial[bomItem.materialID] || 0;
-
-            const shortfall =
-                Math.max(0, required - inStock);
-
-            if (shortfall > 0) {
-
-                shortfalls.push({
-                    materialID: bomItem.materialID,
-                    material: materialsByID[bomItem.materialID] || {},
-                    required: required,
-                    inStock: inStock,
-                    shortfall: shortfall
-                });
-            }
-        }
-
-
-        message.textContent = "";
-
-
-        if (shortfalls.length === 0) {
-
-            result.innerHTML = `
+            content.innerHTML = `
                 <div class="empty-message">
-                    Enough stock for all materials - nothing to order.
+                    No active Projections. Use "New Projection" to create one, or check Archived Projections.
                 </div>
             `;
 
             return;
         }
 
+        let html =
+            `<div class="procurement-list">`;
+
+        for (const projection of projections) {
+            html += renderProjectionCard(projection);
+        }
+
+        html += `</div>`;
+
+        content.innerHTML = html;
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `
+            <p>Could not connect to the server.</p>
+        `;
+    }
+}
+
+// ============================================================
+// PROJECTIONS - ARCHIVE (Completed / produced batches only)
+// ============================================================
+
+async function showArchivedProjections() {
+
+    const content =
+        document.getElementById(
+            "procurement-content"
+        );
+
+    content.innerHTML = `
+        <p>Loading Archived Projections...</p>
+    `;
+
+    await displayArchivedProjections();
+}
+
+async function displayArchivedProjections() {
+
+    const content =
+        document.getElementById(
+            "procurement-content"
+        );
+
+    try {
+
+        const response =
+            await fetch("/api/projections");
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            content.innerHTML = `
+                <p>Error: ${escapeHtml(errorMessage)}</p>
+            `;
+
+            return;
+        }
+
+        const data =
+            await response.json();
+
+        const projections =
+            (data.projections || []).filter(
+                projection => projection.completed === true
+            );
+
+        if (projections.length === 0) {
+
+            content.innerHTML = `
+                <div class="empty-message">
+                    No Archived Projections yet.
+                </div>
+            `;
+
+            return;
+        }
+
+        let html =
+            `<div class="procurement-list">`;
+
+        for (const projection of projections) {
+            html += renderProjectionCard(projection);
+        }
+
+        html += `</div>`;
+
+        content.innerHTML = html;
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `
+            <p>Could not connect to the server.</p>
+        `;
+    }
+}
+
+// ============================================================
+// PROJECTIONS - STATUS BADGE CLASS
+// ============================================================
+
+function projectionStatusClass(status) {
+
+    if (status === "Fully Ordered" ||
+        status === "Completed") {
+        return "status-completed";
+    }
+
+    return "status-partial";
+}
+
+// ============================================================
+// PROJECTIONS - ORDER TIMING BADGE CLASS
+// ============================================================
+
+function timingStatusClass(status) {
+
+    if (status === "Overdue") {
+        return "status-inactive";
+    }
+
+    if (status === "On Time") {
+        return "status-active";
+    }
+
+    return "status-ordered";
+}
+
+// ============================================================
+// PROJECTIONS - CARD MARKUP
+// ============================================================
+
+function renderProjectionCard(projection) {
+
+    const displayStatus =
+        projection.completed ? "Completed" : projection.status;
+
+    return `
+
+        <div
+            class="procurement-card projection-card"
+            id="projection-${projection.id}"
+            onclick="openProjectionDetail('${escapeHtml(projection.id)}')">
+
+            <div class="procurement-card-header">
+
+                <div>
+                    <strong>${escapeHtml(projection.id)}</strong>
+                    &mdash;
+                    ${escapeHtml(projection.productID)}
+                    ${escapeHtml(projection.productName || "")}
+                </div>
+
+                <span class="status-badge ${projectionStatusClass(displayStatus)}">
+                    ${escapeHtml(displayStatus)}
+                </span>
+
+            </div>
+
+            <div class="material-detail-grid procurement-grid">
+
+                <div class="detail-field">
+                    <div class="detail-label">Warehouse</div>
+                    <div class="detail-value">${projection.warehouseID}</div>
+                </div>
+
+                <div class="detail-field">
+                    <div class="detail-label">Deadline</div>
+                    <div class="detail-value">${escapeHtml(projection.deadline || "")}</div>
+                </div>
+
+                <div class="detail-field">
+                    <div class="detail-label">Qty to Manufacture</div>
+                    <div class="detail-value">${projection.manufactureQuantity}</div>
+                </div>
+
+                <div class="detail-field">
+                    <div class="detail-label">Created</div>
+                    <div class="detail-value">${escapeHtml(projection.creationDate || "")}</div>
+                </div>
+
+            </div>
+
+        </div>
+    `;
+}
+
+// ============================================================
+// PROJECTIONS - DETAIL (materials to order for this batch)
+// ============================================================
+
+async function openProjectionDetail(id) {
+
+    const content =
+        document.getElementById(
+            "procurement-content"
+        );
+
+    content.innerHTML = `
+        <p>Loading Projection...</p>
+    `;
+
+    try {
+
+        const response =
+            await fetch(`/api/projections/${id}`);
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            content.innerHTML = `
+                <p>Error: ${escapeHtml(errorMessage)}</p>
+            `;
+
+            return;
+        }
+
+        const projection =
+            await response.json();
+
+        const readOnly = !!projection.completed;
+
+        const displayStatus =
+            readOnly ? "Completed" : projection.status;
 
         let html = `
+
+            <button
+                type="button"
+                class="back-button"
+                onclick="showProjections()">
+
+                &larr; Back to Projections
+
+            </button>
 
             <div class="material-table-container">
 
                 <h2>
-                    Materials to Order
+                    ${escapeHtml(projection.id)}
+                    &mdash;
+                    ${escapeHtml(projection.productID)}
+                    ${escapeHtml(projection.productName || "")}
                 </h2>
+
+                <p>
+                    Warehouse ${projection.warehouseID}
+                    &mdash; Deadline: ${escapeHtml(projection.deadline || "-")}
+                    &mdash; Qty to Manufacture: ${projection.manufactureQuantity}
+                    &mdash; Status:
+                    <span class="status-badge ${projectionStatusClass(displayStatus)}">
+                        ${escapeHtml(displayStatus)}
+                    </span>
+                </p>
+
+                ${readOnly ? `
+                    <p>
+                        Production confirmed: ${projection.producedQuantity} units on ${escapeHtml(projection.completionDate || "-")}.
+                        BOM materials were issued from the Warehouse.
+                    </p>
+                ` : `
+                    <div class="projection-delete-button-row">
+                        <button
+                            type="button"
+                            class="button-danger"
+                            onclick="deleteProjectionConfirm('${escapeHtml(projection.id)}')">
+
+                            Delete Projection
+
+                        </button>
+                    </div>
+                `}
+
+                <div id="projection-detail-message">
+                </div>
 
                 <table class="material-table">
 
                     <thead>
 
                         <tr>
+                            <th></th>
                             <th>Photo</th>
                             <th>Material ID</th>
                             <th>Name</th>
                             <th>UoM</th>
-                            <th>In Stock</th>
-                            <th>Needed</th>
-                            <th>Shortfall</th>
-                            <th>Order Date</th>
+                            <th title="Warehouse stock minus what other active Projections have already reserved">Virtual Stock</th>
+                            <th>Required</th>
+                            <th>Pending</th>
+                            <th>Order By</th>
+                            <th>Status</th>
                             <th>Qty to Order</th>
-                            <th></th>
                         </tr>
 
                     </thead>
@@ -6741,10 +7145,33 @@ async function calculateProjection() {
         `;
 
 
-        for (const line of shortfalls) {
+        let anySelectable = false;
+
+        for (const item of (projection.items || [])) {
 
             const rowID =
-                "proj-" + line.materialID;
+                "projdet-" + item.materialID;
+
+            const alreadyOrdered =
+                readOnly || item.pendingQuantity <= 0;
+
+            // Once anything is already on order for this material
+            // (from any Projection), replace the raw Pending number
+            // with a status - a bare number next to an order that
+            // already exists reads as "still needs everything",
+            // which is confusing. The exact remaining amount is
+            // still available, prefilled into "Qty to Order" below.
+
+            const pendingCell =
+                alreadyOrdered
+                ? `<span class="status-badge status-active">&#10003; Fully ordered</span>`
+                : (item.orderedQuantity > 0
+                    ? `<span class="status-badge status-partial">Partially Ordered</span>`
+                    : `<strong>${item.pendingQuantity}</strong>`);
+
+            if (!alreadyOrdered) {
+                anySelectable = true;
+            }
 
             html += `
 
@@ -6752,9 +7179,20 @@ async function calculateProjection() {
 
                     <td>
                         ${
-                            line.material.photo
+                            alreadyOrdered
+                            ? ""
+                            : `<input
+                                    type="checkbox"
+                                    id="${rowID}-select"
+                               >`
+                        }
+                    </td>
+
+                    <td>
+                        ${
+                            item.photo
                             ? `<img
-                                    src="/${line.material.photo}"
+                                    src="/${item.photo}"
                                     class="material-thumbnail"
                                     alt="Material photo"
                                >`
@@ -6762,34 +7200,32 @@ async function calculateProjection() {
                         }
                     </td>
 
-                    <td>${escapeHtml(line.materialID)}</td>
-                    <td>${escapeHtml(line.material.name || "")}</td>
-                    <td>${escapeHtml(line.material.uom || "")}</td>
-                    <td>${line.inStock}</td>
-                    <td>${line.required}</td>
-                    <td><strong>${line.shortfall}</strong></td>
+                    <td>${escapeHtml(item.materialID)}</td>
+                    <td>${escapeHtml(item.materialName || "")}</td>
+                    <td>${escapeHtml(item.uom || "")}</td>
+                    <td>${item.currentStock}</td>
+                    <td>${item.requiredQuantity}</td>
+                    <td>${pendingCell}</td>
+                    <td>${escapeHtml(item.orderByDate || "-")}</td>
 
                     <td>
-                        <input type="date" id="${rowID}-date">
+                        <span class="status-badge ${timingStatusClass(item.timingStatus)}">
+                            ${escapeHtml(item.timingStatus || "")}
+                        </span>
                     </td>
 
                     <td>
-                        <input
-                            type="number"
-                            min="1"
-                            id="${rowID}-qty"
-                            value="${line.shortfall}"
-                        >
-                    </td>
-
-                    <td>
-                        <button
-                            type="button"
-                            onclick="registerProcurementOrder('${escapeHtml(line.materialID)}', '${escapeHtml(productID)}')">
-
-                            Register Order
-
-                        </button>
+                        ${
+                            alreadyOrdered
+                            ? "-"
+                            : `<input
+                                    type="number"
+                                    min="1"
+                                    class="procurement-qty-input"
+                                    id="${rowID}-qty"
+                                    value="${item.pendingQuantity}"
+                               >`
+                        }
                     </td>
 
                 </tr>
@@ -6803,10 +7239,183 @@ async function calculateProjection() {
 
                 </table>
 
+                ${anySelectable ? `
+
+                    <div class="procurement-inline-form">
+
+                        <label for="projdet-order-date">
+                            Order Date
+                        </label>
+
+                        <input
+                            type="date"
+                            id="projdet-order-date"
+                        >
+
+                        <button
+                            type="button"
+                            onclick="registerSelectedOrders('${escapeHtml(projection.id)}', '${escapeHtml(projection.productID)}', ${projection.warehouseID})">
+
+                            Register Order
+
+                        </button>
+
+                        <button
+                            type="button"
+                            onclick="registerSelectedOrdersToday('${escapeHtml(projection.id)}', '${escapeHtml(projection.productID)}', ${projection.warehouseID})">
+
+                            Register Today
+
+                        </button>
+
+                    </div>
+
+                ` : ""}
+
             </div>
+
+            ${(!readOnly && projection.status === "Fully Ordered") ? `
+
+                <div class="procurement-section procurement-section-standalone">
+
+                    <h3>
+                        Confirm Production
+                    </h3>
+
+                    <p>
+                        Confirming production issues the full Bill of
+                        Materials for the produced quantity from the
+                        Warehouse (Goods Issue) and archives this
+                        Projection into Archived Projections.
+                    </p>
+
+                    <div class="procurement-inline-form">
+
+                        <label for="projdet-produced-qty">
+                            Produced Quantity
+                        </label>
+
+                        <input
+                            type="number"
+                            min="1"
+                            id="projdet-produced-qty"
+                            value="${projection.manufactureQuantity}"
+                        >
+
+                        <label for="projdet-completion-date">
+                            Completion Date
+                        </label>
+
+                        <input
+                            type="date"
+                            id="projdet-completion-date"
+                        >
+
+                        <button
+                            type="button"
+                            onclick="confirmProduction('${escapeHtml(projection.id)}')">
+
+                            Confirm Production
+
+                        </button>
+
+                    </div>
+
+                </div>
+
+            ` : ""}
         `;
 
-        result.innerHTML = html;
+        content.innerHTML = html;
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `
+            <p>Could not connect to the server.</p>
+        `;
+    }
+}
+
+// ============================================================
+// PROJECTIONS - CONFIRM PRODUCTION (issue BOM, archive batch)
+// ============================================================
+
+async function confirmProduction(id) {
+
+    const message =
+        document.getElementById(
+            "projection-detail-message"
+        );
+
+    const producedQuantity =
+        document.getElementById(
+            "projdet-produced-qty"
+        ).value;
+
+    const completionDate =
+        document.getElementById(
+            "projdet-completion-date"
+        ).value;
+
+    if (!producedQuantity ||
+        Number(producedQuantity) <= 0) {
+
+        message.textContent =
+            "Please enter a Produced Quantity greater than zero.";
+
+        return;
+    }
+
+    if (!completionDate) {
+
+        message.textContent =
+            "Please enter a Completion Date.";
+
+        return;
+    }
+
+    const confirmed = await showConfirmDialog(
+        "This will issue the full Bill of Materials for " +
+        producedQuantity +
+        " unit(s) from the Warehouse and archive this Projection. Continue?"
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/projections/complete",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        id: id,
+                        producedQuantity: Number(producedQuantity),
+                        completionDate: completionDate
+                    })
+                }
+            );
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            message.textContent =
+                errorMessage;
+
+            return;
+        }
+
+        await showProjections();
     }
     catch (error) {
 
@@ -6818,61 +7427,163 @@ async function calculateProjection() {
 }
 
 // ============================================================
-// PRODUCTION PROJECTION - REGISTER ORDER
+// PROJECTIONS - DELETE
 // ============================================================
+// Scraps the plan outright. Procurement Orders already placed from
+// it are not touched (see the backend) - only the Projection itself
+// disappears from the active list.
 
-async function registerProcurementOrder(materialID, productID) {
-
-    const rowID =
-        "proj-" + materialID;
-
-    const warehouseID =
-        document.getElementById(
-            "projection-warehouse-id"
-        ).value;
-
-    const orderDate =
-        document.getElementById(
-            rowID + "-date"
-        ).value;
-
-    const quantity =
-        document.getElementById(
-            rowID + "-qty"
-        ).value;
+async function deleteProjectionConfirm(id) {
 
     const message =
         document.getElementById(
-            "projection-message"
+            "projection-detail-message"
         );
 
-    const row =
-        document.getElementById(
-            rowID + "-row"
-        );
+    const confirmed = await showConfirmDialog(
+        `Delete Projection ${id}? This cannot be undone. ` +
+        "Procurement Orders already placed from it will not be deleted."
+    );
 
-
-    if (!warehouseID) {
-
-        message.textContent =
-            "Please enter a Warehouse ID at the top of the form.";
-
+    if (!confirmed) {
         return;
     }
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/projections/delete",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ id: id })
+                }
+            );
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            message.textContent =
+                errorMessage;
+
+            return;
+        }
+
+        await showProjections();
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
+    }
+}
+
+// ============================================================
+// PROJECTIONS - REGISTER ORDER FOR SELECTED MATERIALS (ONE PRC)
+// ============================================================
+// Every checked material is registered together under one shared
+// "PRC-######" number and one Order Date - one action, one
+// Procurement Order, instead of a separate PRC per material.
+
+// ============================================================
+// PROJECTION DETAIL - REGISTER ORDER, TODAY (quick convenience)
+// ============================================================
+// Same one-click convenience as "Confirm as Ordered Today"/"Receipt
+// Today": fills the Order Date with today and reuses the normal
+// registration path so validation/behavior stays identical.
+
+function registerSelectedOrdersToday(projectionID, productID, warehouseID) {
+
+    const dateInput =
+        document.getElementById(
+            "projdet-order-date"
+        );
+
+    if (!dateInput) {
+        return;
+    }
+
+    const today =
+        new Date().toISOString().slice(0, 10);
+
+    dateInput.value = today;
+
+    registerSelectedOrders(projectionID, productID, warehouseID);
+}
+
+async function registerSelectedOrders(projectionID, productID, warehouseID) {
+
+    const message =
+        document.getElementById(
+            "projection-detail-message"
+        );
+
+    const orderDate =
+        document.getElementById(
+            "projdet-order-date"
+        ).value;
 
     if (!orderDate) {
 
         message.textContent =
-            `Please enter an Order Date for material ${materialID}.`;
+            "Please enter an Order Date.";
 
         return;
     }
 
-    if (!quantity ||
-        Number(quantity) <= 0) {
+    const checkboxes =
+        document.querySelectorAll(
+            '[id^="projdet-"][id$="-select"]'
+        );
+
+    const lines = [];
+
+    for (const checkbox of checkboxes) {
+
+        if (!checkbox.checked) {
+            continue;
+        }
+
+        const materialID =
+            checkbox.id.slice(
+                "projdet-".length,
+                checkbox.id.length - "-select".length
+            );
+
+        const qtyInput =
+            document.getElementById(
+                "projdet-" + materialID + "-qty"
+            );
+
+        const quantity =
+            qtyInput ? qtyInput.value : "";
+
+        if (!quantity ||
+            Number(quantity) <= 0) {
+
+            message.textContent =
+                `Quantity to Order must be greater than zero for material ${materialID}.`;
+
+            return;
+        }
+
+        lines.push({
+            materialID: materialID,
+            orderedQuantity: Number(quantity)
+        });
+    }
+
+    if (lines.length === 0) {
 
         message.textContent =
-            `Quantity to Order must be greater than zero for material ${materialID}.`;
+            "Select at least one material to order.";
 
         return;
     }
@@ -6882,15 +7593,15 @@ async function registerProcurementOrder(materialID, productID) {
 
         productID: productID,
 
-        materialID: materialID,
-
         warehouseID: Number(warehouseID),
 
         orderDate: orderDate,
 
-        orderedQuantity: Number(quantity),
+        comment: "",
 
-        comment: ""
+        projectionID: projectionID,
+
+        lines: lines
     };
 
 
@@ -6898,7 +7609,7 @@ async function registerProcurementOrder(materialID, productID) {
 
         const response =
             await fetch(
-                "/api/procurement/create",
+                "/api/procurement/create-batch",
                 {
                     method: "POST",
 
@@ -6919,15 +7630,11 @@ async function registerProcurementOrder(materialID, productID) {
 
             message.textContent = "";
 
-            if (row) {
+            // Refresh the whole batch so "Pending" for every line
+            // reflects the new order right away.
 
-                row.innerHTML = `
-                    <td colspan="10">
-                        &#10003; Order registered for
-                        ${escapeHtml(materialID)}
-                    </td>
-                `;
-            }
+            await openProjectionDetail(
+                projectionID);
         }
         else {
 
@@ -6945,10 +7652,23 @@ async function registerProcurementOrder(materialID, productID) {
 }
 
 // ============================================================
-// PROCUREMENT ORDERS - LIST
+// PROCUREMENT ORDERS - LIST (Open Orders / Confirmed Orders)
 // ============================================================
+// The active (not yet Completed) orders are split into two views by
+// their combined status: Open Orders are still waiting on supplier
+// confirmation (status "Ordered"), Confirmed Orders are confirmed
+// and now just waiting on goods receipt ("Confirmed" or "Partially
+// Received"). Both share the same fetch/group/render pipeline below,
+// distinguished only by "stage" - kept in currentProcurementStage so
+// every refresh call (after confirming, receiving, etc.) redraws
+// whichever of the two views is actually open, without every call
+// site needing to pass it explicitly.
+
+let currentProcurementStage = "open";
 
 async function showProcurementOrders() {
+
+    currentProcurementStage = "open";
 
     const content =
         document.getElementById(
@@ -6956,13 +7676,32 @@ async function showProcurementOrders() {
         );
 
     content.innerHTML = `
-        <p>Loading Procurement Orders...</p>
+        <p>Loading Open Orders...</p>
+    `;
+
+    await displayProcurementOrders();
+}
+
+async function showConfirmedOrders() {
+
+    currentProcurementStage = "confirmed";
+
+    const content =
+        document.getElementById(
+            "procurement-content"
+        );
+
+    content.innerHTML = `
+        <p>Loading Confirmed Orders...</p>
     `;
 
     await displayProcurementOrders();
 }
 
 async function displayProcurementOrders() {
+
+    const stage =
+        currentProcurementStage;
 
     const content =
         document.getElementById(
@@ -6989,30 +7728,47 @@ async function displayProcurementOrders() {
         const data =
             await response.json();
 
-        const orders =
-            data.orders || [];
+        // Completed orders move to the Archived Orders view instead
+        // of staying in either active list.
 
-        if (orders.length === 0) {
+        const lines =
+            (data.orders || []).filter(
+                order => order.status !== "Completed" &&
+                         order.status !== "Closed (Incomplete)" &&
+                         order.status !== "Cancelled"
+            );
+
+        const groups =
+            groupProcurementLines(lines)
+                .filter(group => {
+
+                    const status =
+                        combineProcurementStatus(group.lines);
+
+                    return stage === "open"
+                        ? status === "Ordered"
+                        : (status === "Confirmed" ||
+                           status === "Partially Received");
+                });
+
+        if (groups.length === 0) {
 
             content.innerHTML = `
                 <div class="empty-message">
-                    No Procurement Orders yet.
+                    ${stage === "open"
+                        ? `No Open Orders. Orders waiting on
+                           supplier confirmation appear here.`
+                        : `No Confirmed Orders. Orders confirmed by
+                           the supplier and waiting on goods receipt
+                           appear here.`}
                 </div>
             `;
 
             return;
         }
 
-        let html =
-            `<div class="procurement-list">`;
-
-        for (const order of orders) {
-            html += renderProcurementCard(order);
-        }
-
-        html += `</div>`;
-
-        content.innerHTML = html;
+        content.innerHTML =
+            renderProcurementGroupedList(groups, stage);
     }
     catch (error) {
 
@@ -7025,10 +7781,504 @@ async function displayProcurementOrders() {
 }
 
 // ============================================================
-// PROCUREMENT ORDERS - STATUS BADGE CLASS
+// NEW PROCUREMENT ORDER - FORM (from scratch, not tied to a
+// Projection - one or more materials under one shared "PRC-######")
+// ============================================================
+
+function showNewProcurementOrder() {
+
+    const content =
+        document.getElementById(
+            "procurement-content"
+        );
+
+    content.innerHTML = `
+
+        <div class="form-container form-container-wide">
+
+            <h2>
+                New Procurement Order
+            </h2>
+
+            <label>
+                Product (optional - for reference only)
+            </label>
+
+            ${productComboboxHtml("neworder", "Search by ID or name (optional)...")}
+
+            <label>
+                Warehouse ID
+            </label>
+
+            <input
+                type="number"
+                id="neworder-warehouse-id"
+                placeholder="Enter Warehouse ID"
+            >
+
+            <label>
+                Order Date
+            </label>
+
+            <input
+                type="date"
+                id="neworder-order-date"
+            >
+
+            <label>
+                Comment (optional)
+            </label>
+
+            <input
+                type="text"
+                id="neworder-comment"
+                placeholder="Enter a comment"
+            >
+
+            <label>
+                Materials
+            </label>
+
+            <div id="neworder-lines">
+
+                ${neworderRowHtml(0)}
+
+            </div>
+
+            <button
+                type="button"
+                onclick="addProcurementOrderRow()">
+
+                + Add Material
+
+            </button>
+
+            <div class="form-actions">
+
+                <button
+                    onclick="submitNewProcurementOrder()">
+
+                    Create Order
+
+                </button>
+
+            </div>
+
+            <div id="neworder-message">
+            </div>
+
+        </div>
+    `;
+
+    neworderLineCounter = 1;
+
+    initProductCombobox("neworder");
+
+    initMaterialCombobox("neworder-line-0");
+}
+
+// ============================================================
+// NEW PROCUREMENT ORDER - MATERIAL ROW MARKUP (combobox-based)
+// ============================================================
+
+let neworderLineCounter = 0;
+
+function neworderRowHtml(rowIndex) {
+
+    const prefix =
+        `neworder-line-${rowIndex}`;
+
+    return `
+        <div class="bom-row" id="${prefix}-row">
+
+            ${materialComboboxHtml(prefix, "Search by ID or name...")}
+
+            <input
+                type="number"
+                class="neworder-quantity"
+                min="1"
+                placeholder="Quantity"
+            >
+
+            <button
+                type="button"
+                onclick="document.getElementById('${prefix}-row').remove()">
+
+                Remove
+
+            </button>
+
+        </div>
+    `;
+}
+
+// ============================================================
+// NEW PROCUREMENT ORDER - ADD MATERIAL ROW
+// ============================================================
+
+function addProcurementOrderRow() {
+
+    const container =
+        document.getElementById(
+            "neworder-lines"
+        );
+
+    const rowIndex =
+        neworderLineCounter++;
+
+    const wrapper =
+        document.createElement("div");
+
+    wrapper.innerHTML =
+        neworderRowHtml(rowIndex).trim();
+
+    container.appendChild(
+        wrapper.firstElementChild
+    );
+
+    initMaterialCombobox(
+        `neworder-line-${rowIndex}`
+    );
+}
+
+// ============================================================
+// NEW PROCUREMENT ORDER - SUBMIT
+// ============================================================
+// Creates a standalone Procurement Order (or several material lines
+// sharing one "PRC-######"), with no Projection attached - straight
+// from Procurement Orders, for material that just needs restocking.
+
+async function submitNewProcurementOrder() {
+
+    const message =
+        document.getElementById(
+            "neworder-message"
+        );
+
+    const productID =
+        document.getElementById(
+            "neworder-product-id"
+        ).value.trim();
+
+    const warehouseID =
+        document.getElementById(
+            "neworder-warehouse-id"
+        ).value;
+
+    const orderDate =
+        document.getElementById(
+            "neworder-order-date"
+        ).value;
+
+    const comment =
+        document.getElementById(
+            "neworder-comment"
+        ).value.trim();
+
+
+    if (!warehouseID) {
+
+        message.textContent =
+            "Please enter a Warehouse ID.";
+
+        return;
+    }
+
+    if (!orderDate) {
+
+        message.textContent =
+            "Please enter an Order Date.";
+
+        return;
+    }
+
+
+    const materialIDPattern =
+        /^([0-9]{3}-[0-9]{6}|[0-9]{6}-00)$/;
+
+    const rows =
+        document.querySelectorAll(
+            "#neworder-lines .bom-row"
+        );
+
+    const lines = [];
+
+    for (const row of rows) {
+
+        const materialIDInput =
+            row.querySelector(
+                'input[type="hidden"][id$="-material-id"]'
+            );
+
+        const materialID =
+            materialIDInput ?
+            materialIDInput.value.trim() : "";
+
+        const quantity =
+            Number(
+                row.querySelector(
+                    ".neworder-quantity"
+                ).value
+            );
+
+        if (!materialID && !quantity) {
+            continue;
+        }
+
+        if (!materialIDPattern.test(materialID)) {
+
+            message.textContent =
+                `Invalid Material ID: ${materialID || "(empty)"}.`;
+
+            return;
+        }
+
+        if (!quantity || quantity <= 0) {
+
+            message.textContent =
+                `Quantity must be greater than zero for material ${materialID}.`;
+
+            return;
+        }
+
+        lines.push({
+            materialID: materialID,
+            orderedQuantity: quantity
+        });
+    }
+
+    if (lines.length === 0) {
+
+        message.textContent =
+            "Add at least one material with a quantity.";
+
+        return;
+    }
+
+
+    const payload = {
+
+        productID: productID,
+
+        warehouseID: Number(warehouseID),
+
+        orderDate: orderDate,
+
+        comment: comment,
+
+        projectionID: "",
+
+        lines: lines
+    };
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/procurement/create-batch",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                }
+            );
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            message.textContent =
+                errorMessage;
+
+            return;
+        }
+
+        await showProcurementOrders();
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
+    }
+}
+
+// ============================================================
+// PROCUREMENT ORDERS - ARCHIVE (Completed orders only)
+// ============================================================
+
+async function showArchivedOrders() {
+
+    const content =
+        document.getElementById(
+            "procurement-content"
+        );
+
+    content.innerHTML = `
+        <p>Loading Archived Orders...</p>
+    `;
+
+    await displayArchivedOrders();
+}
+
+async function displayArchivedOrders() {
+
+    const content =
+        document.getElementById(
+            "procurement-content"
+        );
+
+    try {
+
+        const response =
+            await fetch("/api/procurement");
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            content.innerHTML = `
+                <p>Error: ${escapeHtml(errorMessage)}</p>
+            `;
+
+            return;
+        }
+
+        const data =
+            await response.json();
+
+        const lines =
+            (data.orders || []).filter(
+                order => order.status === "Completed" ||
+                         order.status === "Closed (Incomplete)" ||
+                         order.status === "Cancelled"
+            );
+
+        if (lines.length === 0) {
+
+            content.innerHTML = `
+                <div class="empty-message">
+                    No Archived (Completed) Procurement Orders yet.
+                </div>
+            `;
+
+            return;
+        }
+
+        content.innerHTML =
+            renderProcurementGroupedList(
+                groupProcurementLines(lines),
+                "archived");
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `
+            <p>Could not connect to the server.</p>
+        `;
+    }
+}
+
+// ============================================================
+// PROCUREMENT ORDERS - GROUP LINES INTO ORDERS, THEN BY SUPPLIER
+// ============================================================
+// One "PRC-######" id can now cover several materials (lines) -
+// one action, one Procurement Order. Lines sharing an id are
+// grouped into a single card; groups are then bucketed by Supplier
+// (taken from the group's first line) the same way single-material
+// orders were before.
+
+function groupProcurementLines(lines) {
+
+    const groups = [];
+    const indexByID = {};
+
+    for (const line of lines) {
+
+        if (!(line.id in indexByID)) {
+
+            indexByID[line.id] = groups.length;
+
+            groups.push({
+                id: line.id,
+                lines: []
+            });
+        }
+
+        groups[indexByID[line.id]].lines.push(line);
+    }
+
+    return groups;
+}
+
+function renderProcurementGroupedList(groups, cardMode) {
+
+    const groupsBySupplier = {};
+
+    for (const group of groups) {
+
+        const supplierName =
+            group.lines[0].supplierName || "No Supplier";
+
+        if (!groupsBySupplier[supplierName]) {
+            groupsBySupplier[supplierName] = [];
+        }
+
+        groupsBySupplier[supplierName].push(group);
+    }
+
+    const supplierNames =
+        Object.keys(groupsBySupplier).sort((a, b) => {
+
+            if (a === "No Supplier") return 1;
+            if (b === "No Supplier") return -1;
+
+            return a.localeCompare(b);
+        });
+
+
+    let html = "";
+
+    for (const supplierName of supplierNames) {
+
+        html += `
+            <h2 class="supplier-group-heading">
+                ${escapeHtml(supplierName)}
+            </h2>
+
+            <div class="procurement-list">
+        `;
+
+        for (const group of groupsBySupplier[supplierName]) {
+            html += renderProcurementCard(group, cardMode);
+        }
+
+        html += `</div>`;
+    }
+
+    return html;
+}
+
+// ============================================================
+// PROCUREMENT ORDERS - STATUS BADGE CLASS / COMBINING
 // ============================================================
 
 function procurementStatusClass(status) {
+
+    if (status === "Cancelled") {
+        return "status-cancelled";
+    }
+
+    if (status === "Closed (Incomplete)") {
+        return "status-closed";
+    }
 
     if (status === "Completed") {
         return "status-completed";
@@ -7045,123 +8295,128 @@ function procurementStatusClass(status) {
     return "status-ordered";
 }
 
-// ============================================================
-// PROCUREMENT ORDERS - CARD MARKUP
-// ============================================================
+// One combined status for a whole order (several material lines):
+// "Closed (Incomplete)" wins if any line was closed that way (the
+// order as a whole is not cleanly done); otherwise "Partially
+// Received" wins whenever any line is (something has already
+// arrived, but the order isn't done); otherwise the least advanced
+// line's status represents the whole order, since that is what still
+// needs attention.
 
-function renderProcurementCard(order) {
+function combineProcurementStatus(lines) {
 
-    const pending =
-        order.pendingQuantity;
+    const stages =
+        ["Ordered", "Confirmed", "Partially Received", "Completed"];
 
-    const canReceive =
-        pending > 0;
-
-    let receiptsHtml = "";
-
-    if (order.receipts &&
-        order.receipts.length > 0) {
-
-        receiptsHtml = `
-            <div class="procurement-receipts">
-
-                <div class="detail-label">
-                    Receipt History
-                </div>
-
-                ${order.receipts.map(receipt => `
-                    <div class="procurement-receipt-row">
-                        ${escapeHtml(receipt.receiptDate)}
-                        &mdash;
-                        ${receipt.receivedQuantity}
-                        ${receipt.comment
-                            ? "(" + escapeHtml(receipt.comment) + ")"
-                            : ""}
-                    </div>
-                `).join("")}
-
-            </div>
-        `;
+    if (lines.some(line => line.status === "Cancelled")) {
+        return "Cancelled";
     }
 
-    return `
+    if (lines.some(line => line.status === "Closed (Incomplete)")) {
+        return "Closed (Incomplete)";
+    }
 
-        <div class="procurement-card" id="order-${order.id}">
+    if (lines.some(line => line.status === "Partially Received")) {
+        return "Partially Received";
+    }
 
-            <div class="procurement-card-header">
+    let earliestIndex = stages.length - 1;
 
-                <div>
-                    <strong>${escapeHtml(order.id)}</strong>
-                    &mdash;
-                    ${escapeHtml(order.materialID)}
-                    ${escapeHtml(order.materialName || "")}
+    for (const line of lines) {
+
+        const index =
+            stages.indexOf(line.status);
+
+        if (index !== -1 && index < earliestIndex) {
+            earliestIndex = index;
+        }
+    }
+
+    return stages[earliestIndex];
+}
+
+// ============================================================
+// PROCUREMENT ORDERS - CARD MARKUP (one order, 1+ material lines)
+// ============================================================
+
+function renderProcurementCard(group, cardMode = "open") {
+
+    const id = group.id;
+    const lines = group.lines;
+
+    const combinedStatus =
+        combineProcurementStatus(lines);
+
+    const totalOrdered =
+        lines.reduce((sum, line) => sum + line.orderedQuantity, 0);
+
+    const totalReceived =
+        lines.reduce((sum, line) => sum + line.totalReceivedQuantity, 0);
+
+    const materialsLabel =
+        lines.length === 1
+        ? `${lines[0].materialID} ${lines[0].materialName || ""}`
+        : lines.map(line => line.materialID).join(", ");
+
+    const warehouseID =
+        lines[0].warehouseID;
+
+    // One shared Confirmation Date for the whole order, but each
+    // material line keeps its own Confirmed Quantity - use whichever
+    // line already has a date saved (they're kept in sync by
+    // saveGroupConfirmation).
+
+    const sharedConfirmationDate =
+        (lines.find(line => line.confirmationDate) || {})
+            .confirmationDate || "";
+
+
+    // One block per material: Order Date / Ordered Qty /
+    // Received-Pending, plus (mode-dependent) either its own Qty
+    // field right there in the same row (Open Orders - so the field
+    // to confirm sits next to that material's own info instead of a
+    // separate section further down), or its own Add Receipt fields
+    // directly underneath (Confirmed Orders), plus its receipt
+    // history if it has any. Only labeled with the material when an
+    // order covers more than one.
+
+    let materialRowsHtml = "";
+
+    for (const line of lines) {
+
+        const materialHeaderHtml =
+            lines.length > 1
+            ? `
+                <div class="procurement-line-header">
+                    <strong>${escapeHtml(line.materialID)}</strong>
+                    ${escapeHtml(line.materialName || "")}
                 </div>
+            `
+            : "";
 
-                <span class="status-badge ${procurementStatusClass(order.status)}">
-                    ${escapeHtml(order.status)}
-                </span>
-
-            </div>
-
-            <div class="material-detail-grid procurement-grid">
-
+        const confirmQtyFieldHtml =
+            cardMode === "open"
+            ? `
                 <div class="detail-field">
-                    <div class="detail-label">Warehouse</div>
-                    <div class="detail-value">${order.warehouseID}</div>
-                </div>
-
-                <div class="detail-field">
-                    <div class="detail-label">Order Date</div>
-                    <div class="detail-value">${escapeHtml(order.orderDate)}</div>
-                </div>
-
-                <div class="detail-field">
-                    <div class="detail-label">Ordered Qty</div>
-                    <div class="detail-value">${order.orderedQuantity}</div>
-                </div>
-
-                <div class="detail-field">
-                    <div class="detail-label">Received / Pending</div>
-                    <div class="detail-value">${order.totalReceivedQuantity} / ${pending}</div>
-                </div>
-
-            </div>
-
-            <div class="procurement-section">
-
-                <div class="detail-label">
-                    Confirmation
-                </div>
-
-                <div class="procurement-inline-form">
-
-                    <input
-                        type="date"
-                        id="${order.id}-confirm-date"
-                        value="${escapeHtml(order.confirmationDate || "")}"
-                    >
-
+                    <div class="detail-label">Qty</div>
                     <input
                         type="number"
-                        min="1"
-                        id="${order.id}-confirm-qty"
-                        placeholder="Confirmed Qty"
-                        value="${order.confirmedQuantity > 0 ? order.confirmedQuantity : ""}"
+                        min="0"
+                        class="procurement-qty-input"
+                        id="${id}-${line.materialID}-confirm-qty"
+                        placeholder="Qty (0 = delete)"
+                        value="${line.confirmedQuantity > 0 ? line.confirmedQuantity : ""}"
+                        data-ordered-qty="${line.orderedQuantity}"
                     >
-
-                    <button
-                        type="button"
-                        onclick="saveProcurementConfirmation('${order.id}')">
-
-                        Save Confirmation
-
-                    </button>
-
                 </div>
+            `
+            : "";
 
-            </div>
+        let addReceiptHtml = "";
 
-            ${canReceive ? `
+        if (cardMode === "confirmed" && line.pendingQuantity > 0) {
+
+            addReceiptHtml = `
 
                 <div class="procurement-section">
 
@@ -7173,39 +8428,239 @@ function renderProcurementCard(order) {
 
                         <input
                             type="date"
-                            id="${order.id}-receipt-date"
+                            id="${id}-${line.materialID}-receipt-date"
                         >
 
                         <input
                             type="number"
                             min="1"
-                            id="${order.id}-receipt-qty"
-                            placeholder="Received Qty"
+                            max="${line.pendingQuantity}"
+                            class="procurement-qty-input"
+                            id="${id}-${line.materialID}-receipt-qty"
+                            placeholder="Receive"
                         >
 
                         <input
                             type="text"
-                            id="${order.id}-receipt-comment"
+                            id="${id}-${line.materialID}-receipt-comment"
                             placeholder="Comment (optional)"
                         >
-
-                        <button
-                            type="button"
-                            onclick="saveProcurementReceipt('${order.id}')">
-
-                            Material Receipt
-
-                        </button>
 
                     </div>
 
                 </div>
+            `;
+        }
 
-            ` : ""}
+        let receiptsHtml = "";
 
-            ${receiptsHtml}
+        if (cardMode !== "open" &&
+            line.receipts && line.receipts.length > 0) {
 
-            <div id="${order.id}-message" class="procurement-card-message">
+            receiptsHtml = `
+                <div class="procurement-receipts">
+
+                    <div class="detail-label">
+                        Receipt History
+                    </div>
+
+                    ${line.receipts.map(receipt => `
+                        <div class="procurement-receipt-row">
+                            ${escapeHtml(receipt.receiptDate)}
+                            &mdash;
+                            ${receipt.receivedQuantity}
+                            ${receipt.comment
+                                ? "(" + escapeHtml(receipt.comment) + ")"
+                                : ""}
+                        </div>
+                    `).join("")}
+
+                </div>
+            `;
+        }
+
+        materialRowsHtml += `
+
+            <div class="procurement-line">
+
+                ${materialHeaderHtml}
+
+                <div class="material-detail-grid procurement-grid procurement-grid-compact">
+
+                    <div class="detail-field">
+                        <div class="detail-label">Order Date</div>
+                        <div class="detail-value">${escapeHtml(line.orderDate)}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Ordered Qty</div>
+                        <div class="detail-value">${line.orderedQuantity}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Received / Pending</div>
+                        <div class="detail-value">${line.totalReceivedQuantity} / ${line.pendingQuantity}</div>
+                    </div>
+
+                    ${confirmQtyFieldHtml}
+
+                </div>
+
+                ${addReceiptHtml}
+
+                ${receiptsHtml}
+
+            </div>
+        `;
+    }
+
+
+    // Confirmation (Open Orders only): one shared Order Date and pair
+    // of actions for the whole order plus the resulting status badge -
+    // the per-material Qty fields now live in each material's own row
+    // above, not here.
+
+    let confirmationHtml = "";
+
+    if (cardMode === "open") {
+
+        confirmationHtml = `
+
+            <div class="procurement-section">
+
+                <div class="detail-label">
+                    Confirmation
+                </div>
+
+                <div class="procurement-inline-form">
+
+                    <input
+                        type="date"
+                        id="${id}-confirm-date"
+                        value="${escapeHtml(sharedConfirmationDate)}"
+                    >
+
+                    <button
+                        type="button"
+                        onclick="saveGroupConfirmation('${id}')">
+
+                        Confirm
+
+                    </button>
+
+                    <button
+                        type="button"
+                        onclick="quickConfirmGroup('${id}')">
+
+                        Confirm as Ordered Today
+
+                    </button>
+
+                    <button
+                        type="button"
+                        class="button-danger"
+                        onclick="cancelOrderGroup('${id}')">
+
+                        Cancel
+
+                    </button>
+
+                    <span class="status-badge procurement-confirm-status ${procurementStatusClass(combinedStatus)}">
+                        ${escapeHtml(combinedStatus)}
+                    </span>
+
+                </div>
+
+            </div>
+        `;
+    }
+
+
+    // Material Receipt (Confirmed Orders only): one shared button
+    // under every material's own Add Receipt fields - one click
+    // receives whichever materials were given a quantity above.
+
+    let receiptButtonHtml = "";
+
+    if (cardMode === "confirmed" &&
+        lines.some(line => line.pendingQuantity > 0)) {
+
+        receiptButtonHtml = `
+
+            <div class="procurement-inline-form">
+
+                <button
+                    type="button"
+                    class="button-danger"
+                    onclick="closeOrderGroup('${id}')">
+
+                    Close Order
+
+                </button>
+
+                <button
+                    type="button"
+                    onclick="saveGroupReceipts('${id}')">
+
+                    Material Receipt
+
+                </button>
+
+                <button
+                    type="button"
+                    onclick="quickReceiptGroup('${id}')">
+
+                    Receipt Today
+
+                </button>
+
+            </div>
+        `;
+    }
+
+    return `
+
+        <div class="procurement-card collapsed" id="order-${id}">
+
+            <div
+                class="procurement-summary"
+                onclick="toggleProcurementCard('${id}')">
+
+                <span class="procurement-summary-id">
+                    ${escapeHtml(id)}
+                </span>
+
+                <span class="procurement-summary-material">
+                    ${escapeHtml(materialsLabel)}
+                </span>
+
+                <span class="procurement-summary-qty">
+                    WH ${warehouseID}
+                    &nbsp;&middot;&nbsp;
+                    ${totalReceived} / ${totalOrdered}
+                </span>
+
+                <span class="status-badge ${procurementStatusClass(combinedStatus)}">
+                    ${escapeHtml(combinedStatus)}
+                </span>
+
+                <span class="procurement-summary-caret">
+                    &#9656;
+                </span>
+
+            </div>
+
+            <div class="procurement-body" id="order-${id}-body" hidden>
+
+                ${materialRowsHtml}
+
+                ${confirmationHtml}
+
+                ${receiptButtonHtml}
+
+                <div id="${id}-message" class="procurement-card-message">
+                </div>
+
             </div>
 
         </div>
@@ -7213,26 +8668,85 @@ function renderProcurementCard(order) {
 }
 
 // ============================================================
-// PROCUREMENT ORDERS - SAVE CONFIRMATION
+// PROCUREMENT ORDERS - TOGGLE (expand/collapse in place)
 // ============================================================
 
-async function saveProcurementConfirmation(id) {
+function toggleProcurementCard(id) {
 
-    const confirmationDate =
+    const card =
+        document.getElementById("order-" + id);
+
+    const body =
+        document.getElementById("order-" + id + "-body");
+
+    if (!card || !body) {
+        return;
+    }
+
+    body.hidden = !body.hidden;
+
+    card.classList.toggle(
+        "collapsed",
+        body.hidden);
+}
+
+// ============================================================
+// PROCUREMENT ORDERS - QUICK CONFIRM (today, same ordered qty)
+// ============================================================
+// One click for the common case: supplier confirmed exactly what
+// was ordered, today, for every material in this order. Fills the
+// Confirmation fields and reuses the normal save path so
+// validation/behavior stays identical.
+
+function quickConfirmGroup(id) {
+
+    const dateInput =
         document.getElementById(
             id + "-confirm-date"
-        ).value;
+        );
 
-    const confirmedQuantity =
-        document.getElementById(
-            id + "-confirm-qty"
-        ).value;
+    if (!dateInput) {
+        return;
+    }
+
+    const today =
+        new Date().toISOString().split("T")[0];
+
+    dateInput.value = today;
+
+    const qtyInputs =
+        document.querySelectorAll(
+            `[id^="${id}-"][id$="-confirm-qty"]`
+        );
+
+    for (const input of qtyInputs) {
+        input.value = input.dataset.orderedQty;
+    }
+
+    saveGroupConfirmation(id);
+}
+
+// ============================================================
+// PROCUREMENT ORDERS - SAVE CONFIRMATION (whole order at once)
+// ============================================================
+// One Confirmation Date applies to every material line in this
+// order, but each line keeps its own Confirmed Quantity. Saved one
+// line at a time against the existing /api/procurement/confirm
+// endpoint (which already deletes a line outright when its
+// confirmed quantity is 0) so server-side behavior/validation stays
+// exactly as it is for a single-material order.
+
+async function saveGroupConfirmation(id) {
 
     const message =
         document.getElementById(
             id + "-message"
         );
 
+    const confirmationDate =
+        document.getElementById(
+            id + "-confirm-date"
+        ).value;
 
     if (!confirmationDate) {
 
@@ -7242,21 +8756,169 @@ async function saveProcurementConfirmation(id) {
         return;
     }
 
-    if (!confirmedQuantity ||
-        Number(confirmedQuantity) <= 0) {
+    const qtyInputs =
+        document.querySelectorAll(
+            `[id^="${id}-"][id$="-confirm-qty"]`
+        );
 
-        message.textContent =
-            "Confirmed Quantity must be greater than zero.";
+    const lineUpdates = [];
 
-        return;
+    for (const input of qtyInputs) {
+
+        const materialID =
+            input.id.slice(
+                id.length + 1,
+                input.id.length - "-confirm-qty".length
+            );
+
+        if (input.value === "" ||
+            Number(input.value) < 0) {
+
+            message.textContent =
+                `Please enter a Confirmed Quantity for ${materialID} ` +
+                `(0 deletes that material from the order).`;
+
+            return;
+        }
+
+        lineUpdates.push({
+            materialID: materialID,
+            confirmedQuantity: Number(input.value)
+        });
     }
 
+    const toDelete =
+        lineUpdates.filter(line => line.confirmedQuantity === 0);
+
+    if (toDelete.length > 0) {
+
+        const confirmed =
+            await showConfirmDialog(
+                "Setting the Confirmed Quantity to 0 will remove " +
+                toDelete.map(line => line.materialID).join(", ") +
+                ` from Procurement Order ${id}. This cannot be undone. ` +
+                "Continue?"
+            );
+
+        if (!confirmed) {
+            return;
+        }
+    }
+
+    message.textContent = "";
+
+    for (const line of lineUpdates) {
+
+        try {
+
+            const response =
+                await fetch(
+                    "/api/procurement/confirm",
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body: JSON.stringify({
+                            id: id,
+                            materialID: line.materialID,
+                            confirmationDate: confirmationDate,
+                            confirmedQuantity: line.confirmedQuantity
+                        })
+                    }
+                );
+
+            if (!response.ok) {
+
+                const responseText =
+                    await response.text();
+
+                message.textContent =
+                    `Error (${line.materialID}): ` + responseText;
+
+                await displayProcurementOrders();
+
+                return;
+            }
+        }
+        catch (error) {
+
+            console.error(error);
+
+            message.textContent =
+                "Could not connect to the server.";
+
+            return;
+        }
+    }
+
+    await displayProcurementOrders();
+}
+
+// ============================================================
+// PROCUREMENT ORDERS - QUICK RECEIPT (today, whatever Qty is filled)
+// ============================================================
+// Same one-click convenience as "Confirm as Ordered (Today)": fills
+// today's date into every material's Receipt Date field, then reuses
+// the normal save path - the operator still enters each Qty by hand
+// (there is no "ordered quantity" default here, since a receipt is
+// often partial).
+
+function quickReceiptGroup(id) {
+
+    const today =
+        new Date().toISOString().split("T")[0];
+
+    const dateInputs =
+        document.querySelectorAll(
+            `[id^="${id}-"][id$="-receipt-date"]`
+        );
+
+    for (const input of dateInputs) {
+        input.value = today;
+    }
+
+    saveGroupReceipts(id);
+}
+
+// ============================================================
+// PROCUREMENT ORDERS - CLOSE ORDER (won't fully arrive)
+// ============================================================
+// For when the rest of an order is simply never coming (goods lost,
+// discontinued, cancelled after a partial delivery...). Closes every
+// still-pending material line under this order in one action -
+// whatever was already received stays in inventory - and the order
+// moves out of Confirmed Orders into Archived Orders, marked
+// "Closed (Incomplete)".
+
+async function closeOrderGroup(id) {
+
+    const message =
+        document.getElementById(
+            `${id}-message`
+        );
+
+    const confirmed =
+        await showConfirmDialog(
+            `Close Procurement Order ${id}? Whatever has already ` +
+            "been received stays in inventory, but the rest will no " +
+            "longer count as pending and this order will move to " +
+            "Archived Orders as \"Closed (Incomplete)\". This cannot " +
+            "be undone."
+        );
+
+    if (!confirmed) {
+        return;
+    }
 
     try {
 
         const response =
             await fetch(
-                "/api/procurement/confirm",
+                "/api/procurement/close",
                 {
                     method: "POST",
 
@@ -7265,121 +8927,244 @@ async function saveProcurementConfirmation(id) {
                             "application/json"
                     },
 
-                    body: JSON.stringify({
-                        id: id,
-                        confirmationDate: confirmationDate,
-                        confirmedQuantity: Number(confirmedQuantity)
-                    })
+                    body: JSON.stringify({ id: id })
                 }
             );
 
-        const responseText =
-            await response.text();
+        if (!response.ok) {
 
-        if (response.ok) {
+            const errorText =
+                await response.text();
 
-            await displayProcurementOrders();
+            if (message) {
+                message.textContent =
+                    "Error: " + errorText;
+            }
+
+            return;
         }
-        else {
 
-            message.textContent =
-                "Error: " + responseText;
-        }
+        await displayProcurementOrders();
     }
     catch (error) {
 
         console.error(error);
 
-        message.textContent =
-            "Could not connect to the server.";
+        if (message) {
+            message.textContent =
+                "Could not connect to the server.";
+        }
+    }
+}
+
+// ============================================================
+// PROCUREMENT ORDERS - CANCEL ORDER (never confirmed)
+// ============================================================
+// For an order still sitting in Open Orders that will never be
+// confirmed by the supplier. Moves it to Archived Orders as
+// "Cancelled" - distinct from "Closed (Incomplete)", which is for
+// an order that was confirmed and partially received.
+
+async function cancelOrderGroup(id) {
+
+    const message =
+        document.getElementById(
+            `${id}-message`
+        );
+
+    const confirmed =
+        await showConfirmDialog(
+            `Cancel Procurement Order ${id}? This order will move to ` +
+            "Archived Orders as \"Cancelled\". This cannot be undone."
+        );
+
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/procurement/cancel",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({ id: id })
+                }
+            );
+
+        if (!response.ok) {
+
+            const errorText =
+                await response.text();
+
+            if (message) {
+                message.textContent =
+                    "Error: " + errorText;
+            }
+
+            return;
+        }
+
+        await displayProcurementOrders();
+    }
+    catch (error) {
+
+        console.error(error);
+
+        if (message) {
+            message.textContent =
+                "Could not connect to the server.";
+        }
     }
 }
 
 // ============================================================
 // PROCUREMENT ORDERS - SAVE RECEIPT (triggers Goods Receipt)
 // ============================================================
+// One click for the whole order: every material line in the Add
+// Receipt block that was given a quantity is received, in turn,
+// through the same /api/procurement/receive endpoint used before -
+// only now the operator does not need to click a separate button
+// per material.
 
-async function saveProcurementReceipt(id) {
-
-    const receiptDate =
-        document.getElementById(
-            id + "-receipt-date"
-        ).value;
-
-    const receivedQuantity =
-        document.getElementById(
-            id + "-receipt-qty"
-        ).value;
-
-    const comment =
-        document.getElementById(
-            id + "-receipt-comment"
-        ).value.trim();
+async function saveGroupReceipts(id) {
 
     const message =
         document.getElementById(
-            id + "-message"
+            `${id}-message`
         );
 
+    if (message) {
+        message.textContent = "";
+    }
 
-    if (!receiptDate) {
+    const qtySuffix =
+        "-receipt-qty";
 
-        message.textContent =
-            "Please enter a Receipt Date.";
+    const qtyInputs =
+        document.querySelectorAll(
+            `[id^="${id}-"][id$="${qtySuffix}"]`
+        );
+
+    const toSubmit = [];
+
+    for (const qtyInput of qtyInputs) {
+
+        const materialID =
+            qtyInput.id.slice(
+                id.length + 1,
+                qtyInput.id.length - qtySuffix.length
+            );
+
+        const rawQty =
+            qtyInput.value;
+
+        if (!rawQty ||
+            Number(rawQty) <= 0) {
+            continue;
+        }
+
+        const dateInput =
+            document.getElementById(
+                `${id}-${materialID}-receipt-date`
+            );
+
+        const commentInput =
+            document.getElementById(
+                `${id}-${materialID}-receipt-comment`
+            );
+
+        if (!dateInput || !dateInput.value) {
+
+            if (message) {
+                message.textContent =
+                    `Please enter a Receipt Date for ${materialID}.`;
+            }
+
+            return;
+        }
+
+        toSubmit.push({
+            materialID: materialID,
+            receiptDate: dateInput.value,
+            receivedQuantity: Number(rawQty),
+            comment: commentInput ?
+                commentInput.value.trim() : ""
+        });
+    }
+
+    if (toSubmit.length === 0) {
+
+        if (message) {
+            message.textContent =
+                "Enter a received quantity for at least one material.";
+        }
 
         return;
     }
-
-    if (!receivedQuantity ||
-        Number(receivedQuantity) <= 0) {
-
-        message.textContent =
-            "Received Quantity must be greater than zero.";
-
-        return;
-    }
-
 
     try {
 
-        const response =
-            await fetch(
-                "/api/procurement/receive",
-                {
-                    method: "POST",
+        for (const entry of toSubmit) {
 
-                    headers: {
-                        "Content-Type":
-                            "application/json"
-                    },
+            const response =
+                await fetch(
+                    "/api/procurement/receive",
+                    {
+                        method: "POST",
 
-                    body: JSON.stringify({
-                        id: id,
-                        receiptDate: receiptDate,
-                        receivedQuantity: Number(receivedQuantity),
-                        comment: comment
-                    })
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body: JSON.stringify({
+                            id: id,
+                            materialID: entry.materialID,
+                            receiptDate: entry.receiptDate,
+                            receivedQuantity: entry.receivedQuantity,
+                            comment: entry.comment
+                        })
+                    }
+                );
+
+            if (!response.ok) {
+
+                const errorText =
+                    await response.text();
+
+                await displayProcurementOrders();
+
+                const refreshedMessage =
+                    document.getElementById(
+                        `${id}-message`
+                    );
+
+                if (refreshedMessage) {
+                    refreshedMessage.textContent =
+                        `Error (${entry.materialID}): ${errorText}`;
                 }
-            );
 
-        const responseText =
-            await response.text();
-
-        if (response.ok) {
-
-            await displayProcurementOrders();
+                return;
+            }
         }
-        else {
 
-            message.textContent =
-                "Error: " + responseText;
-        }
+        await displayProcurementOrders();
     }
     catch (error) {
 
         console.error(error);
 
-        message.textContent =
-            "Could not connect to the server.";
+        if (message) {
+            message.textContent =
+                "Could not connect to the server.";
+        }
     }
 }

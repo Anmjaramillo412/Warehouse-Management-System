@@ -8,6 +8,7 @@
 #include "InventoryManager.h"
 #include "DataManager.h"
 #include "ProcurementManager.h"
+#include "ProjectionManager.h"
 
 class WarehouseSystem
 {
@@ -32,6 +33,10 @@ private:
     // already be constructed first.
     ProcurementManager procurementManager;
 
+    // Also declared last, for the same reason: it takes pointers to
+    // productManager, warehouseManager and movementLogger above.
+    ProjectionManager projectionManager;
+
 public:
 
     WarehouseSystem();
@@ -51,6 +56,8 @@ public:
     DataManager& getDataManager();
 
     ProcurementManager& getProcurementManager();
+
+    ProjectionManager& getProjectionManager();
 
     void setLogDataOperations(
         bool enabled);
