@@ -20,6 +20,7 @@ ProcurementOrder::ProcurementOrder(
     id = orderID;
     productID = prodID;
     materialID = matID;
+    materialName = "";
     warehouseID = whID;
     orderDate = oDate;
     orderedQuantity = oQuantity;
@@ -27,6 +28,9 @@ ProcurementOrder::ProcurementOrder(
 
     confirmationDate = "";
     confirmedQuantity = 0;
+    projectionID = "";
+    closed = false;
+    cancelled = false;
 }
 
 
@@ -58,6 +62,12 @@ string ProcurementOrder::getProductID() const
 string ProcurementOrder::getMaterialID() const
 {
     return materialID;
+}
+
+
+string ProcurementOrder::getMaterialName() const
+{
+    return materialName;
 }
 
 
@@ -103,6 +113,24 @@ const vector<ProcurementReceipt>& ProcurementOrder::getReceipts() const
 }
 
 
+string ProcurementOrder::getProjectionID() const
+{
+    return projectionID;
+}
+
+
+bool ProcurementOrder::isClosed() const
+{
+    return closed;
+}
+
+
+bool ProcurementOrder::isCancelled() const
+{
+    return cancelled;
+}
+
+
 // ================================================================
 // SETTERS
 // ================================================================
@@ -122,6 +150,12 @@ void ProcurementOrder::setProductID(const string& prodID)
 void ProcurementOrder::setMaterialID(const string& matID)
 {
     materialID = matID;
+}
+
+
+void ProcurementOrder::setMaterialName(const string& matName)
+{
+    materialName = matName;
 }
 
 
@@ -158,6 +192,24 @@ void ProcurementOrder::setConfirmationDate(const string& cDate)
 void ProcurementOrder::setConfirmedQuantity(int cQuantity)
 {
     confirmedQuantity = cQuantity;
+}
+
+
+void ProcurementOrder::setProjectionID(const string& projID)
+{
+    projectionID = projID;
+}
+
+
+void ProcurementOrder::setClosed(bool value)
+{
+    closed = value;
+}
+
+
+void ProcurementOrder::setCancelled(bool value)
+{
+    cancelled = value;
 }
 
 
@@ -238,6 +290,16 @@ int ProcurementOrder::getPendingQuantity() const
 
 string ProcurementOrder::getStatus() const
 {
+    if (cancelled)
+    {
+        return "Cancelled";
+    }
+
+    if (closed)
+    {
+        return "Closed (Incomplete)";
+    }
+
     if (getTotalReceivedQuantity() > 0 &&
         getPendingQuantity() <= 0)
     {

@@ -64,11 +64,11 @@ body {
 ============================================================ */
 
 .dashboard {
-    max-width: 1100px;
+    max-width: 1450px;
     margin: 50px auto;
     padding: 0 25px;
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 25px;
 }
 
@@ -140,6 +140,86 @@ body {
 }
 
 
+/* ============================================================
+   CONFIRM DIALOG (in-page, replaces the browser's own popup)
+============================================================ */
+
+.app-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+}
+
+    /* .hidden alone (display:none, single class) has the same CSS
+       specificity as .app-modal-overlay's own display:flex, so
+       whichever rule happened to come later in the file would win -
+       this compound selector is more specific than either, so the
+       dialog reliably closes regardless of source order. */
+
+    .app-modal-overlay.hidden {
+        display: none;
+    }
+
+
+.app-modal-box {
+    background: white;
+    border-radius: 10px;
+    padding: 28px;
+    max-width: 420px;
+    width: 100%;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+    .app-modal-box p {
+        margin: 0 0 20px 0;
+        color: #1f2937;
+        font-size: 15px;
+        line-height: 1.5;
+    }
+
+
+.app-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+
+.app-modal-button-primary {
+    padding: 10px 18px;
+    border: none;
+    border-radius: 6px;
+    background: #1f2937;
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+    .app-modal-button-primary:hover {
+        background: #374151;
+    }
+
+
+.app-modal-button-secondary {
+    padding: 10px 18px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: white;
+    color: #374151;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+    .app-modal-button-secondary:hover {
+        background: #f3f4f6;
+    }
+
+
 .back-button {
     border: none;
     background: transparent;
@@ -153,6 +233,44 @@ body {
     .back-button:hover {
         text-decoration: underline;
     }
+
+
+.projection-delete-button-row {
+    margin-bottom: 20px;
+}
+
+
+.button-danger {
+    padding: 10px 18px;
+    border: 1px solid #fecaca;
+    border-radius: 6px;
+    background: #fee2e2;
+    color: #b91c1c;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+    .button-danger:hover {
+        background: #fecaca;
+    }
+
+    /* .procurement-inline-form button (one class + one tag) beats a
+       lone .button-danger (one class) on specificity, so a danger
+       button placed inside that row would silently render with the
+       form's own dark button style instead - this compound selector
+       is more specific than both, so it wins regardless of source
+       order (same fix as .app-modal-overlay.hidden above). */
+
+    .procurement-inline-form button.button-danger {
+        background: #fee2e2;
+        color: #b91c1c;
+        border: 1px solid #fecaca;
+    }
+
+        .procurement-inline-form button.button-danger:hover {
+            background: #fecaca;
+        }
 
 
 #module-content {
@@ -190,6 +308,33 @@ body {
         .module-buttons button:hover {
             background: #374151;
         }
+
+
+/* De-emphasized: Archive buttons - the data is secondary, kept
+   out of the way rather than competing with the active views. */
+
+.module-buttons button.button-muted {
+    background: #e5e7eb;
+    color: #4b5563;
+}
+
+    .module-buttons button.button-muted:hover {
+        background: #d1d5db;
+    }
+
+
+/* Order-related actions (New Order / Procurement Orders) share a
+   light blue accent, setting that pair apart from the Projection
+   buttons alongside them. */
+
+.module-buttons button.button-accent {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+    .module-buttons button.button-accent:hover {
+        background: #bfdbfe;
+    }
 
 
 /* ============================================================
@@ -474,6 +619,13 @@ footer {
    RESPONSIVE
 ============================================================ */
 
+@media (max-width: 1100px) {
+
+    .dashboard {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
 @media (max-width: 750px) {
 
     .dashboard {
@@ -737,6 +889,17 @@ footer {
 }
 
 
+.status-closed {
+    background: #e5e7eb;
+    color: #6b7280;
+}
+
+.status-cancelled {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+
 .material-detail-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -785,18 +948,103 @@ footer {
 ============================================================ */
 
 .procurement-list {
-    margin-top: 30px;
+    margin-top: 15px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 8px;
 }
+
+
+.supplier-group-heading {
+    margin-top: 35px;
+    margin-bottom: 0;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #1f2937;
+    font-size: 19px;
+}
+
+    .supplier-group-heading:first-of-type {
+        margin-top: 30px;
+    }
 
 
 .procurement-card {
     background: white;
     border: 1px solid #e5e7eb;
     border-radius: 10px;
+    padding: 0;
+    overflow: hidden;
+}
+
+
+.procurement-summary {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 16px;
+    cursor: pointer;
+    user-select: none;
+}
+
+    .procurement-summary:hover {
+        background: #f9fafb;
+    }
+
+    .procurement-summary-id {
+        font-weight: bold;
+        color: #1f2937;
+        white-space: nowrap;
+    }
+
+    .procurement-summary-material {
+        flex: 1 1 auto;
+        min-width: 120px;
+        color: #374151;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .procurement-summary-qty {
+        color: #6b7280;
+        font-size: 14px;
+        white-space: nowrap;
+    }
+
+    .procurement-summary-caret {
+        color: #9ca3af;
+        transition: transform 0.15s ease;
+        transform: rotate(90deg);
+    }
+
+    .procurement-card.collapsed .procurement-summary-caret {
+        transform: rotate(0deg);
+    }
+
+
+.procurement-body {
+    padding: 0 25px 20px;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 18px;
+}
+
+
+@media (max-width: 750px) {
+
+    .procurement-summary {
+        flex-wrap: wrap;
+    }
+}
+
+
+.projection-card {
+    cursor: pointer;
+    transition: border-color 0.15s ease;
     padding: 20px 25px;
+}
+
+.projection-card:hover {
+    border-color: #9ca3af;
 }
 
 
@@ -818,11 +1066,39 @@ footer {
 }
 
 
+/* Order Date / Ordered Qty / Received-Pending row - tighter than the
+   default material grid, since this is now just a compact summary
+   line above Confirmation rather than its own card section. */
+
+.procurement-grid-compact {
+    margin-bottom: 0;
+}
+
+
 .procurement-section {
     margin-top: 18px;
     padding-top: 15px;
     border-top: 1px solid #f1f5f9;
 }
+
+
+/* Confirm Production, rendered as its own block below everything
+   else in the Projection detail view - visually detached from the
+   white card (#module-content) instead of packed into the material
+   table, so it reads as a distinct, deliberate next step rather than
+   another row of the same form. */
+
+.procurement-section-standalone {
+    margin: 30px -40px -40px -40px;
+    padding: 25px 40px;
+    border-top: 1px solid #e5e7eb;
+    border-radius: 0 0 12px 12px;
+    background: #f9fafb;
+}
+
+    .procurement-section-standalone h3 {
+        margin-top: 0;
+    }
 
 
 .procurement-inline-form {
@@ -864,6 +1140,7 @@ footer {
 .procurement-receipts {
     margin-top: 15px;
     padding-top: 12px;
+    max-width: 480px;
     border-top: 1px solid #f1f5f9;
 }
 
@@ -879,6 +1156,80 @@ footer {
     margin-top: 10px;
     font-weight: bold;
     color: #b91c1c;
+}
+
+
+/* One order can now cover several materials: each gets its own
+   sub-block inside the card, and the shared Confirmation section
+   lists one small quantity field per material. */
+
+.procurement-line {
+    margin-top: 18px;
+    padding-top: 15px;
+    border-top: 1px solid #e5e7eb;
+}
+
+    .procurement-line:first-of-type {
+        margin-top: 0;
+        padding-top: 0;
+        border-top: none;
+    }
+
+    .procurement-line-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+    }
+
+
+/* Material label next to its own Qty field, only shown when a
+   Confirmation covers more than one material - see
+   renderProcurementCard(). Sits inline in .procurement-inline-form
+   (gap-based, not space-between) so it stays right next to its
+   input instead of drifting to the far edge of the card. */
+
+.procurement-confirm-line-label {
+    font-size: 14px;
+    color: #374151;
+    white-space: nowrap;
+}
+
+
+.procurement-qty-input {
+    width: 90px !important;
+    min-width: 90px !important;
+    flex: 0 0 auto;
+}
+
+
+/* One input row per material inside the shared "Add Receipt" block
+   (Confirmed Orders) - stacked with a small gap so several materials
+   read as a list above the single "Material Receipt" button. */
+
+.procurement-receipt-input-row {
+    margin-top: 8px;
+}
+
+    .procurement-receipt-input-row:first-of-type {
+        margin-top: 10px;
+    }
+
+
+/* The resulting status, at the end of the Confirmation row so its
+   date/qty/buttons and outcome read left-to-right in one glance. */
+
+.procurement-confirm-status {
+    margin-left: auto;
+}
+
+
+/* Extra breathing room before "Back to Projections" so it doesn't
+   sit flush against the module buttons above it. */
+
+#procurement-content > .back-button:first-child {
+    margin-top: 20px;
 }
 
 

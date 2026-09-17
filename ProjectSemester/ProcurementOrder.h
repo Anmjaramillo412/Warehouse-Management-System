@@ -40,6 +40,12 @@ private:
     string productID;
     string materialID;
 
+    // Snapshot of the Material's name at order time, saved right
+    // alongside materialID so the persisted record stays readable on
+    // its own (e.g. opening data/procurement_orders.txt directly)
+    // even if the Material is later renamed or removed.
+    string materialName;
+
     int warehouseID;
 
     string orderDate;
@@ -51,6 +57,28 @@ private:
     int confirmedQuantity;
 
     vector<ProcurementReceipt> receipts;
+
+    // Internal only (not shown in the UI): which Projection batch,
+    // if any, this order was registered from. Lets a Projection
+    // compute "how much of this batch have I already ordered" even
+    // if the same Product was projected more than once. Product ID
+    // above is unaffected and remains the user-facing link.
+    string projectionID;
+
+    // Set when the supplier will never deliver the rest (goods lost,
+    // discontinued, order cancelled after partial delivery, etc.).
+    // Whatever was actually received stays in inventory; the line
+    // just stops counting as pending and moves to Archived Orders
+    // instead of sitting in Confirmed Orders forever waiting for
+    // units that are not coming.
+    bool closed;
+
+    // Set when this order is cancelled while still unconfirmed (the
+    // supplier never got the chance to confirm it, and it never
+    // will). Only applies to lines that were never confirmed - a
+    // confirmed order is closed instead, never cancelled. Moves the
+    // order into Archived Orders labeled "Cancelled".
+    bool cancelled;
 
 public:
 
@@ -71,6 +99,7 @@ public:
     string getID() const;
     string getProductID() const;
     string getMaterialID() const;
+    string getMaterialName() const;
     int getWarehouseID() const;
     string getOrderDate() const;
     int getOrderedQuantity() const;
@@ -78,17 +107,24 @@ public:
     string getConfirmationDate() const;
     int getConfirmedQuantity() const;
     const vector<ProcurementReceipt>& getReceipts() const;
+    string getProjectionID() const;
+    bool isClosed() const;
+    bool isCancelled() const;
 
     // Setters
     void setID(const string& orderID);
     void setProductID(const string& prodID);
     void setMaterialID(const string& matID);
+    void setMaterialName(const string& matName);
     void setWarehouseID(int whID);
     void setOrderDate(const string& oDate);
     void setOrderedQuantity(int oQuantity);
     void setComment(const string& cmt);
     void setConfirmationDate(const string& cDate);
     void setConfirmedQuantity(int cQuantity);
+    void setProjectionID(const string& projID);
+    void setClosed(bool value);
+    void setCancelled(bool value);
 
     // Receipts
     void addReceipt(
@@ -108,7 +144,8 @@ public:
     // max(0, target - received)
     int getPendingQuantity() const;
 
-    // "Ordered" | "Confirmed" | "Partially Received" | "Completed"
+    // "Ordered" | "Confirmed" | "Partially Received" | "Completed" |
+    // "Closed (Incomplete)" | "Cancelled"
     string getStatus() const;
 
     // Display
