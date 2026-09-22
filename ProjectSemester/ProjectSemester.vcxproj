@@ -145,6 +145,8 @@
     <ClCompile Include="ProductManager.cpp" />
     <ClCompile Include="Projection.cpp" />
     <ClCompile Include="ProjectionManager.cpp" />
+    <ClCompile Include="PurchaseInvoice.cpp" />
+    <ClCompile Include="PurchaseManager.cpp" />
     <ClCompile Include="Supplier.cpp" />
     <ClCompile Include="SupplierManager.cpp" />
     <ClCompile Include="Warehouse.cpp" />
@@ -170,6 +172,8 @@
     <ClInclude Include="ProductManager.h" />
     <ClInclude Include="Projection.h" />
     <ClInclude Include="ProjectionManager.h" />
+    <ClInclude Include="PurchaseInvoice.h" />
+    <ClInclude Include="PurchaseManager.h" />
     <ClInclude Include="Supplier.h" />
     <ClInclude Include="SupplierManager.h" />
     <ClInclude Include="Warehouse.h" />

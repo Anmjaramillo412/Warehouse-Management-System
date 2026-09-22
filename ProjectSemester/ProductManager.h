@@ -17,10 +17,20 @@ private:
 
     MaterialManager* materialManager;
 
+    string configFilename;
+
+    // How many units of a Product the Warehouse stock of each BOM
+    // material should be enough to build, for the Display Products
+    // stock column to show that material as sufficient (green) rather
+    // than short (red) at a given Warehouse. Adjustable in Product
+    // Settings; defaults to 10 units.
+    int safetyStockUnits;
+
 public:
 
     ProductManager(
-        MaterialManager* manager = nullptr);
+        MaterialManager* manager = nullptr,
+        string configFile = "data/product_config.txt");
 
     void setMaterialManager(
         MaterialManager* manager);
@@ -43,6 +53,22 @@ public:
     // Access
     const vector<unique_ptr<Product>>&
         getProducts() const;
+
+    // ------------------------------------------------------------
+    // Safety stock configuration (Product Settings)
+    // ------------------------------------------------------------
+
+    int getSafetyStockUnits() const;
+
+    bool setSafetyStockUnits(int units);
+
+    // ------------------------------------------------------------
+    // Persistence (safety stock config only - Products themselves
+    // are not persisted here)
+    // ------------------------------------------------------------
+
+    bool save();
+    bool load();
 
     // Clear
     void clear();

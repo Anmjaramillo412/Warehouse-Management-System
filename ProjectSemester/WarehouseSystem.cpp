@@ -18,6 +18,9 @@ WarehouseSystem::WarehouseSystem()
         &productManager,
         &warehouseManager,
         &inventoryManager,
+        &movementLogger),
+    purchaseManager(
+        &procurementManager,
         &movementLogger)
 {
     dataManager.setMovementLogger(
@@ -114,6 +117,16 @@ ProjectionManager&
 WarehouseSystem::getProjectionManager()
 {
     return projectionManager;
+}
+
+// ================================================================
+// PURCHASE MANAGER
+// ================================================================
+
+PurchaseManager&
+WarehouseSystem::getPurchaseManager()
+{
+    return purchaseManager;
 }
 
 // ================================================================

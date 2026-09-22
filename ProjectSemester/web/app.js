@@ -103,6 +103,10 @@ function openModule(module) {
                     Sell Product
                 </button>
 
+                <button class="button-muted" onclick="showProductSettings()">
+                    Settings
+                </button>
+
             </div>
 
             <div id="product-content">
@@ -285,6 +289,57 @@ function openModule(module) {
             </div>
 
             <div id="procurement-content">
+            </div>
+        `;
+    }
+
+    // ========================================================
+    // PURCHASE
+    // ========================================================
+
+    else if (module === "purchase") {
+
+        content.innerHTML = `
+
+            <h1>
+                Purchase
+            </h1>
+
+            <p>
+                Price received deliveries using landed cost (material
+                cost plus customs and freight), track material price
+                history, and see current Product cost.
+            </p>
+
+            <div class="module-buttons">
+
+                <button class="button-accent" onclick="showPurchasePending()">
+                    Pending Pricing
+                </button>
+
+                <button class="button-accent" onclick="showPurchaseAdjust()">
+                    Adjust Material Price
+                </button>
+
+                <button onclick="showPurchaseInvoices()">
+                    Invoices
+                </button>
+
+                <button onclick="showPurchaseHistory()">
+                    Material Price History
+                </button>
+
+                <button onclick="showPurchaseProductCost()">
+                    Product Cost
+                </button>
+
+                <button class="button-muted" onclick="showPurchaseSettings()">
+                    Settings
+                </button>
+
+            </div>
+
+            <div id="purchase-content">
             </div>
         `;
     }
@@ -2138,6 +2193,8 @@ function handleMaterialSearchInput(prefix) {
 
     hiddenInput.value =
         exactMatch ? exactMatch.id : "";
+
+    updateMaterialCurrentPriceHint(prefix, hiddenInput.value);
 }
 
 function selectMaterialOption(prefix, id) {
@@ -2153,6 +2210,77 @@ function selectMaterialOption(prefix, id) {
     document.getElementById(
         prefix + "-material-id-options"
     ).classList.add("hidden");
+
+    updateMaterialCurrentPriceHint(prefix, id);
+}
+
+// Optional: if a form built with materialComboboxHtml(prefix, ...)
+// also has an element "<prefix>-material-id-currentprice", this fills
+// it in with that material's last recorded price whenever the
+// selection changes. Forms without that element are unaffected.
+
+async function updateMaterialCurrentPriceHint(prefix, materialID) {
+
+    const hint =
+        document.getElementById(
+            prefix + "-material-id-currentprice"
+        );
+
+    if (!hint) {
+        return;
+    }
+
+    if (!materialID) {
+
+        hint.textContent = "";
+
+        return;
+    }
+
+    hint.textContent =
+        "Loading current price...";
+
+    try {
+
+        const response =
+            await fetch(
+                `/api/purchase/materials/${encodeURIComponent(materialID)}/history`
+            );
+
+        if (!response.ok) {
+
+            hint.textContent = "";
+
+            return;
+        }
+
+        const data =
+            await response.json();
+
+        const history =
+            data.history || [];
+
+        if (history.length === 0) {
+
+            hint.textContent =
+                "No previous price on record for this Material.";
+        }
+        else {
+
+            const latest =
+                history[history.length - 1];
+
+            hint.textContent =
+                `Previous price: ${formatMoney(data.currentUnitPriceEUR)} EUR ` +
+                `(${latest.date})`;
+        }
+    }
+    catch (error) {
+
+        console.error(error);
+
+        hint.textContent = "";
+    }
 }
 
 function hideMaterialOptionsDelayed(prefix) {
@@ -6088,6 +6216,10 @@ async function showDisplayProducts() {
         }
 
 
+        const safetyStockUnits =
+            Number(data.safetyStockUnits) || 10;
+
+
         let html = "";
 
 
@@ -6149,6 +6281,11 @@ async function showDisplayProducts() {
                                     Quantity
                                 </th>
 
+                                <th>
+                                    Stock by Warehouse
+                                    (Safety Stock: ${safetyStockUnits} un)
+                                </th>
+
                             </tr>
 
                         </thead>
@@ -6160,6 +6297,29 @@ async function showDisplayProducts() {
                 for (
                     const item of product.bom
                 ) {
+
+                    const warehouseStock =
+                        item.warehouseStock || [];
+
+                    const stockCell =
+                        warehouseStock.length === 0
+                            ? "<small>No warehouses.</small>"
+                            : warehouseStock.map(stock => {
+
+                                const color =
+                                    stock.sufficientForSafetyStock
+                                        ? "#15803d"
+                                        : "#b91c1c";
+
+                                return `
+                                    <div style="white-space: nowrap;">
+                                        ${escapeHtml(stock.warehouseName)}:
+                                        <strong style="color: ${color};">
+                                            ${stock.quantity}
+                                        </strong>
+                                    </div>
+                                `;
+                            }).join("");
 
                     html += `
 
@@ -6179,6 +6339,10 @@ async function showDisplayProducts() {
 
                             <td>
                                 ${item.quantity}
+                            </td>
+
+                            <td>
+                                ${stockCell}
                             </td>
 
                         </tr>
@@ -6215,6 +6379,144 @@ async function showDisplayProducts() {
                 Could not connect to the server.
             </p>
         `;
+    }
+}
+
+// ============================================================
+// PRODUCT SETTINGS
+// ============================================================
+
+async function loadProductSafetyStockUnits() {
+
+    try {
+
+        const response =
+            await fetch("/api/products/config");
+
+        const data =
+            await response.json();
+
+        return Number(data.safetyStockUnits) || 10;
+    }
+    catch (error) {
+
+        console.error(error);
+
+        return 10;
+    }
+}
+
+async function showProductSettings() {
+
+    const content =
+        document.getElementById(
+            "product-content"
+        );
+
+    content.innerHTML = `
+        <p>Loading Settings...</p>
+    `;
+
+    const safetyStockUnits =
+        await loadProductSafetyStockUnits();
+
+    content.innerHTML = `
+
+        <div class="form-container">
+
+            <h2>
+                Product Settings
+            </h2>
+
+            <label>
+                Safety Stock (units)
+            </label>
+
+            <small>
+                In Display Products, each BOM material's stock at a
+                Warehouse is shown in green when it is enough to build
+                this many units of the Product there, and in red
+                otherwise. Whenever we talk about "Safety Stock" in
+                this system, this is the number we mean.
+            </small>
+
+            <input
+                type="number"
+                min="1"
+                step="1"
+                id="productsettings-safetystock"
+                value="${safetyStockUnits}"
+            >
+
+            <div class="form-actions">
+                <button onclick="submitProductSafetyStock()">
+                    Save
+                </button>
+            </div>
+
+            <div id="productsettings-message">
+            </div>
+
+        </div>
+    `;
+}
+
+async function submitProductSafetyStock() {
+
+    const message =
+        document.getElementById(
+            "productsettings-message"
+        );
+
+    const units =
+        Number(
+            document.getElementById(
+                "productsettings-safetystock"
+            ).value
+        );
+
+    if (!units || units <= 0 || !Number.isInteger(units)) {
+
+        message.textContent =
+            "Safety Stock must be a whole number greater than zero.";
+
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/products/config",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ safetyStockUnits: units })
+                }
+            );
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            message.textContent =
+                errorMessage;
+
+            return;
+        }
+
+        message.textContent =
+            "Safety Stock updated.";
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
     }
 }
 
@@ -9474,5 +9776,2006 @@ async function saveGroupReceipts(id) {
             message.textContent =
                 "Could not connect to the server.";
         }
+    }
+}
+// ============================================================
+// PURCHASE MODULE
+// ============================================================
+// Prices already-received Procurement deliveries using landed cost
+// (material cost plus customs/freight, prorated "by value" across an
+// invoice's lines), keeps every price ever entered as history, and
+// rolls Products up to a current cost from their BOM. Everything is
+// shown in EUR; a USD invoice is converted using the exchange rate
+// entered on that invoice, which is preserved even if the module's
+// default rate is later changed.
+
+function formatMoney(value) {
+
+    const number =
+        Number(value);
+
+    if (!isFinite(number)) {
+        return "0.00";
+    }
+
+    return number.toFixed(2);
+}
+
+let purchaseDefaultExchangeRate = 1.0;
+
+// The pending receipts currently rendered in the Pending Pricing
+// form, kept here (rather than round-tripped through an inline
+// onclick) so submitPurchaseInvoice() can look each selected row's
+// procurementOrderID/materialID/receiptIndex/receivedQuantity back up
+// by index without re-fetching or re-encoding them into HTML.
+let purchasePendingCache = [];
+
+async function loadPurchaseDefaultExchangeRate() {
+
+    try {
+
+        const response =
+            await fetch("/api/purchase/config");
+
+        const data =
+            await response.json();
+
+        purchaseDefaultExchangeRate =
+            Number(data.exchangeRate) || 1.0;
+    }
+    catch (error) {
+
+        console.error(error);
+
+        purchaseDefaultExchangeRate = 1.0;
+    }
+
+    return purchaseDefaultExchangeRate;
+}
+
+// ============================================================
+// PENDING PRICING
+// ============================================================
+
+async function showPurchasePending() {
+
+    const content =
+        document.getElementById(
+            "purchase-content"
+        );
+
+    content.innerHTML = `
+        <p>Loading Pending Pricing...</p>
+    `;
+
+    await loadPurchaseDefaultExchangeRate();
+
+    try {
+
+        const response =
+            await fetch("/api/purchase/pending");
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            content.innerHTML = `
+                <p>Error: ${escapeHtml(errorMessage)}</p>
+            `;
+
+            return;
+        }
+
+        const data =
+            await response.json();
+
+        const pending =
+            data.pending || [];
+
+        if (pending.length === 0) {
+
+            content.innerHTML = `
+                <div class="empty-message">
+                    No deliveries waiting on a price. Received
+                    Procurement deliveries appear here as soon as
+                    Goods Receipt records them.
+                </div>
+            `;
+
+            return;
+        }
+
+        purchasePendingCache = pending;
+
+        content.innerHTML =
+            renderPurchasePendingForm(pending);
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `
+            <p>Could not connect to the server.</p>
+        `;
+    }
+}
+
+function renderPurchasePendingForm(pending) {
+
+    let rows = "";
+
+    for (let i = 0; i < pending.length; i++) {
+
+        const receipt = pending[i];
+
+        rows += `
+            <tr>
+
+                <td>
+                    <input
+                        type="checkbox"
+                        id="purchpending-${i}-select"
+                        onchange="togglePurchasePendingRow(${i})"
+                    >
+                </td>
+
+                <td>${escapeHtml(receipt.procurementOrderID)}</td>
+
+                <td>
+                    ${escapeHtml(receipt.materialID)}
+                    <br>
+                    <small>${escapeHtml(receipt.materialName || "")}</small>
+                </td>
+
+                <td>${escapeHtml(receipt.supplierName || "No Supplier")}</td>
+
+                <td>${receipt.warehouseID}</td>
+
+                <td>${escapeHtml(receipt.receiptDate)}</td>
+
+                <td>${receipt.receivedQuantity}</td>
+
+                <td>
+                    ${receipt.hasPreviousPrice
+                        ? formatMoney(receipt.previousUnitPriceEUR) + " EUR"
+                        : "<small>No previous price</small>"}
+                </td>
+
+                <td>
+                    <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        id="purchpending-${i}-cost"
+                        class="purchase-cost-input"
+                        placeholder="Unit Cost"
+                        disabled
+                    >
+                </td>
+
+            </tr>
+        `;
+    }
+
+    return `
+
+        <div class="form-container form-container-wide">
+
+            <h2>
+                Price Received Deliveries
+            </h2>
+
+            <small>
+                Select one or more deliveries below and enter each
+                one's per-unit cost - the total is calculated for you.
+                Several deliveries, even from different Procurement
+                Orders, can share a single invoice (a consolidated
+                shipment). Customs and freight are shared out across
+                the selected deliveries proportionally to each one's
+                own total material cost (unit cost × quantity).
+            </small>
+
+            <label>
+                Invoice Date
+            </label>
+
+            <input type="date" id="purchpending-date">
+
+            <label>
+                Currency
+            </label>
+
+            <select id="purchpending-currency"
+                    onchange="handlePurchaseCurrencyChange()">
+                <option value="EUR">EUR</option>
+                <option value="USD">USD</option>
+            </select>
+
+            <label>
+                Exchange Rate (USD → EUR)
+            </label>
+
+            <input
+                type="number"
+                min="0.000001"
+                step="0.0001"
+                id="purchpending-rate"
+                value="${purchaseDefaultExchangeRate}"
+                disabled
+            >
+
+            <label>
+                Customs Cost (Zoll) - whole invoice
+            </label>
+
+            <input
+                type="number"
+                min="0"
+                step="0.01"
+                id="purchpending-customs"
+                value="0"
+            >
+
+            <label>
+                Freight / Transport Cost - whole invoice
+            </label>
+
+            <input
+                type="number"
+                min="0"
+                step="0.01"
+                id="purchpending-freight"
+                value="0"
+            >
+
+            <label>
+                Comment (optional)
+            </label>
+
+            <input
+                type="text"
+                id="purchpending-comment"
+                placeholder="e.g. Supplier invoice number"
+            >
+
+        </div>
+
+        <h2>
+            Deliveries
+        </h2>
+
+        <div class="material-table-container">
+
+            <table class="material-table">
+
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th>Order</th>
+                        <th>Material</th>
+                        <th>Supplier</th>
+                        <th>Warehouse</th>
+                        <th>Receipt Date</th>
+                        <th>Received Qty</th>
+                        <th>Previous Price (EUR)</th>
+                        <th>Unit Cost</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    ${rows}
+                </tbody>
+
+            </table>
+
+        </div>
+
+        <div class="form-actions">
+
+            <button onclick="submitPurchaseInvoice()">
+                Create Invoice
+            </button>
+
+        </div>
+
+        <div id="purchpending-message">
+        </div>
+    `;
+}
+
+function handlePurchaseCurrencyChange() {
+
+    const currency =
+        document.getElementById(
+            "purchpending-currency"
+        ).value;
+
+    const rateInput =
+        document.getElementById(
+            "purchpending-rate"
+        );
+
+    if (currency === "EUR") {
+
+        rateInput.value = 1.0;
+        rateInput.disabled = true;
+    }
+    else {
+
+        rateInput.value = purchaseDefaultExchangeRate;
+        rateInput.disabled = false;
+    }
+}
+
+function togglePurchasePendingRow(index) {
+
+    const checkbox =
+        document.getElementById(
+            `purchpending-${index}-select`
+        );
+
+    const costInput =
+        document.getElementById(
+            `purchpending-${index}-cost`
+        );
+
+    costInput.disabled = !checkbox.checked;
+
+    if (!checkbox.checked) {
+        costInput.value = "";
+    }
+}
+
+async function submitPurchaseInvoice() {
+
+    const pending =
+        purchasePendingCache;
+
+    const message =
+        document.getElementById(
+            "purchpending-message"
+        );
+
+    const date =
+        document.getElementById(
+            "purchpending-date"
+        ).value;
+
+    const currency =
+        document.getElementById(
+            "purchpending-currency"
+        ).value;
+
+    const exchangeRate =
+        Number(
+            document.getElementById(
+                "purchpending-rate"
+            ).value
+        );
+
+    const customsCost =
+        Number(
+            document.getElementById(
+                "purchpending-customs"
+            ).value
+        ) || 0;
+
+    const freightCost =
+        Number(
+            document.getElementById(
+                "purchpending-freight"
+            ).value
+        ) || 0;
+
+    const comment =
+        document.getElementById(
+            "purchpending-comment"
+        ).value.trim();
+
+
+    if (!date) {
+
+        message.textContent =
+            "Please enter an Invoice Date.";
+
+        return;
+    }
+
+    if (!exchangeRate || exchangeRate <= 0) {
+
+        message.textContent =
+            "Exchange Rate must be greater than zero.";
+
+        return;
+    }
+
+
+    const lines = [];
+
+    for (let i = 0; i < pending.length; i++) {
+
+        const checkbox =
+            document.getElementById(
+                `purchpending-${i}-select`
+            );
+
+        if (!checkbox || !checkbox.checked) {
+            continue;
+        }
+
+        const costInput =
+            document.getElementById(
+                `purchpending-${i}-cost`
+            );
+
+        const unitCost =
+            Number(costInput.value);
+
+        if (!costInput.value || unitCost < 0) {
+
+            message.textContent =
+                `Enter a valid Unit Cost for ${pending[i].materialID} ` +
+                `(Order ${pending[i].procurementOrderID}).`;
+
+            return;
+        }
+
+        lines.push({
+            procurementOrderID: pending[i].procurementOrderID,
+            materialID: pending[i].materialID,
+            receiptIndex: pending[i].receiptIndex,
+            receivedQuantity: pending[i].receivedQuantity,
+            unitCost: unitCost
+        });
+    }
+
+    if (lines.length === 0) {
+
+        message.textContent =
+            "Select at least one delivery to price.";
+
+        return;
+    }
+
+
+    const payload = {
+        date: date,
+        currency: currency,
+        exchangeRate: exchangeRate,
+        customsCost: customsCost,
+        freightCost: freightCost,
+        comment: comment,
+        lines: lines
+    };
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/purchase/invoices/create",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                }
+            );
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            message.textContent =
+                errorMessage;
+
+            return;
+        }
+
+        await showPurchasePending();
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
+    }
+}
+
+// ============================================================
+// ADJUST MATERIAL PRICE (no Procurement delivery involved)
+// ============================================================
+// For a Material that needs its price set or corrected directly -
+// e.g. a price known from another source, or a one-off fix - with no
+// received delivery behind it. Internally this still creates a
+// one-line Purchase Invoice with no customs/freight, so it shows up
+// the same way in Invoices and in the Material's price history.
+
+// Row counter for the dynamic Material rows below - always increases,
+// even across removed rows, so two rows never share element IDs.
+let purchAdjustRowCounter = 0;
+
+async function showPurchaseAdjust() {
+
+    const content =
+        document.getElementById(
+            "purchase-content"
+        );
+
+    content.innerHTML = `
+        <p>Loading...</p>
+    `;
+
+    await loadPurchaseDefaultExchangeRate();
+
+    purchAdjustRowCounter = 0;
+
+    content.innerHTML = `
+
+        <div class="form-container form-container-wide">
+
+            <h2>
+                Adjust Material Price
+            </h2>
+
+            <small>
+                Registers a price directly, with no Procurement delivery
+                behind it - use this for a price known from another
+                source, a one-off correction, or to set up initial
+                prices for several Materials at once, the way a real
+                supplier invoice with several materials, customs (Zoll)
+                and freight/transport would arrive. For a delivery that
+                actually arrived, price it from Pending Pricing instead,
+                so it stays matched to its receipt.
+            </small>
+
+            <label>
+                Date
+            </label>
+
+            <input type="date" id="purchadjust-date">
+
+            <label>
+                Currency
+            </label>
+
+            <select id="purchadjust-currency"
+                    onchange="handlePurchaseAdjustCurrencyChange()">
+                <option value="EUR">EUR</option>
+                <option value="USD">USD</option>
+            </select>
+
+            <label>
+                Exchange Rate (USD → EUR)
+            </label>
+
+            <input
+                type="number"
+                min="0.000001"
+                step="0.0001"
+                id="purchadjust-rate"
+                value="${purchaseDefaultExchangeRate}"
+                disabled
+            >
+
+            <label>
+                Customs Cost (Zoll) - whole invoice
+            </label>
+
+            <input
+                type="number"
+                min="0"
+                step="0.01"
+                id="purchadjust-customs"
+                value="0"
+            >
+
+            <label>
+                Freight / Transport Cost - whole invoice
+            </label>
+
+            <input
+                type="number"
+                min="0"
+                step="0.01"
+                id="purchadjust-freight"
+                value="0"
+            >
+
+            <label>
+                Comment (optional)
+            </label>
+
+            <input
+                type="text"
+                id="purchadjust-comment"
+                placeholder="e.g. Reason for the adjustment"
+            >
+
+        </div>
+
+        <div class="multi-line-items">
+
+            <div class="multi-line-header">
+
+                <label>
+                    Materials
+                </label>
+
+                <button
+                    type="button"
+                    class="add-line-button"
+                    onclick="addPurchaseAdjustMaterialRow()">
+
+                    + Add Material
+
+                </button>
+
+            </div>
+
+            <small>
+                Customs and freight above are shared out across the
+                Materials below proportionally to each one's own total
+                cost (unit cost × quantity), same as a normal invoice.
+            </small>
+
+            <div id="purchadjust-rows">
+            </div>
+
+        </div>
+
+        <div class="form-actions">
+            <button onclick="submitPurchaseAdjust()">
+                Save Prices
+            </button>
+        </div>
+
+        <div id="purchadjust-message">
+        </div>
+    `;
+
+    addPurchaseAdjustMaterialRow();
+}
+
+function addPurchaseAdjustMaterialRow() {
+
+    const container =
+        document.getElementById(
+            "purchadjust-rows"
+        );
+
+    const rowIndex =
+        purchAdjustRowCounter++;
+
+    const prefix =
+        `purchadjust-row-${rowIndex}`;
+
+    const row =
+        document.createElement("div");
+
+    row.className =
+        "line-item";
+
+    row.id =
+        `${prefix}-row`;
+
+    row.dataset.prefix =
+        prefix;
+
+    row.innerHTML = `
+
+        <div class="line-item-field">
+
+            <label>
+                Material ID
+            </label>
+
+            ${materialComboboxHtml(prefix, "Search by ID or name...")}
+
+            <div id="${prefix}-material-id-currentprice" class="empty-message">
+            </div>
+
+        </div>
+
+        <div class="line-item-field line-item-field-qty">
+
+            <label>
+                Quantity
+            </label>
+
+            <input
+                type="number"
+                min="1"
+                step="1"
+                id="${prefix}-quantity"
+                placeholder="Qty"
+                value="1"
+            >
+
+        </div>
+
+        <div class="line-item-field line-item-field-qty">
+
+            <label>
+                Unit Cost
+            </label>
+
+            <input
+                type="number"
+                min="0"
+                step="0.01"
+                id="${prefix}-unitcost"
+                placeholder="Unit Cost"
+            >
+
+        </div>
+
+        <button
+            type="button"
+            class="remove-line-button"
+            title="Remove this material"
+            onclick="this.closest('.line-item').remove()">
+
+            &times;
+
+        </button>
+    `;
+
+    container.appendChild(row);
+
+    initMaterialCombobox(prefix);
+}
+
+function handlePurchaseAdjustCurrencyChange() {
+
+    const currency =
+        document.getElementById(
+            "purchadjust-currency"
+        ).value;
+
+    const rateInput =
+        document.getElementById(
+            "purchadjust-rate"
+        );
+
+    if (currency === "EUR") {
+
+        rateInput.value = 1.0;
+        rateInput.disabled = true;
+    }
+    else {
+
+        rateInput.value = purchaseDefaultExchangeRate;
+        rateInput.disabled = false;
+    }
+}
+
+async function submitPurchaseAdjust() {
+
+    const message =
+        document.getElementById(
+            "purchadjust-message"
+        );
+
+    const date =
+        document.getElementById(
+            "purchadjust-date"
+        ).value;
+
+    const currency =
+        document.getElementById(
+            "purchadjust-currency"
+        ).value;
+
+    const exchangeRate =
+        Number(
+            document.getElementById(
+                "purchadjust-rate"
+            ).value
+        );
+
+    const customsCost =
+        Number(
+            document.getElementById(
+                "purchadjust-customs"
+            ).value
+        ) || 0;
+
+    const freightCost =
+        Number(
+            document.getElementById(
+                "purchadjust-freight"
+            ).value
+        ) || 0;
+
+    const comment =
+        document.getElementById(
+            "purchadjust-comment"
+        ).value.trim();
+
+
+    if (!date) {
+
+        message.textContent =
+            "Please enter a Date.";
+
+        return;
+    }
+
+    if (!exchangeRate || exchangeRate <= 0) {
+
+        message.textContent =
+            "Exchange Rate must be greater than zero.";
+
+        return;
+    }
+
+    if (customsCost < 0 || freightCost < 0) {
+
+        message.textContent =
+            "Customs Cost and Freight Cost cannot be negative.";
+
+        return;
+    }
+
+
+    const rows =
+        document.querySelectorAll(
+            "#purchadjust-rows .line-item"
+        );
+
+    if (rows.length === 0) {
+
+        message.textContent =
+            "Add at least one Material.";
+
+        return;
+    }
+
+
+    const lines = [];
+
+    const seenMaterialIDs = new Set();
+
+    for (const row of rows) {
+
+        const prefix =
+            row.dataset.prefix;
+
+        const materialID =
+            document.getElementById(
+                `${prefix}-material-id`
+            ).value.trim();
+
+        if (!materialID) {
+
+            message.textContent =
+                "Please select a Material for every row.";
+
+            return;
+        }
+
+        if (seenMaterialIDs.has(materialID)) {
+
+            message.textContent =
+                `${materialID} was added more than once - combine ` +
+                `it into a single row instead.`;
+
+            return;
+        }
+
+        seenMaterialIDs.add(materialID);
+
+        const quantityInput =
+            document.getElementById(
+                `${prefix}-quantity`
+            );
+
+        const quantity =
+            Number(quantityInput.value);
+
+        if (!quantityInput.value || quantity <= 0 ||
+            !Number.isInteger(quantity)) {
+
+            message.textContent =
+                `Enter a valid whole Quantity for ${materialID}.`;
+
+            return;
+        }
+
+        const unitCostInput =
+            document.getElementById(
+                `${prefix}-unitcost`
+            );
+
+        const unitCost =
+            Number(unitCostInput.value);
+
+        if (!unitCostInput.value || unitCost < 0) {
+
+            message.textContent =
+                `Enter a valid Unit Cost for ${materialID}.`;
+
+            return;
+        }
+
+        lines.push({
+            procurementOrderID: "MANUAL",
+            materialID: materialID,
+            receiptIndex: -1,
+            receivedQuantity: quantity,
+            unitCost: unitCost
+        });
+    }
+
+
+    const payload = {
+        date: date,
+        currency: currency,
+        exchangeRate: exchangeRate,
+        customsCost: customsCost,
+        freightCost: freightCost,
+        comment: comment,
+        lines: lines
+    };
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/purchase/invoices/create",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                }
+            );
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            message.textContent =
+                errorMessage;
+
+            return;
+        }
+
+        const data =
+            await response.json();
+
+        await showPurchaseAdjust();
+
+        document.getElementById(
+            "purchadjust-message"
+        ).textContent =
+            `Prices saved (Invoice ${data.id}).`;
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
+    }
+}
+
+// ============================================================
+// INVOICES - LIST / DELETE
+// ============================================================
+
+// Invoices currently on screen, keyed by ID, so an invoice can be
+// switched into edit mode and back without a round trip to the
+// server just to re-render it.
+let purchaseInvoiceCache = {};
+
+async function showPurchaseInvoices() {
+
+    const content =
+        document.getElementById(
+            "purchase-content"
+        );
+
+    content.innerHTML = `
+        <p>Loading Invoices...</p>
+    `;
+
+    try {
+
+        const response =
+            await fetch("/api/purchase/invoices");
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            content.innerHTML = `
+                <p>Error: ${escapeHtml(errorMessage)}</p>
+            `;
+
+            return;
+        }
+
+        const data =
+            await response.json();
+
+        const invoices =
+            (data.invoices || []).slice().reverse();
+
+        purchaseInvoiceCache = {};
+
+        for (const invoice of invoices) {
+            purchaseInvoiceCache[invoice.id] = invoice;
+        }
+
+        if (invoices.length === 0) {
+
+            content.innerHTML = `
+                <div class="empty-message">
+                    No Purchase Invoices yet. Price a delivery from
+                    Pending Pricing to create the first one.
+                </div>
+            `;
+
+            return;
+        }
+
+        content.innerHTML =
+            invoices.map(
+                invoice => renderPurchaseInvoiceCard(invoice, false)
+            ).join("");
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `
+            <p>Could not connect to the server.</p>
+        `;
+    }
+}
+
+// Renders one invoice card in either view mode (editing = false) or
+// edit mode (editing = true) - the same card element, identified by
+// id "purchinv-<invoiceID>", is swapped between the two in place, so
+// editing one invoice never disturbs the rest of the list.
+
+function renderPurchaseInvoiceCard(invoice, editing, previousPrices) {
+
+    previousPrices = previousPrices || {};
+
+    const escapedID =
+        escapeHtml(invoice.id);
+
+    let lineRows = "";
+
+    for (let i = 0; i < invoice.lines.length; i++) {
+
+        const line =
+            invoice.lines[i];
+
+        const isManual =
+            line.procurementOrderID === "MANUAL";
+
+        const previous =
+            previousPrices[line.materialID];
+
+        lineRows += `
+            <tr>
+                <td>
+                    ${isManual
+                        ? `<span class="status-badge status-inactive">Manual Adjustment</span>`
+                        : escapeHtml(line.procurementOrderID)}
+                </td>
+                <td>${escapeHtml(line.materialID)}</td>
+                <td>${isManual ? "-" : line.receivedQuantity}</td>
+                ${editing
+                    ? `<td>
+                            ${previous
+                                ? formatMoney(previous.unitPriceEUR) + " EUR"
+                                : "<small>No previous price</small>"}
+                       </td>`
+                    : ""}
+                <td>
+                    ${editing
+                        ? `<input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                id="purchinv-${escapedID}-line-${i}-cost"
+                                class="purchase-cost-input"
+                                value="${line.unitCost}"
+                           >`
+                        : formatMoney(line.unitCost)}
+                </td>
+                <td>${formatMoney(line.materialCost)}</td>
+                <td>${formatMoney(line.allocatedCost)}</td>
+                <td>${formatMoney(line.unitPrice)}</td>
+                <td>${formatMoney(line.unitPriceEUR)}</td>
+            </tr>
+        `;
+    }
+
+    const header = editing
+        ? `
+            <div class="procurement-inline-form">
+
+                <label>
+                    Date
+                    <input type="date" id="purchinv-${escapedID}-date"
+                           value="${escapeHtml(invoice.date)}">
+                </label>
+
+                <label>
+                    Currency
+                    <select id="purchinv-${escapedID}-currency"
+                            onchange="handlePurchaseInvoiceEditCurrencyChange('${escapedID}')">
+                        <option value="EUR" ${invoice.currency === "EUR" ? "selected" : ""}>EUR</option>
+                        <option value="USD" ${invoice.currency === "USD" ? "selected" : ""}>USD</option>
+                    </select>
+                </label>
+
+                <label>
+                    Exchange Rate
+                    <input type="number" min="0.000001" step="0.0001"
+                           id="purchinv-${escapedID}-rate"
+                           value="${invoice.exchangeRate}"
+                           ${invoice.currency === "EUR" ? "disabled" : ""}>
+                </label>
+
+                <label>
+                    Customs Cost
+                    <input type="number" min="0" step="0.01"
+                           id="purchinv-${escapedID}-customs"
+                           value="${invoice.customsCost}">
+                </label>
+
+                <label>
+                    Freight Cost
+                    <input type="number" min="0" step="0.01"
+                           id="purchinv-${escapedID}-freight"
+                           value="${invoice.freightCost}">
+                </label>
+
+                <label>
+                    Comment
+                    <input type="text" id="purchinv-${escapedID}-comment"
+                           value="${escapeHtml(invoice.comment || "")}">
+                </label>
+
+            </div>
+        `
+        : `
+            <p>
+                Exchange Rate: ${invoice.exchangeRate}
+                &nbsp;|&nbsp;
+                Customs: ${formatMoney(invoice.customsCost)}
+                &nbsp;|&nbsp;
+                Freight: ${formatMoney(invoice.freightCost)}
+                &nbsp;|&nbsp;
+                Total Material Cost: ${formatMoney(invoice.totalMaterialCost)}
+                ${invoice.comment
+                    ? `<br>Comment: ${escapeHtml(invoice.comment)}`
+                    : ""}
+            </p>
+        `;
+
+    const actions = editing
+        ? `
+            <div class="form-actions">
+                <button onclick="savePurchaseInvoiceEdit('${escapedID}')">
+                    Save and Close
+                </button>
+                <button class="button-muted"
+                        onclick="cancelEditPurchaseInvoice('${escapedID}')">
+                    Cancel
+                </button>
+            </div>
+
+            <div id="purchinv-${escapedID}-message">
+            </div>
+        `
+        : `
+            <div class="form-actions">
+                <button onclick="toggleEditPurchaseInvoice('${escapedID}')">
+                    Edit
+                </button>
+                <button class="button-muted"
+                        onclick="deletePurchaseInvoice('${escapedID}')">
+                    Delete Invoice
+                </button>
+            </div>
+        `;
+
+    return `
+
+        <div class="procurement-section" id="purchinv-${escapedID}">
+
+            <h3>
+                ${escapedID}
+                &nbsp;&mdash;&nbsp;
+                ${escapeHtml(invoice.date)}
+                &nbsp;
+                <span class="status-badge status-ordered">
+                    ${escapeHtml(invoice.currency)}
+                </span>
+                ${editing
+                    ? `<span class="status-badge status-partial">Editing</span>`
+                    : ""}
+            </h3>
+
+            ${header}
+
+            <div class="material-table-container">
+
+                <table class="material-table">
+
+                    <thead>
+                        <tr>
+                            <th>Order</th>
+                            <th>Material</th>
+                            <th>Qty</th>
+                            ${editing ? `<th>Previous Price (EUR)</th>` : ""}
+                            <th>Unit Cost</th>
+                            <th>Material Cost</th>
+                            <th>Allocated Customs/Freight</th>
+                            <th>Unit Price</th>
+                            <th>Unit Price (EUR)</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        ${lineRows}
+                    </tbody>
+
+                </table>
+
+            </div>
+
+            ${actions}
+
+        </div>
+    `;
+}
+
+function handlePurchaseInvoiceEditCurrencyChange(id) {
+
+    const currency =
+        document.getElementById(
+            `purchinv-${id}-currency`
+        ).value;
+
+    const rateInput =
+        document.getElementById(
+            `purchinv-${id}-rate`
+        );
+
+    if (currency === "EUR") {
+
+        rateInput.value = 1.0;
+        rateInput.disabled = true;
+    }
+    else {
+        rateInput.disabled = false;
+    }
+}
+
+// Fetches, for each distinct material on this invoice, the last
+// price on record from a DIFFERENT invoice - so editing invoice X
+// shows what the material cost before X, not X's own (about to be
+// re-entered) value. Returns { materialID: { unitPriceEUR, date } }.
+
+async function loadPreviousPricesForInvoice(invoice) {
+
+    const previousPrices = {};
+
+    const materialIDs =
+        [...new Set(invoice.lines.map(line => line.materialID))];
+
+    for (const materialID of materialIDs) {
+
+        try {
+
+            const response =
+                await fetch(
+                    `/api/purchase/materials/${encodeURIComponent(materialID)}/history`
+                );
+
+            if (!response.ok) {
+                continue;
+            }
+
+            const data =
+                await response.json();
+
+            const otherEntries =
+                (data.history || []).filter(
+                    entry => entry.sourceInvoiceID !== invoice.id
+                );
+
+            if (otherEntries.length > 0) {
+
+                previousPrices[materialID] =
+                    otherEntries[otherEntries.length - 1];
+            }
+        }
+        catch (error) {
+            console.error(error);
+        }
+    }
+
+    return previousPrices;
+}
+
+async function toggleEditPurchaseInvoice(id) {
+
+    const invoice =
+        purchaseInvoiceCache[id];
+
+    const card =
+        document.getElementById(
+            `purchinv-${id}`
+        );
+
+    if (!invoice || !card) {
+        return;
+    }
+
+    const previousPrices =
+        await loadPreviousPricesForInvoice(invoice);
+
+    // The card may have been removed (e.g. the user navigated away)
+    // while the price lookups above were in flight.
+    const stillThere =
+        document.getElementById(`purchinv-${id}`);
+
+    if (!stillThere) {
+        return;
+    }
+
+    const wrapper =
+        document.createElement("div");
+
+    wrapper.innerHTML =
+        renderPurchaseInvoiceCard(invoice, true, previousPrices).trim();
+
+    stillThere.replaceWith(wrapper.firstElementChild);
+}
+
+function cancelEditPurchaseInvoice(id) {
+
+    const invoice =
+        purchaseInvoiceCache[id];
+
+    const card =
+        document.getElementById(
+            `purchinv-${id}`
+        );
+
+    if (!invoice || !card) {
+        return;
+    }
+
+    const wrapper =
+        document.createElement("div");
+
+    wrapper.innerHTML =
+        renderPurchaseInvoiceCard(invoice, false).trim();
+
+    card.replaceWith(wrapper.firstElementChild);
+}
+
+async function savePurchaseInvoiceEdit(id) {
+
+    const invoice =
+        purchaseInvoiceCache[id];
+
+    const message =
+        document.getElementById(
+            `purchinv-${id}-message`
+        );
+
+    if (!invoice) {
+        return;
+    }
+
+    const date =
+        document.getElementById(
+            `purchinv-${id}-date`
+        ).value;
+
+    const currency =
+        document.getElementById(
+            `purchinv-${id}-currency`
+        ).value;
+
+    const exchangeRate =
+        Number(
+            document.getElementById(
+                `purchinv-${id}-rate`
+            ).value
+        );
+
+    const customsCost =
+        Number(
+            document.getElementById(
+                `purchinv-${id}-customs`
+            ).value
+        ) || 0;
+
+    const freightCost =
+        Number(
+            document.getElementById(
+                `purchinv-${id}-freight`
+            ).value
+        ) || 0;
+
+    const comment =
+        document.getElementById(
+            `purchinv-${id}-comment`
+        ).value.trim();
+
+    if (!date) {
+
+        message.textContent =
+            "Please enter a Date.";
+
+        return;
+    }
+
+    if (!exchangeRate || exchangeRate <= 0) {
+
+        message.textContent =
+            "Exchange Rate must be greater than zero.";
+
+        return;
+    }
+
+    const lines = [];
+
+    for (let i = 0; i < invoice.lines.length; i++) {
+
+        const costInput =
+            document.getElementById(
+                `purchinv-${id}-line-${i}-cost`
+            );
+
+        const unitCost =
+            Number(costInput.value);
+
+        if (!costInput.value || unitCost < 0) {
+
+            message.textContent =
+                `Enter a valid Unit Cost for ${invoice.lines[i].materialID}.`;
+
+            return;
+        }
+
+        lines.push({
+            procurementOrderID: invoice.lines[i].procurementOrderID,
+            materialID: invoice.lines[i].materialID,
+            receiptIndex: invoice.lines[i].receiptIndex,
+            receivedQuantity: invoice.lines[i].receivedQuantity,
+            unitCost: unitCost
+        });
+    }
+
+    const payload = {
+        id: id,
+        date: date,
+        currency: currency,
+        exchangeRate: exchangeRate,
+        customsCost: customsCost,
+        freightCost: freightCost,
+        comment: comment,
+        lines: lines
+    };
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/purchase/invoices/update",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                }
+            );
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            message.textContent =
+                errorMessage;
+
+            return;
+        }
+
+        // Refresh from the server so the recalculated allocated
+        // cost/unit price show immediately, then close (view mode).
+        await showPurchaseInvoices();
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
+    }
+}
+
+async function deletePurchaseInvoice(id) {
+
+    const confirmed =
+        await showConfirmDialog(
+            `Delete Purchase Invoice ${id}? Its deliveries return to ` +
+            `Pending Pricing and its price history entries disappear.`
+        );
+
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/purchase/invoices/delete",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ id: id })
+                }
+            );
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            alert(errorMessage);
+
+            return;
+        }
+
+        await showPurchaseInvoices();
+    }
+    catch (error) {
+
+        console.error(error);
+
+        alert("Could not connect to the server.");
+    }
+}
+
+// ============================================================
+// MATERIAL PRICE HISTORY
+// ============================================================
+
+async function showPurchaseHistory() {
+
+    const content =
+        document.getElementById(
+            "purchase-content"
+        );
+
+    content.innerHTML = `
+
+        <div class="form-container form-container-wide">
+
+            <h2>
+                Material Price History
+            </h2>
+
+            <label>
+                Material
+            </label>
+
+            ${materialComboboxHtml("purchasehistory", "Search by ID or name...")}
+
+            <div class="form-actions">
+                <button onclick="loadPurchaseHistory()">
+                    Show History
+                </button>
+            </div>
+
+        </div>
+
+        <div id="purchasehistory-result">
+        </div>
+    `;
+
+    await initMaterialCombobox("purchasehistory");
+}
+
+async function loadPurchaseHistory() {
+
+    const materialID =
+        document.getElementById(
+            "purchasehistory-material-id"
+        ).value.trim();
+
+    const result =
+        document.getElementById(
+            "purchasehistory-result"
+        );
+
+    if (!materialID) {
+
+        result.innerHTML = `
+            <p>Please select a Material.</p>
+        `;
+
+        return;
+    }
+
+    result.innerHTML = `
+        <p>Loading price history...</p>
+    `;
+
+    try {
+
+        const response =
+            await fetch(
+                `/api/purchase/materials/${encodeURIComponent(materialID)}/history`
+            );
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            result.innerHTML = `
+                <p>Error: ${escapeHtml(errorMessage)}</p>
+            `;
+
+            return;
+        }
+
+        const data =
+            await response.json();
+
+        const history =
+            (data.history || []).slice().reverse();
+
+        if (history.length === 0) {
+
+            result.innerHTML = `
+                <div class="empty-message">
+                    No price recorded yet for
+                    ${escapeHtml(data.materialName || materialID)}.
+                </div>
+            `;
+
+            return;
+        }
+
+        let rows = "";
+
+        for (const entry of history) {
+
+            const isManual =
+                entry.sourceProcurementOrderID === "MANUAL";
+
+            rows += `
+                <tr>
+                    <td>${escapeHtml(entry.date)}</td>
+                    <td>${formatMoney(entry.unitPriceEUR)}</td>
+                    <td>${escapeHtml(entry.originalCurrency)}</td>
+                    <td>${formatMoney(entry.originalUnitPrice)}</td>
+                    <td>${entry.exchangeRateUsed}</td>
+                    <td>${escapeHtml(entry.sourceInvoiceID)}</td>
+                    <td>
+                        ${isManual
+                            ? `<span class="status-badge status-inactive">Manual Adjustment</span>`
+                            : escapeHtml(entry.sourceProcurementOrderID)}
+                    </td>
+                </tr>
+            `;
+        }
+
+        result.innerHTML = `
+
+            <h3>
+                ${escapeHtml(data.materialName || materialID)}
+            </h3>
+
+            <p>
+                Current Unit Price:
+                <strong>${formatMoney(data.currentUnitPriceEUR)} EUR</strong>
+            </p>
+
+            <div class="material-table-container">
+
+                <table class="material-table">
+
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Unit Price (EUR)</th>
+                            <th>Original Currency</th>
+                            <th>Original Unit Price</th>
+                            <th>Exchange Rate Used</th>
+                            <th>Invoice</th>
+                            <th>Procurement Order</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        ${rows}
+                    </tbody>
+
+                </table>
+
+            </div>
+        `;
+    }
+    catch (error) {
+
+        console.error(error);
+
+        result.innerHTML = `
+            <p>Could not connect to the server.</p>
+        `;
+    }
+}
+
+// ============================================================
+// PRODUCT COST
+// ============================================================
+
+async function showPurchaseProductCost() {
+
+    const content =
+        document.getElementById(
+            "purchase-content"
+        );
+
+    content.innerHTML = `
+        <p>Loading Product Cost...</p>
+    `;
+
+    try {
+
+        const response =
+            await fetch("/api/purchase/products/cost");
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            content.innerHTML = `
+                <p>Error: ${escapeHtml(errorMessage)}</p>
+            `;
+
+            return;
+        }
+
+        const data =
+            await response.json();
+
+        const products =
+            data.products || [];
+
+        if (products.length === 0) {
+
+            content.innerHTML = `
+                <div class="empty-message">
+                    No Products defined yet.
+                </div>
+            `;
+
+            return;
+        }
+
+        content.innerHTML =
+            products.map(renderPurchaseProductCostCard).join("");
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `
+            <p>Could not connect to the server.</p>
+        `;
+    }
+}
+
+function renderPurchaseProductCostCard(product) {
+
+    let lineRows = "";
+
+    for (const line of product.lines) {
+
+        lineRows += `
+            <tr>
+                <td>${escapeHtml(line.materialID)}</td>
+                <td>${line.quantity}</td>
+                <td>
+                    ${line.hasPrice
+                        ? formatMoney(line.unitPriceEUR)
+                        : "No price yet"}
+                </td>
+                <td>${formatMoney(line.lineCostEUR)}</td>
+            </tr>
+        `;
+    }
+
+    return `
+
+        <div class="procurement-section">
+
+            <h3>
+                ${escapeHtml(product.productID)}
+                &nbsp;&mdash;&nbsp;
+                ${escapeHtml(product.productName)}
+                &nbsp;
+                <span class="status-badge ${product.complete ? "status-active" : "status-inactive"}">
+                    ${product.complete ? "Complete" : "Incomplete"}
+                </span>
+            </h3>
+
+            <p>
+                Total Cost:
+                <strong>${formatMoney(product.totalCostEUR)} EUR</strong>
+                ${!product.complete
+                    ? `<br><small>Partial - at least one BOM material
+                        has no price history yet.</small>`
+                    : ""}
+            </p>
+
+            <div class="material-table-container">
+
+                <table class="material-table">
+
+                    <thead>
+                        <tr>
+                            <th>Material</th>
+                            <th>Quantity</th>
+                            <th>Unit Price (EUR)</th>
+                            <th>Line Cost (EUR)</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        ${lineRows}
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </div>
+    `;
+}
+
+// ============================================================
+// SETTINGS - DEFAULT EXCHANGE RATE
+// ============================================================
+
+async function showPurchaseSettings() {
+
+    const content =
+        document.getElementById(
+            "purchase-content"
+        );
+
+    content.innerHTML = `
+        <p>Loading Settings...</p>
+    `;
+
+    const rate =
+        await loadPurchaseDefaultExchangeRate();
+
+    content.innerHTML = `
+
+        <div class="form-container">
+
+            <h2>
+                Purchase Settings
+            </h2>
+
+            <label>
+                Default USD → EUR Exchange Rate
+            </label>
+
+            <small>
+                Used to pre-fill new USD invoices. Each invoice keeps
+                its own rate once created, so changing this never
+                affects past invoices or their price history.
+            </small>
+
+            <input
+                type="number"
+                min="0.000001"
+                step="0.0001"
+                id="purchsettings-rate"
+                value="${rate}"
+            >
+
+            <div class="form-actions">
+                <button onclick="submitPurchaseExchangeRate()">
+                    Save
+                </button>
+            </div>
+
+            <div id="purchsettings-message">
+            </div>
+
+        </div>
+    `;
+}
+
+async function submitPurchaseExchangeRate() {
+
+    const message =
+        document.getElementById(
+            "purchsettings-message"
+        );
+
+    const rate =
+        Number(
+            document.getElementById(
+                "purchsettings-rate"
+            ).value
+        );
+
+    if (!rate || rate <= 0) {
+
+        message.textContent =
+            "Exchange Rate must be greater than zero.";
+
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/purchase/config",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ exchangeRate: rate })
+                }
+            );
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            message.textContent =
+                errorMessage;
+
+            return;
+        }
+
+        message.textContent =
+            "Exchange rate updated.";
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
     }
 }

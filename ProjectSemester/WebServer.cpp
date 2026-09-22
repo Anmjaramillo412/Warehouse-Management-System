@@ -2856,6 +2856,12 @@ void WebServer::run()
                 MaterialManager& materialManager =
                     warehouseSystem->getMaterialManager();
 
+                WarehouseManager& warehouseManager =
+                    warehouseSystem->getWarehouseManager();
+
+                vector<Warehouse*>& warehouses =
+                    warehouseManager.getWarehouses();
+
 
                 const auto& products =
                     productManager.getProducts();
@@ -2899,6 +2905,52 @@ void WebServer::run()
                             bomItem.quantity;
 
 
+                        // ------------------------------------------------
+                        // Stock of this material in each Warehouse, so the
+                        // UI can flag whether there is enough on hand to
+                        // build 10 units of this Product (10 * bomItem's
+                        // per-unit quantity, per Warehouse).
+                        // ------------------------------------------------
+
+                        crow::json::wvalue::list warehouseStockList;
+
+
+                        for (const Warehouse* warehouse : warehouses)
+                        {
+                            crow::json::wvalue stockItem;
+
+                            stockItem["warehouseID"] =
+                                warehouse->getID();
+
+                            stockItem["warehouseName"] =
+                                warehouse->getName();
+
+
+                            WarehouseNode* node =
+                                warehouse->findMaterial(
+                                    bomItem.materialID);
+
+                            int quantity =
+                                (node != nullptr) ?
+                                node->quantity : 0;
+
+                            stockItem["quantity"] =
+                                quantity;
+
+                            stockItem["sufficientForSafetyStock"] =
+                                quantity >= (bomItem.quantity *
+                                    productManager.getSafetyStockUnits());
+
+
+                            warehouseStockList.push_back(
+                                std::move(stockItem));
+                        }
+
+
+                        bom["warehouseStock"] =
+                            std::move(warehouseStockList);
+
+
                         bomList.push_back(
                             std::move(bom));
                     }
@@ -2916,8 +2968,86 @@ void WebServer::run()
                 response["products"] =
                     std::move(productList);
 
+                response["safetyStockUnits"] =
+                    productManager.getSafetyStockUnits();
+
 
                 return response;
+            });
+
+// ============================================================
+// PRODUCT - SAFETY STOCK CONFIG (GET)
+// ============================================================
+
+    CROW_ROUTE(app, "/api/products/config")
+        .methods(crow::HTTPMethod::GET)
+        ([warehouseSystem]()
+            {
+                crow::json::wvalue response;
+
+                response["safetyStockUnits"] =
+                    warehouseSystem->getProductManager()
+                        .getSafetyStockUnits();
+
+                return response;
+            });
+
+// ============================================================
+// PRODUCT - SAFETY STOCK CONFIG (SET)
+// ============================================================
+
+    CROW_ROUTE(app, "/api/products/config")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    int safetyStockUnits =
+                        body["safetyStockUnits"].i();
+
+                    ProductManager& productManager =
+                        warehouseSystem->getProductManager();
+
+                    bool success =
+                        productManager.setSafetyStockUnits(
+                            safetyStockUnits);
+
+                    if (!success)
+                    {
+                        return crow::response(
+                            400,
+                            "Safety Stock must be greater than zero.");
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["safetyStockUnits"] =
+                        safetyStockUnits;
+
+                    response["message"] =
+                        "Safety Stock updated.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
             });
 
 // ============================================================
@@ -4841,6 +4971,990 @@ void WebServer::run()
 
                 return crow::response(
                     response);
+            });
+
+    // ============================================================
+    // PURCHASE - PENDING RECEIPTS (not yet priced)
+    // ============================================================
+
+    CROW_ROUTE(app, "/api/purchase/pending")
+        ([warehouseSystem]()
+            {
+                crow::json::wvalue response;
+
+                crow::json::wvalue::list pendingList;
+
+
+                PurchaseManager& purchaseManager =
+                    warehouseSystem->getPurchaseManager();
+
+                ProcurementManager& procurementManager =
+                    warehouseSystem->getProcurementManager();
+
+                MaterialManager& materialManager =
+                    warehouseSystem->getMaterialManager();
+
+
+                for (const auto& pendingReceipt :
+                    purchaseManager.getPendingReceipts())
+                {
+                    crow::json::wvalue item;
+
+                    item["procurementOrderID"] =
+                        pendingReceipt.procurementOrderID;
+
+                    item["materialID"] =
+                        pendingReceipt.materialID;
+
+                    item["receiptIndex"] =
+                        pendingReceipt.receiptIndex;
+
+                    item["receiptDate"] =
+                        pendingReceipt.receiptDate;
+
+                    item["receivedQuantity"] =
+                        pendingReceipt.receivedQuantity;
+
+                    item["comment"] =
+                        pendingReceipt.comment;
+
+
+                    // Disambiguate by materialID: one "PRC-######" ID
+                    // can be shared by several material lines.
+                    ProcurementOrder* order =
+                        procurementManager.findOrder(
+                            pendingReceipt.procurementOrderID,
+                            pendingReceipt.materialID);
+
+                    item["productID"] =
+                        (order != nullptr) ?
+                        order->getProductID() : "";
+
+                    item["warehouseID"] =
+                        (order != nullptr) ?
+                        order->getWarehouseID() : 0;
+
+
+                    Material* material =
+                        materialManager.findMaterial(
+                            pendingReceipt.materialID);
+
+                    item["materialName"] =
+                        (material != nullptr) ?
+                        material->getName() :
+                        ((order != nullptr) ?
+                            order->getMaterialName() : "");
+
+
+                    Supplier* supplier =
+                        (material != nullptr) ?
+                        material->getSupplier() : nullptr;
+
+                    item["supplierName"] =
+                        (supplier != nullptr) ?
+                        supplier->getName() : "No Supplier";
+
+
+                    // The last price on record for this material, if
+                    // any - shown alongside the cost entry field so a
+                    // new price can be compared against the last one
+                    // at a glance.
+                    bool hasPreviousPrice =
+                        purchaseManager.hasPriceFor(
+                            pendingReceipt.materialID);
+
+                    item["hasPreviousPrice"] =
+                        hasPreviousPrice;
+
+                    item["previousUnitPriceEUR"] =
+                        hasPreviousPrice ?
+                        purchaseManager.getCurrentUnitPriceEUR(
+                            pendingReceipt.materialID) : 0.0;
+
+
+                    pendingList.push_back(
+                        std::move(item));
+                }
+
+
+                response["pending"] =
+                    std::move(pendingList);
+
+                return response;
+            });
+
+    // ============================================================
+    // PURCHASE - LIST INVOICES
+    // ============================================================
+
+    CROW_ROUTE(app, "/api/purchase/invoices")
+        ([warehouseSystem]()
+            {
+                crow::json::wvalue response;
+
+                crow::json::wvalue::list invoiceList;
+
+
+                PurchaseManager& purchaseManager =
+                    warehouseSystem->getPurchaseManager();
+
+
+                for (const auto& invoice :
+                    purchaseManager.getInvoices())
+                {
+                    crow::json::wvalue item;
+
+                    item["id"] =
+                        invoice->getID();
+
+                    item["date"] =
+                        invoice->getDate();
+
+                    item["currency"] =
+                        invoice->getCurrency();
+
+                    item["exchangeRate"] =
+                        invoice->getExchangeRate();
+
+                    item["customsCost"] =
+                        invoice->getCustomsCost();
+
+                    item["freightCost"] =
+                        invoice->getFreightCost();
+
+                    item["comment"] =
+                        invoice->getComment();
+
+                    item["totalMaterialCost"] =
+                        invoice->getTotalMaterialCost();
+
+
+                    crow::json::wvalue::list lineList;
+
+                    const auto& lines =
+                        invoice->getLines();
+
+                    for (size_t i = 0; i < lines.size(); i++)
+                    {
+                        crow::json::wvalue lineItem;
+
+                        lineItem["procurementOrderID"] =
+                            lines[i].procurementOrderID;
+
+                        lineItem["materialID"] =
+                            lines[i].materialID;
+
+                        lineItem["receiptIndex"] =
+                            lines[i].receiptIndex;
+
+                        lineItem["receivedQuantity"] =
+                            lines[i].receivedQuantity;
+
+                        lineItem["unitCost"] =
+                            lines[i].unitCost;
+
+                        lineItem["materialCost"] =
+                            invoice->getLineMaterialCost(i);
+
+                        lineItem["allocatedCost"] =
+                            invoice->getLineAllocatedCost(i);
+
+                        lineItem["unitPrice"] =
+                            invoice->getLineUnitPrice(i);
+
+                        lineItem["unitPriceEUR"] =
+                            invoice->getLineUnitPriceEUR(i);
+
+                        lineList.push_back(
+                            std::move(lineItem));
+                    }
+
+                    item["lines"] =
+                        std::move(lineList);
+
+
+                    invoiceList.push_back(
+                        std::move(item));
+                }
+
+
+                response["invoices"] =
+                    std::move(invoiceList);
+
+                return response;
+            });
+
+    // ============================================================
+    // PURCHASE - CREATE INVOICE
+    // ============================================================
+
+    CROW_ROUTE(app, "/api/purchase/invoices/create")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    string date =
+                        body["date"].s();
+
+                    string currency =
+                        body.has("currency") ?
+                        string(body["currency"].s()) : "EUR";
+
+                    double exchangeRate =
+                        body.has("exchangeRate") ?
+                        body["exchangeRate"].d() : 1.0;
+
+                    double customsCost =
+                        body.has("customsCost") ?
+                        body["customsCost"].d() : 0.0;
+
+                    double freightCost =
+                        body.has("freightCost") ?
+                        body["freightCost"].d() : 0.0;
+
+                    string comment =
+                        body.has("comment") ?
+                        string(body["comment"].s()) : "";
+
+
+                    if (date.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Invoice Date is required.");
+                    }
+
+                    if (currency != "EUR" && currency != "USD")
+                    {
+                        return crow::response(
+                            400,
+                            "Currency must be EUR or USD.");
+                    }
+
+                    if (exchangeRate <= 0.0)
+                    {
+                        return crow::response(
+                            400,
+                            "Exchange Rate must be greater than zero.");
+                    }
+
+                    if (!body.has("lines"))
+                    {
+                        return crow::response(
+                            400,
+                            "At least one priced delivery is required.");
+                    }
+
+
+                    vector<PurchaseInvoiceLine> lines;
+
+                    for (const auto& lineJson : body["lines"])
+                    {
+                        PurchaseInvoiceLine line;
+
+                        line.procurementOrderID =
+                            lineJson["procurementOrderID"].s();
+
+                        line.materialID =
+                            lineJson["materialID"].s();
+
+                        line.receiptIndex =
+                            lineJson["receiptIndex"].i();
+
+                        line.receivedQuantity =
+                            lineJson["receivedQuantity"].i();
+
+                        line.unitCost =
+                            lineJson["unitCost"].d();
+
+                        lines.push_back(line);
+                    }
+
+
+                    // A Manual Price Adjustment line (procurementOrderID
+                    // "MANUAL") has no Procurement receipt to validate it
+                    // against, so - unlike a real delivery line, which
+                    // createInvoice() already checks against Pending
+                    // Pricing - its Material has to be checked here.
+
+                    MaterialManager& materialManager =
+                        warehouseSystem->getMaterialManager();
+
+                    for (const auto& line : lines)
+                    {
+                        if (line.procurementOrderID == "MANUAL" &&
+                            materialManager.findMaterial(
+                                line.materialID) == nullptr)
+                        {
+                            return crow::response(
+                                404,
+                                "Material not found: " +
+                                line.materialID);
+                        }
+                    }
+
+
+                    PurchaseManager& purchaseManager =
+                        warehouseSystem->getPurchaseManager();
+
+                    string errorMessage;
+
+                    PurchaseInvoice* invoice =
+                        purchaseManager.createInvoice(
+                            date,
+                            currency,
+                            exchangeRate,
+                            customsCost,
+                            freightCost,
+                            comment,
+                            lines,
+                            errorMessage);
+
+                    if (invoice == nullptr)
+                    {
+                        return crow::response(
+                            400,
+                            errorMessage);
+                    }
+
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["id"] = invoice->getID();
+
+                    response["message"] =
+                        "Purchase Invoice created successfully.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+    // ============================================================
+    // PURCHASE - MANUAL PRICE ADJUSTMENT (no Procurement delivery)
+    // ============================================================
+    // For a Material that needs its price set or corrected directly -
+    // e.g. a price known from another source, or a one-off fix - with
+    // no received delivery behind it. Internally this is still a
+    // one-line Purchase Invoice (so it shows up in the same Invoices
+    // list and price history), just with no customs/freight and a
+    // line marked as manual (see PurchaseInvoiceLine).
+
+    CROW_ROUTE(app, "/api/purchase/materials/adjust")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    string materialID =
+                        body["materialID"].s();
+
+                    string date =
+                        body["date"].s();
+
+                    string currency =
+                        body.has("currency") ?
+                        string(body["currency"].s()) : "EUR";
+
+                    double exchangeRate =
+                        body.has("exchangeRate") ?
+                        body["exchangeRate"].d() : 1.0;
+
+                    double unitCost =
+                        body["unitCost"].d();
+
+                    string comment =
+                        body.has("comment") ?
+                        string(body["comment"].s()) : "";
+
+
+                    if (materialID.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Material is required.");
+                    }
+
+                    MaterialManager& materialManager =
+                        warehouseSystem->getMaterialManager();
+
+                    if (materialManager.findMaterial(materialID) == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Material not found: " + materialID);
+                    }
+
+                    if (date.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Date is required.");
+                    }
+
+                    if (currency != "EUR" && currency != "USD")
+                    {
+                        return crow::response(
+                            400,
+                            "Currency must be EUR or USD.");
+                    }
+
+                    if (exchangeRate <= 0.0)
+                    {
+                        return crow::response(
+                            400,
+                            "Exchange Rate must be greater than zero.");
+                    }
+
+                    if (unitCost < 0.0)
+                    {
+                        return crow::response(
+                            400,
+                            "Unit Cost cannot be negative.");
+                    }
+
+
+                    PurchaseInvoiceLine line;
+
+                    line.procurementOrderID = "MANUAL";
+                    line.materialID = materialID;
+                    line.receiptIndex = -1;
+                    line.receivedQuantity = 1;
+                    line.unitCost = unitCost;
+
+                    vector<PurchaseInvoiceLine> lines;
+
+                    lines.push_back(line);
+
+
+                    PurchaseManager& purchaseManager =
+                        warehouseSystem->getPurchaseManager();
+
+                    string errorMessage;
+
+                    PurchaseInvoice* invoice =
+                        purchaseManager.createInvoice(
+                            date,
+                            currency,
+                            exchangeRate,
+                            0.0,
+                            0.0,
+                            comment.empty() ?
+                                "Manual price adjustment" : comment,
+                            lines,
+                            errorMessage);
+
+                    if (invoice == nullptr)
+                    {
+                        return crow::response(
+                            400,
+                            errorMessage);
+                    }
+
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["id"] = invoice->getID();
+
+                    response["unitPriceEUR"] =
+                        invoice->getLineUnitPriceEUR(0);
+
+                    response["message"] =
+                        "Material price updated.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+    // ============================================================
+    // PURCHASE - DELETE INVOICE
+    // ============================================================
+
+    CROW_ROUTE(app, "/api/purchase/invoices/delete")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    string id =
+                        body["id"].s();
+
+                    if (id.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Purchase Invoice ID is required.");
+                    }
+
+                    PurchaseManager& purchaseManager =
+                        warehouseSystem->getPurchaseManager();
+
+                    if (purchaseManager.findInvoice(id) == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Purchase Invoice not found.");
+                    }
+
+                    purchaseManager.deleteInvoice(id);
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] =
+                        "Purchase Invoice deleted. Its deliveries are "
+                        "pending again.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+    // ============================================================
+    // PURCHASE - UPDATE INVOICE (rework costs after the fact - e.g.
+    // the customs bill arrives separately from the supplier invoice)
+    // ============================================================
+
+    CROW_ROUTE(app, "/api/purchase/invoices/update")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    string id =
+                        body["id"].s();
+
+                    if (id.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Purchase Invoice ID is required.");
+                    }
+
+                    string date =
+                        body["date"].s();
+
+                    string currency =
+                        body.has("currency") ?
+                        string(body["currency"].s()) : "EUR";
+
+                    double exchangeRate =
+                        body.has("exchangeRate") ?
+                        body["exchangeRate"].d() : 1.0;
+
+                    double customsCost =
+                        body.has("customsCost") ?
+                        body["customsCost"].d() : 0.0;
+
+                    double freightCost =
+                        body.has("freightCost") ?
+                        body["freightCost"].d() : 0.0;
+
+                    string comment =
+                        body.has("comment") ?
+                        string(body["comment"].s()) : "";
+
+                    if (!body.has("lines"))
+                    {
+                        return crow::response(
+                            400,
+                            "Lines are required.");
+                    }
+
+                    vector<PurchaseInvoiceLine> lines;
+
+                    for (const auto& lineJson : body["lines"])
+                    {
+                        PurchaseInvoiceLine line;
+
+                        line.procurementOrderID =
+                            lineJson["procurementOrderID"].s();
+
+                        line.materialID =
+                            lineJson["materialID"].s();
+
+                        line.receiptIndex =
+                            lineJson["receiptIndex"].i();
+
+                        line.receivedQuantity =
+                            lineJson["receivedQuantity"].i();
+
+                        line.unitCost =
+                            lineJson["unitCost"].d();
+
+                        lines.push_back(line);
+                    }
+
+                    PurchaseManager& purchaseManager =
+                        warehouseSystem->getPurchaseManager();
+
+                    string errorMessage;
+
+                    bool success =
+                        purchaseManager.updateInvoice(
+                            id,
+                            date,
+                            currency,
+                            exchangeRate,
+                            customsCost,
+                            freightCost,
+                            comment,
+                            lines,
+                            errorMessage);
+
+                    if (!success)
+                    {
+                        return crow::response(
+                            400,
+                            errorMessage);
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] =
+                        "Purchase Invoice updated.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+    // ============================================================
+    // PURCHASE - MATERIAL PRICE HISTORY
+    // ============================================================
+
+    CROW_ROUTE(app, "/api/purchase/materials/<string>/history")
+        ([warehouseSystem]
+        (string materialID)
+            {
+                crow::json::wvalue response;
+
+                PurchaseManager& purchaseManager =
+                    warehouseSystem->getPurchaseManager();
+
+                MaterialManager& materialManager =
+                    warehouseSystem->getMaterialManager();
+
+
+                Material* material =
+                    materialManager.findMaterial(materialID);
+
+                response["materialID"] = materialID;
+
+                response["materialName"] =
+                    (material != nullptr) ?
+                    material->getName() : "";
+
+                response["currentUnitPriceEUR"] =
+                    purchaseManager.getCurrentUnitPriceEUR(materialID);
+
+
+                crow::json::wvalue::list historyList;
+
+                for (const auto& entry :
+                    purchaseManager.getPriceHistory(materialID))
+                {
+                    crow::json::wvalue item;
+
+                    item["date"] = entry.date;
+                    item["unitPriceEUR"] = entry.unitPriceEUR;
+                    item["originalCurrency"] = entry.originalCurrency;
+                    item["originalUnitPrice"] = entry.originalUnitPrice;
+                    item["exchangeRateUsed"] = entry.exchangeRateUsed;
+                    item["sourceInvoiceID"] = entry.sourceInvoiceID;
+                    item["sourceProcurementOrderID"] =
+                        entry.sourceProcurementOrderID;
+
+                    historyList.push_back(
+                        std::move(item));
+                }
+
+                response["history"] =
+                    std::move(historyList);
+
+                return response;
+            });
+
+    // ============================================================
+    // PURCHASE - PRODUCT COST (all Products)
+    // ============================================================
+
+    CROW_ROUTE(app, "/api/purchase/products/cost")
+        ([warehouseSystem]()
+            {
+                crow::json::wvalue response;
+
+                crow::json::wvalue::list productList;
+
+
+                PurchaseManager& purchaseManager =
+                    warehouseSystem->getPurchaseManager();
+
+                ProductManager& productManager =
+                    warehouseSystem->getProductManager();
+
+
+                for (const auto& product :
+                    productManager.getProducts())
+                {
+                    ProductCostResult cost =
+                        purchaseManager.computeProductCost(
+                            product->getID(),
+                            product->getBOM());
+
+                    crow::json::wvalue item;
+
+                    item["productID"] = cost.productID;
+
+                    item["productName"] =
+                        product->getName();
+
+                    item["totalCostEUR"] = cost.totalCostEUR;
+
+                    item["complete"] = cost.complete;
+
+
+                    crow::json::wvalue::list lineList;
+
+                    for (const auto& line : cost.lines)
+                    {
+                        crow::json::wvalue lineItem;
+
+                        lineItem["materialID"] = line.materialID;
+                        lineItem["quantity"] = line.quantity;
+                        lineItem["hasPrice"] = line.hasPrice;
+                        lineItem["unitPriceEUR"] = line.unitPriceEUR;
+                        lineItem["lineCostEUR"] = line.lineCostEUR;
+
+                        lineList.push_back(
+                            std::move(lineItem));
+                    }
+
+                    item["lines"] =
+                        std::move(lineList);
+
+
+                    productList.push_back(
+                        std::move(item));
+                }
+
+
+                response["products"] =
+                    std::move(productList);
+
+                return response;
+            });
+
+    // ============================================================
+    // PURCHASE - PRODUCT COST (single Product)
+    // ============================================================
+
+    CROW_ROUTE(app, "/api/purchase/products/<string>/cost")
+        ([warehouseSystem]
+        (string productID)
+            {
+                PurchaseManager& purchaseManager =
+                    warehouseSystem->getPurchaseManager();
+
+                ProductManager& productManager =
+                    warehouseSystem->getProductManager();
+
+
+                Product* product =
+                    productManager.findProduct(productID);
+
+                if (product == nullptr)
+                {
+                    return crow::response(
+                        404,
+                        "Product not found.");
+                }
+
+
+                ProductCostResult cost =
+                    purchaseManager.computeProductCost(
+                        product->getID(),
+                        product->getBOM());
+
+                crow::json::wvalue response;
+
+                response["productID"] = cost.productID;
+
+                response["productName"] =
+                    product->getName();
+
+                response["totalCostEUR"] = cost.totalCostEUR;
+
+                response["complete"] = cost.complete;
+
+
+                crow::json::wvalue::list lineList;
+
+                for (const auto& line : cost.lines)
+                {
+                    crow::json::wvalue lineItem;
+
+                    lineItem["materialID"] = line.materialID;
+                    lineItem["quantity"] = line.quantity;
+                    lineItem["hasPrice"] = line.hasPrice;
+                    lineItem["unitPriceEUR"] = line.unitPriceEUR;
+                    lineItem["lineCostEUR"] = line.lineCostEUR;
+
+                    lineList.push_back(
+                        std::move(lineItem));
+                }
+
+                response["lines"] =
+                    std::move(lineList);
+
+                return crow::response(response);
+            });
+
+    // ============================================================
+    // PURCHASE - EXCHANGE RATE CONFIG (GET)
+    // ============================================================
+
+    CROW_ROUTE(app, "/api/purchase/config")
+        .methods(crow::HTTPMethod::GET)
+        ([warehouseSystem]()
+            {
+                crow::json::wvalue response;
+
+                response["exchangeRate"] =
+                    warehouseSystem->getPurchaseManager()
+                        .getDefaultExchangeRate();
+
+                return response;
+            });
+
+    // ============================================================
+    // PURCHASE - EXCHANGE RATE CONFIG (SET)
+    // ============================================================
+
+    CROW_ROUTE(app, "/api/purchase/config")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    double exchangeRate =
+                        body["exchangeRate"].d();
+
+                    PurchaseManager& purchaseManager =
+                        warehouseSystem->getPurchaseManager();
+
+                    bool success =
+                        purchaseManager.setDefaultExchangeRate(
+                            exchangeRate);
+
+                    if (!success)
+                    {
+                        return crow::response(
+                            400,
+                            "Exchange Rate must be greater than zero.");
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["exchangeRate"] = exchangeRate;
+
+                    response["message"] =
+                        "Exchange rate updated.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
             });
 
     // ============================================================
