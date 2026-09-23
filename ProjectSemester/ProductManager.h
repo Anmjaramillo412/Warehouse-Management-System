@@ -43,6 +43,17 @@ public:
     Product* findProduct(
         const string& id);
 
+    // Modify - name, description and the whole BOM (replaced
+    // outright, the same as Create). Refuses if the Product does not
+    // exist, the name is empty, or any BOM material does not exist -
+    // same validation as createProduct(). The ID itself never
+    // changes here.
+    bool modifyProduct(
+        const string& id,
+        const string& name,
+        const string& description,
+        const vector<BOMItem>& bom);
+
     // Delete
     bool deleteProduct(
         const string& id);

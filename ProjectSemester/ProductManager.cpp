@@ -84,6 +84,57 @@ bool ProductManager::createProduct(
 
 
 // ================================================================
+// MODIFY PRODUCT
+// ================================================================
+
+bool ProductManager::modifyProduct(
+    const string& id,
+    const string& name,
+    const string& description,
+    const vector<BOMItem>& bom)
+{
+    Product* product =
+        findProduct(id);
+
+    if (product == nullptr)
+    {
+        return false;
+    }
+
+
+    if (name.empty())
+    {
+        return false;
+    }
+
+
+    // Check BOM materials, same as createProduct()
+
+    if (materialManager != nullptr)
+    {
+        for (const auto& item : bom)
+        {
+            if (materialManager->findMaterial(
+                item.materialID) == nullptr)
+            {
+                return false;
+            }
+        }
+    }
+
+
+    product->setName(name);
+
+    product->setDescription(description);
+
+    product->setBOM(bom);
+
+
+    return true;
+}
+
+
+// ================================================================
 // FIND PRODUCT
 // ================================================================
 
