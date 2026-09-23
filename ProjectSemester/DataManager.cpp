@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <sstream>
+#include <fstream>
 using namespace std;
 
 
@@ -34,10 +35,17 @@ namespace
 // CONSTRUCTOR
 // ================================================================
 
-DataManager::DataManager(string file)
+DataManager::DataManager(string file, string configFile)
 {
     filename = file;
+    configFilename = configFile;
     movementLogger = nullptr;
+
+    // On by default, so a fresh setup never risks losing data simply
+    // because nobody has visited Data Management Settings yet.
+    autoSaveAndLoad = true;
+
+    loadConfig();
 }
 
 // ================================================================
@@ -48,6 +56,66 @@ void DataManager::setMovementLogger(
     MovementLogger* logger)
 {
     movementLogger = logger;
+}
+
+// ================================================================
+// AUTO SAVE AND LOAD CONFIGURATION
+// ================================================================
+// Plain text config file, a single "0" or "1".
+
+bool DataManager::getAutoSaveAndLoad() const
+{
+    return autoSaveAndLoad;
+}
+
+
+bool DataManager::setAutoSaveAndLoad(bool enabled)
+{
+    autoSaveAndLoad = enabled;
+
+    saveConfig();
+
+    return true;
+}
+
+
+void DataManager::saveConfig()
+{
+    ofstream file(configFilename);
+
+    if (!file.is_open())
+    {
+        return;
+    }
+
+    file << (autoSaveAndLoad ? 1 : 0) << endl;
+
+    file.close();
+}
+
+
+void DataManager::loadConfig()
+{
+    ifstream file(configFilename);
+
+    if (!file.is_open())
+    {
+        // No config file yet - keep the default set in the
+        // constructor.
+
+        return;
+    }
+
+    int value = -1;
+
+    file >> value;
+
+    if (value == 0 || value == 1)
+    {
+        autoSaveAndLoad = (value == 1);
+    }
+
+    file.close();
 }
 
 // ================================================================

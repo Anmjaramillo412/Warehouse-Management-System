@@ -200,6 +200,39 @@ static int computeOrderedCoverage(
 
 
 // ================================================================
+// AUTO SAVE (Data Management's "Auto Save and Load Data" setting)
+// ================================================================
+// Called after every operation that changes Material, Supplier,
+// Warehouse stock or Product data - the same data the manual "Save
+// Data" button in Data Management writes to warehouse_data.xlsx.
+// Procurement Orders and Purchase Invoices already save themselves
+// immediately to their own files regardless of this setting (see
+// ProcurementManager/PurchaseManager); Procurement RECEIVING is the
+// one exception, since receiving also changes Warehouse stock via
+// Goods Receipt, so it goes through here too. A no-op, doing nothing
+// extra, whenever the setting is off (the default until turned on in
+// Data Management Settings).
+
+static void autoSaveIfEnabled(
+    WarehouseSystem* warehouseSystem)
+{
+    DataManager& dataManager =
+        warehouseSystem->getDataManager();
+
+    if (!dataManager.getAutoSaveAndLoad())
+    {
+        return;
+    }
+
+    dataManager.save(
+        warehouseSystem->getMaterialManager(),
+        warehouseSystem->getSupplierManager(),
+        warehouseSystem->getWarehouseManager(),
+        warehouseSystem->getProductManager());
+}
+
+
+// ================================================================
 // CONSTRUCTOR
 // ================================================================
 
@@ -350,6 +383,27 @@ void WebServer::run()
     crow::SimpleApp app;
 
     WarehouseSystem* warehouseSystem = system;
+
+    // ------------------------------------------------------------
+    // Auto Save and Load Data: if turned on in Data Management
+    // Settings, load Material/Supplier/Warehouse/Product data right
+    // away instead of waiting for someone to click "Load Data".
+    // ------------------------------------------------------------
+
+    if (warehouseSystem->getDataManager().getAutoSaveAndLoad())
+    {
+        bool loaded =
+            warehouseSystem->getDataManager().load(
+                warehouseSystem->getMaterialManager(),
+                warehouseSystem->getSupplierManager(),
+                warehouseSystem->getWarehouseManager(),
+                warehouseSystem->getProductManager());
+
+        cout << (loaded ?
+            "Auto Save and Load Data is on - data loaded automatically."
+            : "Auto Save and Load Data is on, but no data file was found yet.")
+            << endl;
+    }
 
     // ============================================================
     // HOME - HTML
@@ -691,6 +745,9 @@ void WebServer::run()
                             409,
                             "Material ID already exists.");
                     }
+
+
+                    autoSaveIfEnabled(warehouseSystem);
 
 
                     // ------------------------------------------------
@@ -1103,6 +1160,9 @@ void WebServer::run()
                     }
 
 
+                    autoSaveIfEnabled(warehouseSystem);
+
+
                     crow::json::wvalue response;
 
                     response["success"] = true;
@@ -1309,6 +1369,9 @@ void WebServer::run()
                     }
 
 
+                    autoSaveIfEnabled(warehouseSystem);
+
+
                     // ------------------------------------------------
                     // Response
                     // ------------------------------------------------
@@ -1439,6 +1502,8 @@ void WebServer::run()
                             409,
                             "A supplier with this name already exists.");
                     }
+
+                    autoSaveIfEnabled(warehouseSystem);
 
                     crow::json::wvalue response;
 
@@ -1644,6 +1709,8 @@ void WebServer::run()
                             "Supplier could not be modified.");
                     }
 
+                    autoSaveIfEnabled(warehouseSystem);
+
                     crow::json::wvalue response;
 
                     response["success"] = true;
@@ -1784,6 +1851,8 @@ void WebServer::run()
                             "Supplier could not be deleted.");
                     }
 
+                    autoSaveIfEnabled(warehouseSystem);
+
                     crow::json::wvalue response;
 
                     response["success"] = true;
@@ -1861,6 +1930,153 @@ void WebServer::run()
                     "Data loaded successfully.");
             });
 
+// ============================================================
+// DATA MANAGEMENT - AUTO SAVE AND LOAD CONFIG (GET)
+// ============================================================
+
+    CROW_ROUTE(app, "/api/data/config")
+        .methods(crow::HTTPMethod::GET)
+        ([warehouseSystem]()
+            {
+                crow::json::wvalue response;
+
+                response["autoSaveAndLoad"] =
+                    warehouseSystem->getDataManager()
+                        .getAutoSaveAndLoad();
+
+                return response;
+            });
+
+// ============================================================
+// DATA MANAGEMENT - AUTO SAVE AND LOAD CONFIG (SET)
+// ============================================================
+
+    CROW_ROUTE(app, "/api/data/config")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    bool enabled =
+                        body["autoSaveAndLoad"].b();
+
+                    warehouseSystem->getDataManager()
+                        .setAutoSaveAndLoad(enabled);
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["autoSaveAndLoad"] = enabled;
+
+                    response["message"] =
+                        enabled ?
+                        "Auto Save and Load Data turned on." :
+                        "Auto Save and Load Data turned off.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
+// DATA MANAGEMENT - RESET PRC / INVOICE NUMBERING
+// ============================================================
+// Wipes every Procurement Order and every Purchase Invoice (and with
+// it, all Material price history, since that is derived from
+// invoices) and restarts both "PRC-######" and "INV-######"
+// numbering at 1. Meant for clearing out test data before real use
+// begins - not for everyday use, and there is no undo.
+
+    CROW_ROUTE(app, "/api/data/reset-numbering")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body || !body.has("confirm") ||
+                        string(body["confirm"].s()) != "RESET")
+                    {
+                        return crow::response(
+                            400,
+                            "Type RESET to confirm - this permanently "
+                            "deletes every Procurement Order, Purchase "
+                            "Invoice and Production Projection, and "
+                            "clears the Movement Log. Material, "
+                            "Supplier, Warehouse and Product data "
+                            "(warehouse_data.xlsx) and every setting "
+                            "are not touched.");
+                    }
+
+                    ProcurementManager& procurementManager =
+                        warehouseSystem->getProcurementManager();
+
+                    PurchaseManager& purchaseManager =
+                        warehouseSystem->getPurchaseManager();
+
+                    ProjectionManager& projectionManager =
+                        warehouseSystem->getProjectionManager();
+
+                    procurementManager.clear();
+                    procurementManager.save();
+
+                    purchaseManager.clear();
+                    purchaseManager.save();
+
+                    projectionManager.clear();
+                    projectionManager.save();
+
+                    MovementLogger& movementLogger =
+                        warehouseSystem->getMovementLogger();
+
+                    // Written directly rather than through
+                    // logSystemEvent() (which no-ops when the
+                    // "log data operations" setting is off) and after
+                    // clearHistory() wipes the file, so this reset is
+                    // always the one line left behind, on or off.
+                    movementLogger.clearHistory();
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] =
+                        "All Procurement Orders, Purchase Invoices and "
+                        "Production Projections were deleted, and the "
+                        "Movement Log was cleared. PRC and INV "
+                        "numbering now starts at 1. Material, Supplier, "
+                        "Warehouse and Product data was not touched.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
 
 // ============================================================
 // CREATE WAREHOUSE
@@ -1914,6 +2130,9 @@ void WebServer::run()
                             409,
                             "Warehouse ID already exists.");
                     }
+
+
+                    autoSaveIfEnabled(warehouseSystem);
 
 
                     crow::json::wvalue response;
@@ -2046,6 +2265,9 @@ void WebServer::run()
                     }
 
 
+                    autoSaveIfEnabled(warehouseSystem);
+
+
                     crow::json::wvalue response;
 
                     response["success"] = true;
@@ -2170,6 +2392,9 @@ void WebServer::run()
                             400,
                             "Goods receipt failed.");
                     }
+
+
+                    autoSaveIfEnabled(warehouseSystem);
 
 
                     // ------------------------------------------------
@@ -2333,6 +2558,9 @@ void WebServer::run()
                     }
 
 
+                    autoSaveIfEnabled(warehouseSystem);
+
+
                     // ------------------------------------------------
                     // Response
                     // ------------------------------------------------
@@ -2455,6 +2683,9 @@ void WebServer::run()
                             400,
                             "Transfer failed. Check warehouses, material, and available quantity.");
                     }
+
+
+                    autoSaveIfEnabled(warehouseSystem);
 
 
                     // ------------------------------------------------
@@ -2821,6 +3052,9 @@ void WebServer::run()
                     }
 
 
+                    autoSaveIfEnabled(warehouseSystem);
+
+
                     crow::json::wvalue response;
 
                     response["success"] = true;
@@ -3112,6 +3346,9 @@ void WebServer::run()
                     }
 
 
+                    autoSaveIfEnabled(warehouseSystem);
+
+
                     crow::json::wvalue response;
 
                     response["success"] = true;
@@ -3213,6 +3450,9 @@ void WebServer::run()
                             409,
                             "Sale failed. Check product, warehouse, and component stock.");
                     }
+
+
+                    autoSaveIfEnabled(warehouseSystem);
 
 
                     // ------------------------------------------------
@@ -4685,6 +4925,17 @@ void WebServer::run()
                             400,
                             "Goods receipt failed. Check warehouse and material.");
                     }
+
+
+                    // Receiving here also performs a Goods Receipt into
+                    // the Warehouse (see ProcurementManager::
+                    // receiveOrder()), which is Warehouse stock data,
+                    // not Procurement's own - Procurement already saved
+                    // its own order file above, but this needs the same
+                    // auto-save check the direct Goods Receipt route
+                    // uses.
+
+                    autoSaveIfEnabled(warehouseSystem);
 
 
                     crow::json::wvalue response;

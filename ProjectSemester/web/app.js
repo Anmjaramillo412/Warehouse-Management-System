@@ -387,16 +387,84 @@ function openModule(module) {
 
                 </div>
 
+                <div class="data-logging-option">
+
+                    <label>
+
+                        <input
+                            type="checkbox"
+                            id="auto-save-and-load"
+                            onchange="toggleAutoSaveAndLoad()"
+                        >
+
+                        Auto Save and Load Data
+
+                    </label>
+
+                </div>
+
             </div>
+
+            <small>
+                When on, Material/Supplier/Warehouse/Product data (what
+                "Save Data" and "Load Data" above work on) is saved
+                automatically after Goods Receipt, Goods Issue, Transfer,
+                Procurement receiving, and creating/deleting a Material,
+                Supplier, Warehouse or Product - and loaded automatically
+                when the server starts, instead of waiting on the
+                buttons above. Procurement Orders and Purchase Invoices
+                always save themselves immediately either way.
+            </small>
 
 
             <div id="data-logging-message">
+            </div>
+
+
+            <h2>
+                Reset Historial Completo
+            </h2>
+
+            <small>
+                Permanently deletes every Procurement Order, Purchase
+                Invoice (and with it, all Material price history) and
+                Production Projection, and clears the Movement Log, so
+                PRC/INV numbering starts over at PRC-000001 / INV-000001
+                and the program looks brand new for testing. Material,
+                Supplier, Warehouse and Product data (the Excel file)
+                and every setting above are NOT touched. There is no
+                undo - use this only to clear out test data, never once
+                there is real data you want to keep.
+            </small>
+
+            <div class="form-container">
+
+                <label>
+                    Type RESET to confirm
+                </label>
+
+                <input
+                    type="text"
+                    id="reset-numbering-confirm"
+                    placeholder="RESET"
+                >
+
+                <div class="form-actions">
+                    <button onclick="resetNumbering()">
+                        Delete All History
+                    </button>
+                </div>
+
+                <div id="reset-numbering-message">
+                </div>
+
             </div>
 
         `;
 
 
         loadDataLoggingState();
+        loadAutoSaveAndLoadState();
     }
 }
 
@@ -6967,6 +7035,160 @@ async function setDataLogging() {
         message.textContent =
             data.message;
 
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
+    }
+}
+
+// ============================================================
+// AUTO SAVE AND LOAD DATA
+// ============================================================
+
+async function loadAutoSaveAndLoadState() {
+
+    try {
+
+        const response =
+            await fetch("/api/data/config");
+
+        const data =
+            await response.json();
+
+        if (!response.ok) {
+            return;
+        }
+
+        const checkbox =
+            document.getElementById(
+                "auto-save-and-load"
+            );
+
+        if (checkbox) {
+            checkbox.checked =
+                data.autoSaveAndLoad;
+        }
+    }
+    catch (error) {
+
+        console.error(
+            "Could not load Auto Save and Load Data state:",
+            error
+        );
+    }
+}
+
+async function toggleAutoSaveAndLoad() {
+
+    const checkbox =
+        document.getElementById(
+            "auto-save-and-load"
+        );
+
+    const message =
+        document.getElementById(
+            "data-logging-message"
+        );
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/data/config",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        autoSaveAndLoad: checkbox.checked
+                    })
+                }
+            );
+
+        const data =
+            await response.json();
+
+        if (!response.ok) {
+
+            message.textContent =
+                data.message ||
+                "Could not update Auto Save and Load Data setting.";
+
+            return;
+        }
+
+        message.textContent =
+            data.message;
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
+    }
+}
+
+// ============================================================
+// RESET PRC / INVOICE NUMBERING
+// ============================================================
+
+async function resetNumbering() {
+
+    const confirmInput =
+        document.getElementById(
+            "reset-numbering-confirm"
+        );
+
+    const message =
+        document.getElementById(
+            "reset-numbering-message"
+        );
+
+    if (confirmInput.value.trim() !== "RESET") {
+
+        message.textContent =
+            "Type RESET (all caps) in the box to confirm.";
+
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/data/reset-numbering",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        confirm: confirmInput.value.trim()
+                    })
+                }
+            );
+
+        if (!response.ok) {
+
+            message.textContent =
+                await response.text();
+
+            return;
+        }
+
+        const data =
+            await response.json();
+
+        message.textContent =
+            data.message;
+
+        confirmInput.value = "";
     }
     catch (error) {
 
