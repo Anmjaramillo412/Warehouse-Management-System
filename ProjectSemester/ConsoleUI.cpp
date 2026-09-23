@@ -741,6 +741,7 @@ Material ConsoleUI::readMaterial()
     string uom;
     string category;
     string drawingNumber;
+    string drawingVersion;
     string manufacturer;
     string manufacturerPartNumber;
     string supplierName;
@@ -801,11 +802,19 @@ Material ConsoleUI::readMaterial()
         readMaterialType();
 
 
-    // Drawing Number
-    // (only for Design Part / PCB)
+    // A Design Part / PCB material is identified by its technical
+    // drawing (Drawing Number + Drawing Version) and has no
+    // Manufacturer, Manufacturer Part Number, Supplier or Supplier
+    // Part Number at all. A Standard Part is the reverse: all of the
+    // Manufacturer/Supplier fields, no drawing at all. See
+    // Material::requiresDrawingNumber().
+
+    Supplier* supplier = nullptr;
 
     if (Material::requiresDrawingNumber(type))
     {
+        // Drawing Number
+
         do
         {
             cout << "Drawing Number "
@@ -820,55 +829,71 @@ Material ConsoleUI::readMaterial()
             numeric_limits<streamsize>::max(),
             '\n'
         );
-    }
 
 
-    // Manufacturer
+        // Drawing Version
 
-    cout << "Manufacturer: ";
-
-    getline(cin, manufacturer);
-
-
-    // Manufacturer Part Number
-
-    cout << "Manufacturer Part Number: ";
-
-    getline(cin, manufacturerPartNumber);
-
-
-    // Supplier
-    // (must already exist - see Supplier Manager)
-
-    Supplier* supplier = nullptr;
-
-    do
-    {
-        cout << "Supplier name "
-            << "(must already exist): ";
-
-        getline(cin, supplierName);
-
-        supplier =
-            system.getSupplierManager()
-            .findSupplier(supplierName);
-
-        if (supplier == nullptr)
+        do
         {
-            cout << endl;
-            cout << "Supplier not found. "
-                << "Create it first from the Supplier Manager."
-                << endl;
-        }
+            cout << "Drawing Version "
+                << "[a number, or two letters like AA, BA]: ";
 
-    } while (supplier == nullptr);
+            cin >> drawingVersion;
+
+        } while (!Material::isValidDrawingVersion(drawingVersion));
+
+        cin.ignore(
+            numeric_limits<streamsize>::max(),
+            '\n'
+        );
+    }
+    else
+    {
+        // Manufacturer
+
+        cout << "Manufacturer: ";
+
+        getline(cin, manufacturer);
 
 
-    // Supplier Part Number
+        // Manufacturer Part Number
 
-    cout << "Supplier Part Number: ";
+        cout << "Manufacturer Part Number: ";
 
-    getline(cin, supplierPartNumber);
+        getline(cin, manufacturerPartNumber);
+
+
+        // Supplier
+        // (must already exist - see Supplier Manager)
+
+        do
+        {
+            cout << "Supplier name "
+                << "(must already exist): ";
+
+            getline(cin, supplierName);
+
+            supplier =
+                system.getSupplierManager()
+                .findSupplier(supplierName);
+
+            if (supplier == nullptr)
+            {
+                cout << endl;
+                cout << "Supplier not found. "
+                    << "Create it first from the Supplier Manager."
+                    << endl;
+            }
+
+        } while (supplier == nullptr);
+
+
+        // Supplier Part Number
+
+        cout << "Supplier Part Number: ";
+
+        getline(cin, supplierPartNumber);
+    }
 
 
     // Photo
@@ -893,6 +918,7 @@ Material ConsoleUI::readMaterial()
         category,
         type,
         drawingNumber,
+        drawingVersion,
         manufacturer,
         manufacturerPartNumber,
         supplier,
@@ -981,6 +1007,7 @@ void ConsoleUI::modifyMaterial()
     string uom;
     string category;
     string drawingNumber;
+    string drawingVersion;
     string manufacturer;
     string manufacturerPartNumber;
     string supplierName;
@@ -1097,6 +1124,14 @@ void ConsoleUI::modifyMaterial()
         type = readMaterialType();
     }
 
+    // A Design Part / PCB material is identified by its technical
+    // drawing (Drawing Number + Drawing Version) and has no
+    // Manufacturer, Manufacturer Part Number, Supplier or Supplier
+    // Part Number at all. A Standard Part is the reverse. See
+    // Material::requiresDrawingNumber() and readMaterial() above.
+
+    Supplier* supplier = material->getSupplier();
+
     if (Material::requiresDrawingNumber(type))
     {
         do
@@ -1108,117 +1143,145 @@ void ConsoleUI::modifyMaterial()
             cin >> drawingNumber;
 
         } while (!Material::isValidDrawingNumber(drawingNumber));
+
+        cin.ignore(
+            numeric_limits<streamsize>::max(),
+            '\n'
+        );
+
+        do
+        {
+            cout << "Drawing Version "
+                << "[a number, or two letters like AA, BA]: ";
+
+            cin >> drawingVersion;
+
+        } while (!Material::isValidDrawingVersion(drawingVersion));
+
+        cin.ignore(
+            numeric_limits<streamsize>::max(),
+            '\n'
+        );
+
+        manufacturer = "";
+        manufacturerPartNumber = "";
+        supplier = nullptr;
+        supplierPartNumber = "";
+
+        cout << endl;
+        cout << "Design Part / PCB material - Manufacturer, "
+            << "Manufacturer Part Number, Supplier and Supplier "
+            << "Part Number do not apply and were cleared."
+            << endl;
     }
     else
     {
         drawingNumber = "";
-    }
+        drawingVersion = "";
 
-    cin.ignore(
-        numeric_limits<streamsize>::max(),
-        '\n'
-    );
-
-
-    // ============================================================
-    // MANUFACTURER
-    // ============================================================
-
-    cout << endl;
-
-    cout << "Current Manufacturer: "
-        << material->getManufacturer()
-        << endl;
-
-    cout << "New Manufacturer: ";
-
-    getline(cin, manufacturer);
-
-    if (manufacturer.empty())
-    {
-        manufacturer = material->getManufacturer();
-    }
+        cin.ignore(
+            numeric_limits<streamsize>::max(),
+            '\n'
+        );
 
 
-    // ============================================================
-    // MANUFACTURER PART NUMBER
-    // ============================================================
+        // ========================================================
+        // MANUFACTURER
+        // ========================================================
 
-    cout << endl;
+        cout << endl;
 
-    cout << "Current Manufacturer Part Number: "
-        << material->getManufacturerPartNumber()
-        << endl;
+        cout << "Current Manufacturer: "
+            << material->getManufacturer()
+            << endl;
 
-    cout << "New Manufacturer Part Number: ";
+        cout << "New Manufacturer: ";
 
-    getline(cin, manufacturerPartNumber);
+        getline(cin, manufacturer);
 
-    if (manufacturerPartNumber.empty())
-    {
-        manufacturerPartNumber =
-            material->getManufacturerPartNumber();
-    }
-
-
-    // ============================================================
-    // SUPPLIER
-    // ============================================================
-
-    Supplier* currentSupplier =
-        material->getSupplier();
-
-    cout << endl;
-
-    cout << "Current Supplier: "
-        << (currentSupplier != nullptr
-            ? currentSupplier->getName()
-            : "N/A")
-        << endl;
-
-    cout << "New Supplier name "
-        << "(leave blank to keep current, must exist): ";
-
-    getline(cin, supplierName);
-
-    Supplier* supplier = currentSupplier;
-
-    if (!supplierName.empty())
-    {
-        supplier =
-            system.getSupplierManager()
-            .findSupplier(supplierName);
-
-        if (supplier == nullptr)
+        if (manufacturer.empty())
         {
-            cout << endl;
-            cout << "Supplier not found. "
-                << "Keeping the current supplier."
-                << endl;
-
-            supplier = currentSupplier;
+            manufacturer = material->getManufacturer();
         }
-    }
 
 
-    // ============================================================
-    // SUPPLIER PART NUMBER
-    // ============================================================
+        // ========================================================
+        // MANUFACTURER PART NUMBER
+        // ========================================================
 
-    cout << endl;
+        cout << endl;
 
-    cout << "Current Supplier Part Number: "
-        << material->getSupplierPartNumber()
-        << endl;
+        cout << "Current Manufacturer Part Number: "
+            << material->getManufacturerPartNumber()
+            << endl;
 
-    cout << "New Supplier Part Number: ";
+        cout << "New Manufacturer Part Number: ";
 
-    getline(cin, supplierPartNumber);
+        getline(cin, manufacturerPartNumber);
 
-    if (supplierPartNumber.empty())
-    {
-        supplierPartNumber =
-            material->getSupplierPartNumber();
+        if (manufacturerPartNumber.empty())
+        {
+            manufacturerPartNumber =
+                material->getManufacturerPartNumber();
+        }
+
+
+        // ========================================================
+        // SUPPLIER
+        // ========================================================
+
+        cout << endl;
+
+        cout << "Current Supplier: "
+            << (supplier != nullptr
+                ? supplier->getName()
+                : "N/A")
+            << endl;
+
+        cout << "New Supplier name "
+            << "(leave blank to keep current, must exist): ";
+
+        getline(cin, supplierName);
+
+        if (!supplierName.empty())
+        {
+            Supplier* newSupplier =
+                system.getSupplierManager()
+                .findSupplier(supplierName);
+
+            if (newSupplier == nullptr)
+            {
+                cout << endl;
+                cout << "Supplier not found. "
+                    << "Keeping the current supplier."
+                    << endl;
+            }
+            else
+            {
+                supplier = newSupplier;
+            }
+        }
+
+
+        // ========================================================
+        // SUPPLIER PART NUMBER
+        // ========================================================
+
+        cout << endl;
+
+        cout << "Current Supplier Part Number: "
+            << material->getSupplierPartNumber()
+            << endl;
+
+        cout << "New Supplier Part Number: ";
+
+        getline(cin, supplierPartNumber);
+
+        if (supplierPartNumber.empty())
+        {
+            supplierPartNumber =
+                material->getSupplierPartNumber();
+        }
     }
 
 
@@ -1280,6 +1343,7 @@ void ConsoleUI::modifyMaterial()
         category,
         type,
         drawingNumber,
+        drawingVersion,
         manufacturer,
         manufacturerPartNumber,
         supplier,

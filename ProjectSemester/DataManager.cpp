@@ -170,6 +170,7 @@ bool DataManager::save(
         materialsSheet.cell("L1").value("Photo");
         materialsSheet.cell("M1").value("Active");
         materialsSheet.cell("N1").value("Additional Suppliers");
+        materialsSheet.cell("O1").value("Drawing Version");
 
 
         int materialRow = 2;
@@ -269,6 +270,10 @@ bool DataManager::save(
             materialsSheet.cell(
                 "N" + to_string(materialRow))
                 .value(additionalSuppliersField);
+
+            materialsSheet.cell(
+                "O" + to_string(materialRow))
+                .value(material->getDrawingVersion());
 
             materialRow++;
         }
@@ -764,6 +769,15 @@ bool DataManager::load(
             string additionalSuppliersField =
                 row[13].value<string>();
 
+            // "Drawing Version" (column O) is newer still - unlike N,
+            // this guards row.length() first, since a file saved
+            // before this column existed has no column O at all in
+            // its own dimension (not just an empty cell), and reading
+            // past a row's actual length is not safe to assume works.
+            string drawingVersion =
+                (row.length() > 14) ?
+                row[14].value<string>() : "";
+
 
             Supplier* supplier =
                 supplierName.empty()
@@ -845,6 +859,7 @@ bool DataManager::load(
                 category,
                 Material::materialTypeFromString(typeValue),
                 drawingNumber,
+                drawingVersion,
                 manufacturer,
                 manufacturerPartNumber,
                 supplier,

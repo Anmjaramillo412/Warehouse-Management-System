@@ -56,6 +56,17 @@ private:
     //         I-BU#-##, OWI-BU#-##, ###-PCB-####
     string drawingNumber;
 
+    // Only required when type is DesignPart or PCB (same as
+    // drawingNumber above, always together) - the revision of that
+    // technical drawing. Either a plain number ("1", "2", ...) or
+    // exactly two uppercase letters ("AA", "BA", ...).
+    string drawingVersion;
+
+    // Only applies when type is StandardPart. A DesignPart/PCB
+    // material has no manufacturer, no manufacturer part number, no
+    // Supplier and no Supplier part number at all - see
+    // requiresDrawingNumber() below, which the same materials also
+    // satisfy for these fields being blank instead.
     string manufacturer;
     string manufacturerPartNumber;
 
@@ -85,6 +96,7 @@ public:
         string c = "",
         MaterialType t = MaterialType::StandardPart,
         string drawing = "",
+        string drawVersion = "",
         string manuf = "",
         string manufPartNumber = "",
         Supplier* sup = nullptr,
@@ -102,7 +114,11 @@ public:
     // Drawing number validation
     static bool isValidDrawingNumber(const string& drawingNumber);
 
-    // Whether this material type requires a drawing number
+    // Drawing version validation - a plain number ("1", "2", ...) or
+    // exactly two uppercase letters ("AA", "BA", ...).
+    static bool isValidDrawingVersion(const string& drawingVersion);
+
+    // Whether this material type requires a drawing number/version
     static bool requiresDrawingNumber(MaterialType t);
 
     // MaterialType <-> string
@@ -117,6 +133,7 @@ public:
     string getCategory() const;
     MaterialType getType() const;
     string getDrawingNumber() const;
+    string getDrawingVersion() const;
     string getManufacturer() const;
     string getManufacturerPartNumber() const;
     Supplier* getSupplier() const;
@@ -133,6 +150,7 @@ public:
     void setCategory(const string& c);
     void setType(MaterialType t);
     void setDrawingNumber(const string& drawing);
+    void setDrawingVersion(const string& drawVersion);
     void setManufacturer(const string& manuf);
     void setManufacturerPartNumber(const string& manufPartNumber);
     void setSupplier(Supplier* sup);

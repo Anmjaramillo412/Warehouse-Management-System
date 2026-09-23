@@ -56,6 +56,7 @@ Material::Material(
     string c,
     MaterialType t,
     string drawing,
+    string drawVersion,
     string manuf,
     string manufPartNumber,
     Supplier* sup,
@@ -70,6 +71,7 @@ Material::Material(
     category = c;
     type = t;
     drawingNumber = drawing;
+    drawingVersion = drawVersion;
     manufacturer = manuf;
     manufacturerPartNumber = manufPartNumber;
     supplier = sup;
@@ -131,6 +133,44 @@ bool Material::isValidDrawingNumber(const string& drawingNumber)
         || matchesPattern(drawingNumber, "I-BU#-##")
         || matchesPattern(drawingNumber, "OWI-BU#-##")
         || matchesPattern(drawingNumber, "###-PCB-####");
+}
+
+
+// ================================================================
+// DRAWING VERSION VALIDATION
+// ================================================================
+
+bool Material::isValidDrawingVersion(const string& drawingVersion)
+{
+    if (drawingVersion.empty())
+    {
+        return false;
+    }
+
+    // A plain number, e.g. "1", "2", "12"
+
+    bool allDigits = true;
+
+    for (char c : drawingVersion)
+    {
+        if (!isdigit(static_cast<unsigned char>(c)))
+        {
+            allDigits = false;
+
+            break;
+        }
+    }
+
+    if (allDigits)
+    {
+        return true;
+    }
+
+    // Exactly two uppercase letters, e.g. "AA", "BA"
+
+    return drawingVersion.length() == 2
+        && isupper(static_cast<unsigned char>(drawingVersion[0]))
+        && isupper(static_cast<unsigned char>(drawingVersion[1]));
 }
 
 
@@ -228,6 +268,12 @@ string Material::getDrawingNumber() const
 }
 
 
+string Material::getDrawingVersion() const
+{
+    return drawingVersion;
+}
+
+
 string Material::getManufacturer() const
 {
     return manufacturer;
@@ -322,6 +368,12 @@ void Material::setDrawingNumber(const string& drawing)
 }
 
 
+void Material::setDrawingVersion(const string& drawVersion)
+{
+    drawingVersion = drawVersion;
+}
+
+
 void Material::setManufacturer(const string& manuf)
 {
     manufacturer = manuf;
@@ -387,6 +439,7 @@ void Material::display() const
         << endl;
 
     cout << "Drawing Number:    " << drawingNumber << endl;
+    cout << "Drawing Version:   " << drawingVersion << endl;
     cout << "Manufacturer:      " << manufacturer << endl;
 
     cout << "Manufacturer P/N:  "
