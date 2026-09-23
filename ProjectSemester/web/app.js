@@ -833,7 +833,14 @@ async function loadSupplierForModify() {
 
         const response =
             await fetch(
-                `/api/suppliers/${encodeURIComponent(name)}`
+                "/api/suppliers/lookup",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ name: name })
+                }
             );
 
         const data =

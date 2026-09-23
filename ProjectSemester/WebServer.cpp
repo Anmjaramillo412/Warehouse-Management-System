@@ -1794,6 +1794,98 @@ void WebServer::run()
             });
 
 // ============================================================
+// GET SUPPLIER (lookup by name, via POST body)
+// ============================================================
+// Same lookup as GET /api/suppliers/<string> above, but the name
+// travels in a JSON body instead of the URL path - a Supplier name
+// can contain spaces, commas and periods (e.g. "Kunshan Hetex
+// Trading Co., Ltd"), and putting that in a URL path segment
+// depends on percent-encoding/decoding matching exactly on both
+// ends, which is exactly what was failing ("Supplier not found."
+// in Modify Supplier for any name with those characters). A JSON
+// body sidesteps that entirely.
+
+    CROW_ROUTE(app, "/api/suppliers/lookup")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                auto body =
+                    crow::json::load(req.body);
+
+                if (!body || !body.has("name"))
+                {
+                    crow::json::wvalue response;
+
+                    response["message"] =
+                        "Supplier name is required.";
+
+                    return crow::response(
+                        400,
+                        response);
+                }
+
+                string name =
+                    body["name"].s();
+
+                SupplierManager& supplierManager =
+                    warehouseSystem->getSupplierManager();
+
+                Supplier* supplier =
+                    supplierManager.findSupplier(name);
+
+                if (supplier == nullptr)
+                {
+                    crow::json::wvalue response;
+
+                    response["message"] =
+                        "Supplier not found.";
+
+                    return crow::response(
+                        404,
+                        response);
+                }
+
+                crow::json::wvalue response;
+
+                response["name"] =
+                    supplier->getName();
+
+                response["address"] =
+                    supplier->getAddress();
+
+                response["country"] =
+                    supplier->getCountry();
+
+                response["contactName"] =
+                    supplier->getContactName();
+
+                response["contactEmail"] =
+                    supplier->getContactEmail();
+
+                response["website"] =
+                    supplier->getWebsite();
+
+                crow::json::wvalue::list orderingMethodsList;
+
+                for (const string& method :
+                    supplier->getOrderingMethods())
+                {
+                    orderingMethodsList.push_back(method);
+                }
+
+                response["orderingMethods"] =
+                    std::move(orderingMethodsList);
+
+                response["paymentMethod"] =
+                    supplier->getPaymentMethod();
+
+                response["leadTimeWeeks"] =
+                    supplier->getLeadTimeWeeks();
+
+                return crow::response(response);
+            });
+
+// ============================================================
 // DELETE SUPPLIER
 // ============================================================
 
