@@ -97,6 +97,9 @@ bool MaterialManager::modifyMaterial(
     material->setDrawingNumber(
         newData.getDrawingNumber());
 
+    material->setDrawingVersion(
+        newData.getDrawingVersion());
+
     material->setManufacturer(
         newData.getManufacturer());
 

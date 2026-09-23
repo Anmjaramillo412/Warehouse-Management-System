@@ -1611,93 +1611,111 @@ function showCreateMaterial() {
                     I-BU#-##, OWI-BU#-##, or ###-PCB-####
                 </small>
 
-            </div>
-
-
-            <label>
-                Manufacturer
-            </label>
-
-            <input
-                type="text"
-                id="material-manufacturer"
-                placeholder="Enter Manufacturer"
-            >
-
-
-            <label>
-                Manufacturer Part Number
-            </label>
-
-            <input
-                type="text"
-                id="material-manufacturer-pn"
-                placeholder="Enter Manufacturer Part Number"
-            >
-
-
-            <label>
-                Primary Supplier
-            </label>
-
-            <div class="combobox">
+                <label>
+                    Drawing Version
+                </label>
 
                 <input
                     type="text"
-                    id="material-supplier-search"
-                    autocomplete="off"
-                    placeholder="Search supplier by name..."
-                    oninput="handleSupplierSearchInput('material')"
-                    onfocus="renderSupplierOptions('material')"
-                    onblur="hideSupplierOptionsDelayed('material')"
+                    id="material-drawing-version"
+                    placeholder="e.g. AA, BA, or 1"
                 >
 
-                <input type="hidden" id="material-supplier">
+                <small>
+                    A number (1, 2, ...) or two letters (AA, BA, ...)
+                </small>
 
-                <div id="material-supplier-options"
-                    class="combobox-options hidden">
+            </div>
+
+
+            <div id="material-standard-fields-group">
+
+                <label>
+                    Manufacturer
+                </label>
+
+                <input
+                    type="text"
+                    id="material-manufacturer"
+                    placeholder="Enter Manufacturer"
+                >
+
+
+                <label>
+                    Manufacturer Part Number
+                </label>
+
+                <input
+                    type="text"
+                    id="material-manufacturer-pn"
+                    placeholder="Enter Manufacturer Part Number"
+                >
+
+
+                <label>
+                    Primary Supplier
+                </label>
+
+                <div class="combobox">
+
+                    <input
+                        type="text"
+                        id="material-supplier-search"
+                        autocomplete="off"
+                        placeholder="Search supplier by name..."
+                        oninput="handleSupplierSearchInput('material')"
+                        onfocus="renderSupplierOptions('material')"
+                        onblur="hideSupplierOptionsDelayed('material')"
+                    >
+
+                    <input type="hidden" id="material-supplier">
+
+                    <div id="material-supplier-options"
+                        class="combobox-options hidden">
+                    </div>
+
                 </div>
 
+                <small>
+                    No supplier listed?
+                    <a href="#" onclick="openModule('suppliers'); return false;">
+                        Create one first.
+                    </a>
+                </small>
+
+
+                <label>
+                    Primary Supplier Part Number
+                </label>
+
+                <input
+                    type="text"
+                    id="material-supplier-pn"
+                    placeholder="Enter Supplier Part Number"
+                >
+
+
+                <label>
+                    Additional Suppliers (optional)
+                </label>
+
+                <small>
+                    This Material can also be purchased from other
+                    suppliers besides the primary one above.
+                </small>
+
+                <div id="material-addsup-lines">
+                </div>
+
+                <button
+                    type="button"
+                    onclick="addAdditionalSupplierRow('material')">
+
+                    + Add Supplier
+
+                </button>
+
             </div>
-
-            <small>
-                No supplier listed?
-                <a href="#" onclick="openModule('suppliers'); return false;">
-                    Create one first.
-                </a>
-            </small>
-
-
-            <label>
-                Primary Supplier Part Number
-            </label>
-
-            <input
-                type="text"
-                id="material-supplier-pn"
-                placeholder="Enter Supplier Part Number"
-            >
-
-
-            <label>
-                Additional Suppliers (optional)
-            </label>
-
-            <small>
-                This Material can also be purchased from other
-                suppliers besides the primary one above.
-            </small>
-
-            <div id="material-addsup-lines">
-            </div>
-
-            <button
-                type="button"
-                onclick="addAdditionalSupplierRow('material')">
-
-                + Add Supplier
-
-            </button>
 
 
             <label>
@@ -1758,17 +1776,33 @@ function toggleDrawingNumberField(prefix) {
             prefix + "-type"
         ).value;
 
-    const group =
+    const drawingGroup =
         document.getElementById(
             prefix + "-drawing-number-group"
+        );
+
+    const standardGroup =
+        document.getElementById(
+            prefix + "-standard-fields-group"
         );
 
     const requiresDrawing =
         (type === "Design Part" || type === "PCB");
 
-    group.classList.toggle(
+    drawingGroup.classList.toggle(
         "hidden",
         !requiresDrawing);
+
+    // A Design Part / PCB material has no Manufacturer, Manufacturer
+    // Part Number, Supplier or Supplier Part Number at all - those
+    // only apply to a Standard Part, so the group toggles the
+    // opposite way from the drawing fields above.
+    if (standardGroup) {
+
+        standardGroup.classList.toggle(
+            "hidden",
+            requiresDrawing);
+    }
 }
 
 // ============================================================
@@ -2461,6 +2495,11 @@ async function createMaterial() {
             "material-drawing-number"
         ).value.trim();
 
+    const drawingVersion =
+        document.getElementById(
+            "material-drawing-version"
+        ).value.trim();
+
     const manufacturer =
         document.getElementById(
             "material-manufacturer"
@@ -2518,6 +2557,12 @@ async function createMaterial() {
     const drawingNumberPattern =
         /^([0-9]{3}-ASM-[0-9]{4}|[0-9]{3}-PAR-[0-9]{4}|I-BU[0-9]-[0-9]{2}|OWI-BU[0-9]-[0-9]{2}|[0-9]{3}-PCB-[0-9]{4})$/;
 
+    const drawingVersionPattern =
+        /^([0-9]+|[A-Z]{2})$/;
+
+    const isDesignOrPCB =
+        (type === "Design Part" || type === "PCB");
+
     const message =
         document.getElementById(
             "material-message"
@@ -2533,22 +2578,43 @@ async function createMaterial() {
     }
 
 
-    if (!name ||
-        !category ||
-        !supplier) {
+    if (!name || !category) {
 
         message.textContent =
-            "Please fill in all required fields, including the Supplier.";
+            "Please fill in all required fields.";
 
         return;
     }
 
 
-    if ((type === "Design Part" || type === "PCB") &&
-        !drawingNumberPattern.test(drawingNumber)) {
+    // A Design Part / PCB material needs its technical drawing
+    // (Drawing Number + Drawing Version) and has no Manufacturer or
+    // Supplier at all; a Standard Part is the reverse - see
+    // toggleDrawingNumberField().
+
+    if (isDesignOrPCB) {
+
+        if (!drawingNumberPattern.test(drawingNumber)) {
+
+            message.textContent =
+                "Invalid or missing Drawing Number for this material type.";
+
+            return;
+        }
+
+        if (!drawingVersionPattern.test(drawingVersion)) {
+
+            message.textContent =
+                "Invalid or missing Drawing Version for this material " +
+                "type. Expected a number or two letters (e.g. AA, BA).";
+
+            return;
+        }
+    }
+    else if (!supplier) {
 
         message.textContent =
-            "Invalid or missing Drawing Number for this material type.";
+            "Please select a Supplier.";
 
         return;
     }
@@ -2572,18 +2638,26 @@ async function createMaterial() {
 
         type: type,
 
-        drawingNumber: drawingNumber,
+        drawingNumber:
+            isDesignOrPCB ? drawingNumber : "",
 
-        manufacturer: manufacturer,
+        drawingVersion:
+            isDesignOrPCB ? drawingVersion : "",
 
-        manufacturerPartNumber: manufacturerPartNumber,
+        manufacturer:
+            isDesignOrPCB ? "" : manufacturer,
 
-        supplier: supplier,
+        manufacturerPartNumber:
+            isDesignOrPCB ? "" : manufacturerPartNumber,
 
-        supplierPartNumber: supplierPartNumber,
+        supplier:
+            isDesignOrPCB ? "" : supplier,
+
+        supplierPartNumber:
+            isDesignOrPCB ? "" : supplierPartNumber,
 
         additionalSuppliers:
-            collectAdditionalSuppliers("material"),
+            isDesignOrPCB ? [] : collectAdditionalSuppliers("material"),
 
         photo: photoName,
 
@@ -2652,6 +2726,10 @@ async function createMaterial() {
 
             document.getElementById(
                 "material-drawing-number"
+            ).value = "";
+
+            document.getElementById(
+                "material-drawing-version"
             ).value = "";
 
             toggleDrawingNumberField("material");
@@ -2813,6 +2891,7 @@ async function renderMaterialsList(filterFn, headingText, emptyText) {
                             <th>Name</th>
                             <th>UoM</th>
                             <th>Drawing Number</th>
+                            <th>Drawing Version</th>
                             <th>Manufacturer</th>
                             <th>Mfr Part #</th>
                             <th>Supplier</th>
@@ -2864,6 +2943,10 @@ async function renderMaterialsList(filterFn, headingText, emptyText) {
 
                     <td>
                         ${escapeHtml(material.drawingNumber || "")}
+                    </td>
+
+                    <td>
+                        ${escapeHtml(material.drawingVersion || "")}
                     </td>
 
                     <td>
@@ -3042,6 +3125,11 @@ async function showMaterialDetail(id) {
                     <div class="detail-field">
                         <div class="detail-label">Drawing Number</div>
                         <div class="detail-value">${escapeHtml(data.drawingNumber || "—")}</div>
+                    </div>
+
+                    <div class="detail-field">
+                        <div class="detail-label">Drawing Version</div>
+                        <div class="detail-value">${escapeHtml(data.drawingVersion || "—")}</div>
                     </div>
 
                     <div class="detail-field">
@@ -3271,6 +3359,10 @@ async function searchMaterial() {
                     ? `<p>
                         <strong>Drawing Number:</strong>
                         ${data.drawingNumber}
+                    </p>
+                    <p>
+                        <strong>Drawing Version:</strong>
+                        ${data.drawingVersion || ""}
                     </p>`
                     : ""
                 }
@@ -3829,85 +3921,109 @@ async function loadMaterialForModify() {
                         I-BU#-##, OWI-BU#-##, or ###-PCB-####
                     </small>
 
-                </div>
-
-
-                <label>
-                    Manufacturer
-                </label>
-
-                <input
-                    type="text"
-                    id="modify-manufacturer"
-                    value="${escapeHtml(data.manufacturer || "")}"
-                >
-
-
-                <label>
-                    Manufacturer Part Number
-                </label>
-
-                <input
-                    type="text"
-                    id="modify-manufacturer-pn"
-                    value="${escapeHtml(data.manufacturerPartNumber || "")}"
-                >
-
-
-                <label>
-                    Primary Supplier
-                </label>
-
-                <div class="combobox">
+                    <label>
+                        Drawing Version
+                    </label>
 
                     <input
                         type="text"
-                        id="modify-supplier-search"
-                        autocomplete="off"
-                        placeholder="Search supplier by name..."
-                        oninput="handleSupplierSearchInput('modify')"
-                        onfocus="renderSupplierOptions('modify')"
-                        onblur="hideSupplierOptionsDelayed('modify')"
+                        id="modify-drawing-version"
+                        value="${escapeHtml(data.drawingVersion || "")}"
+                        placeholder="e.g. AA, BA, or 1"
                     >
 
-                    <input type="hidden" id="modify-supplier">
+                    <small>
+                        A number (1, 2, ...) or two letters (AA, BA, ...)
+                    </small>
 
-                    <div id="modify-supplier-options"
-                        class="combobox-options hidden">
+                </div>
+
+
+                <div id="modify-standard-fields-group"
+                    class="${
+                        (data.type === "Design Part" || data.type === "PCB")
+                        ? "hidden"
+                        : ""
+                    }">
+
+                    <label>
+                        Manufacturer
+                    </label>
+
+                    <input
+                        type="text"
+                        id="modify-manufacturer"
+                        value="${escapeHtml(data.manufacturer || "")}"
+                    >
+
+
+                    <label>
+                        Manufacturer Part Number
+                    </label>
+
+                    <input
+                        type="text"
+                        id="modify-manufacturer-pn"
+                        value="${escapeHtml(data.manufacturerPartNumber || "")}"
+                    >
+
+
+                    <label>
+                        Primary Supplier
+                    </label>
+
+                    <div class="combobox">
+
+                        <input
+                            type="text"
+                            id="modify-supplier-search"
+                            autocomplete="off"
+                            placeholder="Search supplier by name..."
+                            oninput="handleSupplierSearchInput('modify')"
+                            onfocus="renderSupplierOptions('modify')"
+                            onblur="hideSupplierOptionsDelayed('modify')"
+                        >
+
+                        <input type="hidden" id="modify-supplier">
+
+                        <div id="modify-supplier-options"
+                            class="combobox-options hidden">
+                        </div>
+
                     </div>
 
+
+                    <label>
+                        Primary Supplier Part Number
+                    </label>
+
+                    <input
+                        type="text"
+                        id="modify-supplier-pn"
+                        value="${escapeHtml(data.supplierPartNumber || "")}"
+                    >
+
+                    <label>
+                        Additional Suppliers (optional)
+                    </label>
+
+                    <small>
+                        This Material can also be purchased from other
+                        suppliers besides the primary one above.
+                    </small>
+
+                    <div id="modify-addsup-lines">
+                    </div>
+
+                    <button
+                        type="button"
+                        onclick="addAdditionalSupplierRow('modify')">
+
+                        + Add Supplier
+
+                    </button>
+
                 </div>
-
-
-                <label>
-                    Primary Supplier Part Number
-                </label>
-
-                <input
-                    type="text"
-                    id="modify-supplier-pn"
-                    value="${escapeHtml(data.supplierPartNumber || "")}"
-                >
-
-                <label>
-                    Additional Suppliers (optional)
-                </label>
-
-                <small>
-                    This Material can also be purchased from other
-                    suppliers besides the primary one above.
-                </small>
-
-                <div id="modify-addsup-lines">
-                </div>
-
-                <button
-                    type="button"
-                    onclick="addAdditionalSupplierRow('modify')">
-
-                    + Add Supplier
-
-                </button>
 
                 <label>
                     Material Photo
@@ -4125,6 +4241,11 @@ async function modifyMaterial() {
             "modify-drawing-number"
         ).value.trim();
 
+    const drawingVersion =
+        document.getElementById(
+            "modify-drawing-version"
+        ).value.trim();
+
     const manufacturer =
         document.getElementById(
             "modify-manufacturer"
@@ -4183,22 +4304,49 @@ async function modifyMaterial() {
     const drawingNumberPattern =
         /^([0-9]{3}-ASM-[0-9]{4}|[0-9]{3}-PAR-[0-9]{4}|I-BU[0-9]-[0-9]{2}|OWI-BU[0-9]-[0-9]{2}|[0-9]{3}-PCB-[0-9]{4})$/;
 
-    if (!name ||
-        !category ||
-        !supplier) {
+    const drawingVersionPattern =
+        /^([0-9]+|[A-Z]{2})$/;
+
+    const isDesignOrPCB =
+        (type === "Design Part" || type === "PCB");
+
+    if (!name || !category) {
 
         message.textContent =
-            "Please fill in all required fields, including the Supplier.";
+            "Please fill in all required fields.";
 
         return;
     }
 
 
-    if ((type === "Design Part" || type === "PCB") &&
-        !drawingNumberPattern.test(drawingNumber)) {
+    // A Design Part / PCB material needs its technical drawing
+    // (Drawing Number + Drawing Version) and has no Manufacturer or
+    // Supplier at all; a Standard Part is the reverse - see
+    // toggleDrawingNumberField().
+
+    if (isDesignOrPCB) {
+
+        if (!drawingNumberPattern.test(drawingNumber)) {
+
+            message.textContent =
+                "Invalid or missing Drawing Number for this material type.";
+
+            return;
+        }
+
+        if (!drawingVersionPattern.test(drawingVersion)) {
+
+            message.textContent =
+                "Invalid or missing Drawing Version for this material " +
+                "type. Expected a number or two letters (e.g. AA, BA).";
+
+            return;
+        }
+    }
+    else if (!supplier) {
 
         message.textContent =
-            "Invalid or missing Drawing Number for this material type.";
+            "Please select a Supplier.";
 
         return;
     }
@@ -4218,18 +4366,26 @@ async function modifyMaterial() {
 
         type: type,
 
-        drawingNumber: drawingNumber,
+        drawingNumber:
+            isDesignOrPCB ? drawingNumber : "",
 
-        manufacturer: manufacturer,
+        drawingVersion:
+            isDesignOrPCB ? drawingVersion : "",
 
-        manufacturerPartNumber: manufacturerPartNumber,
+        manufacturer:
+            isDesignOrPCB ? "" : manufacturer,
 
-        supplier: supplier,
+        manufacturerPartNumber:
+            isDesignOrPCB ? "" : manufacturerPartNumber,
 
-        supplierPartNumber: supplierPartNumber,
+        supplier:
+            isDesignOrPCB ? "" : supplier,
+
+        supplierPartNumber:
+            isDesignOrPCB ? "" : supplierPartNumber,
 
         additionalSuppliers:
-            collectAdditionalSuppliers("modify"),
+            isDesignOrPCB ? [] : collectAdditionalSuppliers("modify"),
 
         photo: photoPath,
 

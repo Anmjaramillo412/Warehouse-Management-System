@@ -554,6 +554,11 @@ void WebServer::run()
                         ? string(body["drawingNumber"].s())
                         : "";
 
+                    string drawingVersion =
+                        body.has("drawingVersion")
+                        ? string(body["drawingVersion"].s())
+                        : "";
+
                     string manufacturer =
                         body.has("manufacturer")
                         ? string(body["manufacturer"].s())
@@ -587,8 +592,21 @@ void WebServer::run()
                         body["active"].b();
 
                     // ------------------------------------------------
-                    // Validate drawing number
+                    // Type-dependent fields: a Design Part / PCB
+                    // material is identified by its technical drawing
+                    // (Drawing Number + Drawing Version) and has no
+                    // Manufacturer, Manufacturer Part Number, Supplier
+                    // or Supplier Part Number at all; a Standard Part
+                    // is the reverse - see Material::
+                    // requiresDrawingNumber().
                     // ------------------------------------------------
+
+                    SupplierManager& supplierManager =
+                        warehouseSystem->getSupplierManager();
+
+                    Supplier* supplier = nullptr;
+
+                    vector<MaterialSupplierLink> additionalSuppliers;
 
                     if (Material::requiresDrawingNumber(type))
                     {
@@ -598,49 +616,56 @@ void WebServer::run()
                                 400,
                                 "Invalid or missing Drawing Number for this material type.");
                         }
+
+                        if (!Material::isValidDrawingVersion(drawingVersion))
+                        {
+                            return crow::response(
+                                400,
+                                "Invalid or missing Drawing Version for this "
+                                "material type. Expected a number or two "
+                                "letters (e.g. AA, BA).");
+                        }
+
+                        // Design Part / PCB: no Manufacturer, no
+                        // Supplier at all.
+                        manufacturer = "";
+                        manufacturerPartNumber = "";
+                        supplierPartNumber = "";
                     }
                     else
                     {
-                        // Drawing number only applies to
-                        // Design Part / PCB materials.
+                        // Standard Part: no drawing at all.
                         drawingNumber = "";
-                    }
+                        drawingVersion = "";
 
-                    // ------------------------------------------------
-                    // Resolve Supplier pointer
-                    // ------------------------------------------------
+                        supplier =
+                            supplierManager.findSupplier(
+                                supplierName);
 
-                    SupplierManager& supplierManager =
-                        warehouseSystem->getSupplierManager();
+                        if (supplier == nullptr)
+                        {
+                            return crow::response(
+                                400,
+                                "Supplier not found. Please create the supplier first.");
+                        }
 
-                    Supplier* supplier =
-                        supplierManager.findSupplier(
-                            supplierName);
+                        // ------------------------------------------
+                        // Resolve additional (non-primary) Suppliers
+                        // ------------------------------------------
 
-                    if (supplier == nullptr)
-                    {
-                        return crow::response(
-                            400,
-                            "Supplier not found. Please create the supplier first.");
-                    }
+                        string additionalSuppliersError;
 
-                    // ------------------------------------------------
-                    // Resolve additional (non-primary) Suppliers
-                    // ------------------------------------------------
-
-                    vector<MaterialSupplierLink> additionalSuppliers;
-                    string additionalSuppliersError;
-
-                    if (!resolveAdditionalSuppliers(
-                        body,
-                        supplierManager,
-                        supplierName,
-                        additionalSuppliers,
-                        additionalSuppliersError))
-                    {
-                        return crow::response(
-                            400,
-                            additionalSuppliersError);
+                        if (!resolveAdditionalSuppliers(
+                            body,
+                            supplierManager,
+                            supplierName,
+                            additionalSuppliers,
+                            additionalSuppliersError))
+                        {
+                            return crow::response(
+                                400,
+                                additionalSuppliersError);
+                        }
                     }
 
                     // ------------------------------------------------
@@ -708,6 +733,7 @@ void WebServer::run()
                         category,
                         type,
                         drawingNumber,
+                        drawingVersion,
                         manufacturer,
                         manufacturerPartNumber,
                         supplier,
@@ -833,6 +859,9 @@ void WebServer::run()
                     item["drawingNumber"] =
                         material->getDrawingNumber();
 
+                    item["drawingVersion"] =
+                        material->getDrawingVersion();
+
                     item["manufacturer"] =
                         material->getManufacturer();
 
@@ -937,6 +966,11 @@ void WebServer::run()
                         ? string(body["drawingNumber"].s())
                         : "";
 
+                    string drawingVersion =
+                        body.has("drawingVersion")
+                        ? string(body["drawingVersion"].s())
+                        : "";
+
                     string manufacturer =
                         body.has("manufacturer")
                         ? string(body["manufacturer"].s())
@@ -982,8 +1016,16 @@ void WebServer::run()
                     }
 
                     // ------------------------------------------------
-                    // Validate drawing number
+                    // Type-dependent fields - see the same block in
+                    // /api/materials/create.
                     // ------------------------------------------------
+
+                    SupplierManager& supplierManager =
+                        warehouseSystem->getSupplierManager();
+
+                    Supplier* supplier = nullptr;
+
+                    vector<MaterialSupplierLink> additionalSuppliers;
 
                     if (Material::requiresDrawingNumber(type))
                     {
@@ -993,47 +1035,49 @@ void WebServer::run()
                                 400,
                                 "Invalid or missing Drawing Number for this material type.");
                         }
+
+                        if (!Material::isValidDrawingVersion(drawingVersion))
+                        {
+                            return crow::response(
+                                400,
+                                "Invalid or missing Drawing Version for this "
+                                "material type. Expected a number or two "
+                                "letters (e.g. AA, BA).");
+                        }
+
+                        manufacturer = "";
+                        manufacturerPartNumber = "";
+                        supplierPartNumber = "";
                     }
                     else
                     {
                         drawingNumber = "";
-                    }
+                        drawingVersion = "";
 
-                    // ------------------------------------------------
-                    // Resolve Supplier pointer
-                    // ------------------------------------------------
+                        supplier =
+                            supplierManager.findSupplier(
+                                supplierName);
 
-                    SupplierManager& supplierManager =
-                        warehouseSystem->getSupplierManager();
+                        if (supplier == nullptr)
+                        {
+                            return crow::response(
+                                400,
+                                "Supplier not found. Please create the supplier first.");
+                        }
 
-                    Supplier* supplier =
-                        supplierManager.findSupplier(
-                            supplierName);
+                        string additionalSuppliersError;
 
-                    if (supplier == nullptr)
-                    {
-                        return crow::response(
-                            400,
-                            "Supplier not found. Please create the supplier first.");
-                    }
-
-                    // ------------------------------------------------
-                    // Resolve additional (non-primary) Suppliers
-                    // ------------------------------------------------
-
-                    vector<MaterialSupplierLink> additionalSuppliers;
-                    string additionalSuppliersError;
-
-                    if (!resolveAdditionalSuppliers(
-                        body,
-                        supplierManager,
-                        supplierName,
-                        additionalSuppliers,
-                        additionalSuppliersError))
-                    {
-                        return crow::response(
-                            400,
-                            additionalSuppliersError);
+                        if (!resolveAdditionalSuppliers(
+                            body,
+                            supplierManager,
+                            supplierName,
+                            additionalSuppliers,
+                            additionalSuppliersError))
+                        {
+                            return crow::response(
+                                400,
+                                additionalSuppliersError);
+                        }
                     }
 
                     // ------------------------------------------------
@@ -1131,6 +1175,7 @@ void WebServer::run()
                         category,
                         type,
                         drawingNumber,
+                        drawingVersion,
                         manufacturer,
                         manufacturerPartNumber,
                         supplier,
@@ -1250,6 +1295,9 @@ void WebServer::run()
                 response["drawingNumber"] =
                     material->getDrawingNumber();
 
+                response["drawingVersion"] =
+                    material->getDrawingVersion();
+
                 response["manufacturer"] =
                     material->getManufacturer();
 
@@ -1269,6 +1317,27 @@ void WebServer::run()
 
                 response["active"] =
                     material->isActive();
+
+                crow::json::wvalue::list additionalSupplierList;
+
+                for (const auto& link :
+                    material->getAdditionalSuppliers())
+                {
+                    crow::json::wvalue linkItem;
+
+                    linkItem["supplier"] =
+                        link.supplier != nullptr ?
+                        link.supplier->getName() : "";
+
+                    linkItem["supplierPartNumber"] =
+                        link.supplierPartNumber;
+
+                    additionalSupplierList.push_back(
+                        linkItem);
+                }
+
+                response["additionalSuppliers"] =
+                    std::move(additionalSupplierList);
 
 
                 return crow::response(response);
