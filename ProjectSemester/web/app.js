@@ -91,6 +91,10 @@ function openModule(module) {
                     Create Product
                 </button>
 
+                <button onclick="showModifyProduct()">
+                    Modify Product
+                </button>
+
                 <button onclick="showDisplayProducts()">
                     Display Products
                 </button>
@@ -756,7 +760,7 @@ async function createSupplier() {
 // MODIFY SUPPLIER FORM
 // ============================================================
 
-function showModifySupplier() {
+function showModifySupplier(statusMessage) {
 
     const content =
         document.getElementById(
@@ -770,6 +774,10 @@ function showModifySupplier() {
             <h2>
                 Modify Supplier
             </h2>
+
+            ${statusMessage ?
+                `<p class="success-message">${escapeHtml(statusMessage)}</p>` :
+                ""}
 
             <label>
                 Supplier
@@ -1075,8 +1083,14 @@ async function modifySupplierSubmit() {
 
         if (response.ok) {
 
-            message.textContent =
-                "Supplier successfully modified.";
+            // Re-render the form empty (dropdown reset, no fields
+            // filled in) so it is visually obvious the change was
+            // saved, rather than leaving the just-saved values on
+            // screen looking unchanged.
+            showModifySupplier(
+                "Supplier successfully modified.");
+
+            return;
         }
         else {
 
@@ -3318,7 +3332,7 @@ async function searchMaterial() {
 // MODIFY MATERIAL FORM
 // ============================================================
 
-function showModifyMaterial() {
+function showModifyMaterial(statusMessage) {
 
     const content =
         document.getElementById(
@@ -3332,6 +3346,10 @@ function showModifyMaterial() {
             <h2>
                 Modify Material
             </h2>
+
+            ${statusMessage ?
+                `<p class="success-message">${escapeHtml(statusMessage)}</p>` :
+                ""}
 
             <label>
                 Material ID
@@ -4246,9 +4264,14 @@ async function modifyMaterial() {
 
         if (response.ok) {
 
-            message.textContent =
-                "Material successfully modified.";
+            // Re-render the form empty (combobox reset, no fields
+            // filled in) so it is visually obvious the change was
+            // saved, rather than leaving the just-saved values on
+            // screen looking unchanged.
+            showModifyMaterial(
+                "Material successfully modified.");
 
+            return;
         }
         else {
 
@@ -6220,6 +6243,365 @@ async function createProduct() {
                 "Error: " + responseText;
         }
 
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
+    }
+}
+
+// ============================================================
+// MODIFY PRODUCT FORM
+// ============================================================
+
+function showModifyProduct(statusMessage) {
+
+    const content =
+        document.getElementById(
+            "product-content"
+        );
+
+    content.innerHTML = `
+
+        <div class="form-container">
+
+            <h2>
+                Modify Product
+            </h2>
+
+            ${statusMessage ?
+                `<p class="success-message">${escapeHtml(statusMessage)}</p>` :
+                ""}
+
+            <label>
+                Product ID
+            </label>
+
+            <input
+                type="text"
+                id="modify-product-lookup-id"
+                placeholder="###-######"
+                maxlength="10"
+            >
+
+            <div class="form-actions">
+
+                <button onclick="loadProductForModify()">
+                    Load Product
+                </button>
+
+            </div>
+
+            <div id="modify-product-form">
+            </div>
+
+        </div>
+    `;
+}
+
+// ============================================================
+// ADD BOM ITEM (MODIFY PRODUCT)
+// ============================================================
+
+function addModifyBOMItemRow(materialID, quantity) {
+
+    const container =
+        document.getElementById(
+            "modify-bom-items"
+        );
+
+    const row =
+        document.createElement(
+            "div"
+        );
+
+    row.className =
+        "bom-row modify-bom-row";
+
+    row.innerHTML = `
+
+        <input
+            type="text"
+            class="modify-bom-material-id"
+            placeholder="Material ID"
+            maxlength="10"
+            value="${escapeHtml(materialID || "")}"
+        >
+
+        <input
+            type="number"
+            class="modify-bom-quantity"
+            min="1"
+            placeholder="Quantity"
+            value="${quantity || ""}"
+        >
+
+        <button
+            type="button"
+            onclick="this.parentElement.remove()">
+
+            Remove
+
+        </button>
+
+    `;
+
+    container.appendChild(row);
+}
+
+// ============================================================
+// LOAD PRODUCT FOR MODIFY
+// ============================================================
+
+async function loadProductForModify() {
+
+    const id =
+        document.getElementById(
+            "modify-product-lookup-id"
+        ).value.trim();
+
+    const modifyForm =
+        document.getElementById(
+            "modify-product-form"
+        );
+
+    const productIDPattern =
+        /^[0-9]{3}-[0-9]{6}$/;
+
+    if (!productIDPattern.test(id)) {
+
+        modifyForm.innerHTML = `
+            <p>
+                Invalid Product ID. Expected format ###-######.
+            </p>
+        `;
+
+        return;
+    }
+
+    modifyForm.innerHTML = `
+        <p>
+            Loading product...
+        </p>
+    `;
+
+    try {
+
+        const response =
+            await fetch(
+                `/api/products/${encodeURIComponent(id)}`
+            );
+
+        const data =
+            await response.json();
+
+        if (!response.ok) {
+
+            modifyForm.innerHTML = `
+                <p>
+                    ${data.message}
+                </p>
+            `;
+
+            return;
+        }
+
+        modifyForm.innerHTML = `
+
+            <input type="hidden" id="modify-product-id" value="${escapeHtml(data.id)}">
+
+            <p>
+                Product ID: <strong>${escapeHtml(data.id)}</strong>
+            </p>
+
+            <label>
+                Product Name
+            </label>
+
+            <input
+                type="text"
+                id="modify-product-name"
+                value="${escapeHtml(data.name)}"
+            >
+
+            <label>
+                Description
+            </label>
+
+            <textarea
+                id="modify-product-description"
+                rows="4"
+            >${escapeHtml(data.description || "")}</textarea>
+
+            <h3>
+                Bill of Materials
+            </h3>
+
+            <div id="modify-bom-items">
+            </div>
+
+            <button
+                type="button"
+                onclick="addModifyBOMItemRow()">
+
+                + Add Component
+
+            </button>
+
+            <div class="form-actions">
+
+                <button onclick="modifyProductSubmit()">
+                    Save Changes
+                </button>
+
+            </div>
+
+            <div id="modify-product-message">
+            </div>
+        `;
+
+        const bom =
+            data.bom || [];
+
+        for (const item of bom) {
+
+            addModifyBOMItemRow(
+                item.materialID,
+                item.quantity);
+        }
+    }
+    catch (error) {
+
+        console.error(error);
+
+        modifyForm.innerHTML = `
+            <p>
+                Could not connect to the server.
+            </p>
+        `;
+    }
+}
+
+// ============================================================
+// MODIFY PRODUCT (SUBMIT)
+// ============================================================
+
+async function modifyProductSubmit() {
+
+    const id =
+        document.getElementById(
+            "modify-product-id"
+        ).value;
+
+    const name =
+        document.getElementById(
+            "modify-product-name"
+        ).value.trim();
+
+    const description =
+        document.getElementById(
+            "modify-product-description"
+        ).value.trim();
+
+    const message =
+        document.getElementById(
+            "modify-product-message"
+        );
+
+    if (!name) {
+
+        message.textContent =
+            "Product Name is required.";
+
+        return;
+    }
+
+    const rows =
+        document.querySelectorAll(
+            ".modify-bom-row"
+        );
+
+    const bom = [];
+
+    for (const row of rows) {
+
+        const materialID =
+            row.querySelector(
+                ".modify-bom-material-id"
+            ).value.trim();
+
+        const quantity =
+            Number(
+                row.querySelector(
+                    ".modify-bom-quantity"
+                ).value
+            );
+
+        if (!/^([0-9]{3}-[0-9]{6}|[0-9]{6}-00)$/.test(materialID)) {
+
+            message.textContent =
+                "Invalid Material ID in BOM.";
+
+            return;
+        }
+
+        if (quantity <= 0) {
+
+            message.textContent =
+                "BOM quantity must be greater than zero.";
+
+            return;
+        }
+
+        bom.push({
+            materialID: materialID,
+            quantity: quantity
+        });
+    }
+
+    const product = {
+        id: id,
+        name: name,
+        description: description,
+        bom: bom
+    };
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/products/modify",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(product)
+                }
+            );
+
+        const responseText =
+            await response.text();
+
+        if (response.ok) {
+
+            // Re-render the form empty (Product ID field reset, no
+            // fields filled in) so it is visually obvious the change
+            // was saved, rather than leaving the just-saved values on
+            // screen looking unchanged.
+            showModifyProduct(
+                "Product successfully modified.");
+
+            return;
+        }
+        else {
+
+            message.textContent =
+                "Error: " + responseText;
+        }
     }
     catch (error) {
 

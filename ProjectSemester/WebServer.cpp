@@ -3165,6 +3165,205 @@ void WebServer::run()
             });
 
 // ============================================================
+// GET PRODUCT (lookup by ID, for Modify Product)
+// ============================================================
+
+    CROW_ROUTE(app, "/api/products/<string>")
+        ([warehouseSystem](string id)
+            {
+                ProductManager& productManager =
+                    warehouseSystem->getProductManager();
+
+                Product* product =
+                    productManager.findProduct(id);
+
+                if (product == nullptr)
+                {
+                    crow::json::wvalue response;
+
+                    response["message"] =
+                        "Product not found.";
+
+                    return crow::response(
+                        404,
+                        response);
+                }
+
+                crow::json::wvalue response;
+
+                response["id"] =
+                    product->getID();
+
+                response["name"] =
+                    product->getName();
+
+                response["description"] =
+                    product->getDescription();
+
+                crow::json::wvalue::list bomList;
+
+                for (const auto& bomItem :
+                    product->getBOM())
+                {
+                    crow::json::wvalue bom;
+
+                    bom["materialID"] =
+                        bomItem.materialID;
+
+                    bom["quantity"] =
+                        bomItem.quantity;
+
+                    bomList.push_back(
+                        std::move(bom));
+                }
+
+                response["bom"] =
+                    std::move(bomList);
+
+                return crow::response(response);
+            });
+
+// ============================================================
+// MODIFY PRODUCT
+// ============================================================
+
+    CROW_ROUTE(app, "/api/products/modify")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    string id =
+                        body["id"].s();
+
+                    string name =
+                        body["name"].s();
+
+                    string description =
+                        body.has("description") ?
+                        string(body["description"].s()) : "";
+
+
+                    ProductManager& productManager =
+                        warehouseSystem->getProductManager();
+
+                    if (productManager.findProduct(id) == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Product not found.");
+                    }
+
+                    if (name.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Product Name is required.");
+                    }
+
+
+                    // ------------------------------------------------
+                    // Read BOM
+                    // ------------------------------------------------
+
+                    vector<BOMItem> bom;
+
+                    MaterialManager& materialManager =
+                        warehouseSystem->getMaterialManager();
+
+                    if (body.has("bom"))
+                    {
+                        for (
+                            const auto& item :
+                            body["bom"]
+                            )
+                        {
+                            string materialID =
+                                item["materialID"].s();
+
+                            int quantity =
+                                item["quantity"].i();
+
+
+                            if (!Material::isValidID(
+                                materialID))
+                            {
+                                return crow::response(
+                                    400,
+                                    "Invalid Material ID in BOM.");
+                            }
+
+
+                            if (materialManager.findMaterial(
+                                materialID) == nullptr)
+                            {
+                                return crow::response(
+                                    404,
+                                    "Material not found in BOM: " +
+                                    materialID);
+                            }
+
+
+                            if (quantity <= 0)
+                            {
+                                return crow::response(
+                                    400,
+                                    "BOM quantity must be greater than zero.");
+                            }
+
+                            BOMItem bomItem;
+
+                            bomItem.materialID = materialID;
+                            bomItem.quantity = quantity;
+
+                            bom.push_back(bomItem);
+                        }
+                    }
+
+
+                    if (!productManager.modifyProduct(
+                        id,
+                        name,
+                        description,
+                        bom))
+                    {
+                        return crow::response(
+                            400,
+                            "Could not modify Product.");
+                    }
+
+
+                    autoSaveIfEnabled(warehouseSystem);
+
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] =
+                        "Product modified successfully.";
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
 // GET PRODUCTS
 // ============================================================
 
