@@ -33,4 +33,12 @@ public:
         bool enabled);
 
     bool getLogDataOperations() const;
+
+    // Wipes the movement history file outright (used by Data
+    // Management's full history reset, alongside Procurement/
+    // Purchase/Projections clear()) and writes a single line marking
+    // when/that it happened - unconditionally, regardless of the
+    // logDataOperations setting, since the reset itself is always
+    // worth a record.
+    bool clearHistory();
 };

@@ -176,3 +176,30 @@ bool MovementLogger::getLogDataOperations() const
 {
     return logDataOperations;
 }
+
+// ================================================================
+// CLEAR HISTORY
+// ================================================================
+
+bool MovementLogger::clearHistory()
+{
+    ofstream file(
+        filename,
+        ios::trunc);
+
+
+    if (!file.is_open())
+    {
+        return false;
+    }
+
+
+    file << getCurrentTimestamp()
+        << " | HISTORY RESET | Movement history cleared for testing."
+        << endl;
+
+
+    file.close();
+
+    return true;
+}
