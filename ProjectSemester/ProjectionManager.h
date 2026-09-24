@@ -9,6 +9,7 @@
 #include "WarehouseManager.h"
 #include "InventoryManager.h"
 #include "MovementLogger.h"
+#include "MaterialManager.h"
 
 using namespace std;
 
@@ -39,6 +40,7 @@ private:
     WarehouseManager* warehouseManager;
     InventoryManager* inventoryManager;
     MovementLogger* movementLogger;
+    MaterialManager* materialManager;
 
     // Generates the next consecutive ID, e.g. "PRJ-000001"
     string generateNextID();
@@ -67,7 +69,8 @@ public:
         WarehouseManager* whManager = nullptr,
         InventoryManager* invManager = nullptr,
         MovementLogger* logger = nullptr,
-        string file = "data/projections.txt");
+        string file = "data/projections.txt",
+        MaterialManager* matManager = nullptr);
 
     void setProductManager(
         ProductManager* manager);
@@ -80,6 +83,9 @@ public:
 
     void setMovementLogger(
         MovementLogger* logger);
+
+    void setMaterialManager(
+        MaterialManager* manager);
 
     // Creates a new Projection from the Product's BOM, the quantity
     // to manufacture, and current stock (only materials with a

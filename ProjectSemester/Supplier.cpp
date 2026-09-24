@@ -16,7 +16,8 @@ Supplier::Supplier(
     string web,
     vector<string> ordering,
     string payment,
-    int leadTime)
+    int leadTime,
+    bool internal)
 {
     name = n;
     address = addr;
@@ -27,6 +28,7 @@ Supplier::Supplier(
     orderingMethods = ordering;
     paymentMethod = payment;
     leadTimeWeeks = leadTime;
+    isInternal = internal;
 }
 
 
@@ -97,6 +99,12 @@ int Supplier::getLeadTimeWeeks() const
 }
 
 
+bool Supplier::getIsInternal() const
+{
+    return isInternal;
+}
+
+
 // ================================================================
 // SETTERS
 // ================================================================
@@ -152,6 +160,12 @@ void Supplier::setPaymentMethod(const string& payment)
 void Supplier::setLeadTimeWeeks(int leadTime)
 {
     leadTimeWeeks = leadTime;
+}
+
+
+void Supplier::setIsInternal(bool internal)
+{
+    isInternal = internal;
 }
 
 
@@ -223,6 +237,7 @@ void Supplier::display() const
 
     cout << "Payment:        " << paymentMethod << endl;
     cout << "Lead Time:      " << leadTimeWeeks << " week(s)" << endl;
+    cout << "Internal:       " << (isInternal ? "Yes" : "No") << endl;
 
     cout << "----------------------------------------"
         << endl;

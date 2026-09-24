@@ -18,7 +18,9 @@ WarehouseSystem::WarehouseSystem()
         &productManager,
         &warehouseManager,
         &inventoryManager,
-        &movementLogger),
+        &movementLogger,
+        "data/projections.txt",
+        &materialManager),
     purchaseManager(
         &procurementManager,
         &movementLogger)

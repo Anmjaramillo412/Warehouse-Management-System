@@ -365,6 +365,5 @@ FodyWeavers.xsd
 # Project-specific: everything under data/ and web/images/ is local
 # runtime/working data (real inventory data, receipts, photos) and must
 # never be tracked or overwritten by a git sync (pull/checkout/merge).
-Claude outputs/
 ProjectSemester/data/
 ProjectSemester/web/images/
