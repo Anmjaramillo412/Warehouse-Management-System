@@ -1,17 +1,51 @@
 #include "DataManager.h"
 #include <xlnt/xlnt.hpp>
 #include <iostream>
+#include <filesystem>
+#include <algorithm>
+#include <sstream>
+#include <fstream>
 using namespace std;
+
+
+// ================================================================
+// FIELD SANITIZING (for the packed "Additional Suppliers" cell)
+// ================================================================
+// That one cell packs several Supplier entries as
+// "Name,PartNumber~Name,PartNumber" - a comma or "~" inside a
+// Supplier name or Part Number would be misread as a separator, so
+// strip them here the same way ProcurementManager sanitizes its own
+// packed fields.
+
+namespace
+{
+    string sanitizePackedField(const string& value)
+    {
+        string result = value;
+
+        replace(result.begin(), result.end(), ',', ';');
+        replace(result.begin(), result.end(), '~', ' ');
+
+        return result;
+    }
+}
 
 
 // ================================================================
 // CONSTRUCTOR
 // ================================================================
 
-DataManager::DataManager(string file)
+DataManager::DataManager(string file, string configFile)
 {
     filename = file;
+    configFilename = configFile;
     movementLogger = nullptr;
+
+    // On by default, so a fresh setup never risks losing data simply
+    // because nobody has visited Data Management Settings yet.
+    autoSaveAndLoad = true;
+
+    loadConfig();
 }
 
 // ================================================================
@@ -22,6 +56,66 @@ void DataManager::setMovementLogger(
     MovementLogger* logger)
 {
     movementLogger = logger;
+}
+
+// ================================================================
+// AUTO SAVE AND LOAD CONFIGURATION
+// ================================================================
+// Plain text config file, a single "0" or "1".
+
+bool DataManager::getAutoSaveAndLoad() const
+{
+    return autoSaveAndLoad;
+}
+
+
+bool DataManager::setAutoSaveAndLoad(bool enabled)
+{
+    autoSaveAndLoad = enabled;
+
+    saveConfig();
+
+    return true;
+}
+
+
+void DataManager::saveConfig()
+{
+    ofstream file(configFilename);
+
+    if (!file.is_open())
+    {
+        return;
+    }
+
+    file << (autoSaveAndLoad ? 1 : 0) << endl;
+
+    file.close();
+}
+
+
+void DataManager::loadConfig()
+{
+    ifstream file(configFilename);
+
+    if (!file.is_open())
+    {
+        // No config file yet - keep the default set in the
+        // constructor.
+
+        return;
+    }
+
+    int value = -1;
+
+    file >> value;
+
+    if (value == 0 || value == 1)
+    {
+        autoSaveAndLoad = (value == 1);
+    }
+
+    file.close();
 }
 
 // ================================================================
@@ -36,6 +130,19 @@ bool DataManager::save(
 {
     try
     {
+        // ------------------------------------------------
+        // Make sure the target directory exists
+        // (e.g. "data/") before xlnt tries to write to it
+        // ------------------------------------------------
+
+        std::filesystem::path targetPath(filename);
+
+        if (targetPath.has_parent_path())
+        {
+            std::filesystem::create_directories(
+                targetPath.parent_path());
+        }
+
         xlnt::workbook workbook;
 
 
@@ -62,6 +169,8 @@ bool DataManager::save(
         materialsSheet.cell("K1").value("Supplier Part Number");
         materialsSheet.cell("L1").value("Photo");
         materialsSheet.cell("M1").value("Active");
+        materialsSheet.cell("N1").value("Additional Suppliers");
+        materialsSheet.cell("O1").value("Drawing Version");
 
 
         int materialRow = 2;
@@ -132,6 +241,39 @@ bool DataManager::save(
                     material->isActive()
                     ? "YES"
                     : "NO");
+
+            // Additional (non-primary) Suppliers, each as
+            // "Name,Supplier Part Number", joined by "~" - same
+            // convention as Procurement's receipts field.
+            string additionalSuppliersField = "";
+
+            const auto& additionalSuppliers =
+                material->getAdditionalSuppliers();
+
+            for (size_t i = 0; i < additionalSuppliers.size(); i++)
+            {
+                if (i > 0)
+                {
+                    additionalSuppliersField += "~";
+                }
+
+                additionalSuppliersField +=
+                    sanitizePackedField(
+                        additionalSuppliers[i].supplier != nullptr
+                        ? additionalSuppliers[i].supplier->getName()
+                        : "") +
+                    "," +
+                    sanitizePackedField(
+                        additionalSuppliers[i].supplierPartNumber);
+            }
+
+            materialsSheet.cell(
+                "N" + to_string(materialRow))
+                .value(additionalSuppliersField);
+
+            materialsSheet.cell(
+                "O" + to_string(materialRow))
+                .value(material->getDrawingVersion());
 
             materialRow++;
         }
@@ -620,6 +762,23 @@ bool DataManager::load(
                 (activeValue == "YES");
 
 
+            // "Additional Suppliers" (column N) is a newer column -
+            // an older file simply has nothing written in that cell,
+            // which xlnt reads back as an empty string (same as any
+            // other column here, none of which are length-guarded).
+            string additionalSuppliersField =
+                row[13].value<string>();
+
+            // "Drawing Version" (column O) is newer still - unlike N,
+            // this guards row.length() first, since a file saved
+            // before this column existed has no column O at all in
+            // its own dimension (not just an empty cell), and reading
+            // past a row's actual length is not safe to assume works.
+            string drawingVersion =
+                (row.length() > 14) ?
+                row[14].value<string>() : "";
+
+
             Supplier* supplier =
                 supplierName.empty()
                 ? nullptr
@@ -638,6 +797,60 @@ bool DataManager::load(
             }
 
 
+            vector<MaterialSupplierLink> additionalSuppliers;
+
+            if (!additionalSuppliersField.empty())
+            {
+                stringstream additionalStream(
+                    additionalSuppliersField);
+
+                string entry;
+
+                while (getline(additionalStream, entry, '~'))
+                {
+                    if (entry.empty())
+                    {
+                        continue;
+                    }
+
+                    size_t commaPosition =
+                        entry.find(',');
+
+                    string additionalSupplierName =
+                        commaPosition == string::npos ?
+                        entry : entry.substr(0, commaPosition);
+
+                    string additionalPartNumber =
+                        commaPosition == string::npos ?
+                        "" : entry.substr(commaPosition + 1);
+
+                    Supplier* additionalSupplier =
+                        supplierManager.findSupplier(
+                            additionalSupplierName);
+
+                    if (additionalSupplier == nullptr)
+                    {
+                        cout << endl;
+
+                        cout << "Warning: Additional Supplier "
+                            << additionalSupplierName
+                            << " not found for material "
+                            << id
+                            << endl;
+
+                        continue;
+                    }
+
+                    MaterialSupplierLink link;
+
+                    link.supplier = additionalSupplier;
+                    link.supplierPartNumber = additionalPartNumber;
+
+                    additionalSuppliers.push_back(link);
+                }
+            }
+
+
             Material material(
                 id,
                 name,
@@ -646,12 +859,16 @@ bool DataManager::load(
                 category,
                 Material::materialTypeFromString(typeValue),
                 drawingNumber,
+                drawingVersion,
                 manufacturer,
                 manufacturerPartNumber,
                 supplier,
                 supplierPartNumber,
                 photoPath,
                 active);
+
+            material.setAdditionalSuppliers(
+                additionalSuppliers);
 
 
             if (!materialManager.createMaterial(material))

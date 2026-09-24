@@ -97,6 +97,9 @@ bool MaterialManager::modifyMaterial(
     material->setDrawingNumber(
         newData.getDrawingNumber());
 
+    material->setDrawingVersion(
+        newData.getDrawingVersion());
+
     material->setManufacturer(
         newData.getManufacturer());
 
@@ -108,6 +111,9 @@ bool MaterialManager::modifyMaterial(
 
     material->setSupplierPartNumber(
         newData.getSupplierPartNumber());
+
+    material->setAdditionalSuppliers(
+        newData.getAdditionalSuppliers());
 
     material->setPhotoPath(
         newData.getPhotoPath());
