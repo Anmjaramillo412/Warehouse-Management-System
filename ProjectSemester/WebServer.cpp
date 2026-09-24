@@ -593,12 +593,14 @@ void WebServer::run()
 
                     // ------------------------------------------------
                     // Type-dependent fields: a Design Part / PCB
-                    // material is identified by its technical drawing
-                    // (Drawing Number + Drawing Version) and has no
-                    // Manufacturer, Manufacturer Part Number, Supplier
-                    // or Supplier Part Number at all; a Standard Part
-                    // is the reverse - see Material::
-                    // requiresDrawingNumber().
+                    // material is a custom-made part, identified by
+                    // its technical drawing (Drawing Number + Drawing
+                    // Version) rather than by a commercial part
+                    // number - so it has no Manufacturer, Manufacturer
+                    // Part Number or Supplier Part Number. It can
+                    // still have a Supplier (the shop that makes/will
+                    // make it), same as a Standard Part - see
+                    // Material::requiresDrawingNumber().
                     // ------------------------------------------------
 
                     SupplierManager& supplierManager =
@@ -608,7 +610,10 @@ void WebServer::run()
 
                     vector<MaterialSupplierLink> additionalSuppliers;
 
-                    if (Material::requiresDrawingNumber(type))
+                    bool isCustomMade =
+                        Material::requiresDrawingNumber(type);
+
+                    if (isCustomMade)
                     {
                         if (!Material::isValidDrawingNumber(drawingNumber))
                         {
@@ -627,62 +632,79 @@ void WebServer::run()
                         }
 
                         // Design Part / PCB: no Manufacturer, no
-                        // Supplier at all.
+                        // Manufacturer Part Number, and no Supplier
+                        // Part Number (nothing here has a commercial
+                        // part number) - but the Supplier itself is
+                        // resolved below like any other material.
                         manufacturer = "";
                         manufacturerPartNumber = "";
-                        supplierPartNumber = "";
                     }
                     else
                     {
-                        // Standard Part: no drawing at all. The
-                        // Supplier itself is optional here - a
-                        // material can be registered before a
-                        // supplier has been sourced/confirmed. If a
-                        // name WAS given, though, it must resolve to
-                        // a real Supplier (an unresolved name is
-                        // treated as a typo, not "no supplier").
+                        // Standard Part: no drawing at all.
                         drawingNumber = "";
                         drawingVersion = "";
+                    }
 
-                        if (!supplierName.empty())
+                    // Supplier is optional at creation for every
+                    // Material type - it can be registered before a
+                    // supplier has been sourced/confirmed. If a name
+                    // WAS given, though, it must resolve to a real
+                    // Supplier (an unresolved name is treated as a
+                    // typo, not "no supplier").
+                    if (!supplierName.empty())
+                    {
+                        supplier =
+                            supplierManager.findSupplier(
+                                supplierName);
+
+                        if (supplier == nullptr)
                         {
-                            supplier =
-                                supplierManager.findSupplier(
-                                    supplierName);
-
-                            if (supplier == nullptr)
-                            {
-                                return crow::response(
-                                    400,
-                                    "Supplier not found. Please create the supplier first.");
-                            }
-
-                            // --------------------------------------
-                            // Resolve additional (non-primary)
-                            // Suppliers - only meaningful once
-                            // there is a primary Supplier.
-                            // --------------------------------------
-
-                            string additionalSuppliersError;
-
-                            if (!resolveAdditionalSuppliers(
-                                body,
-                                supplierManager,
-                                supplierName,
-                                additionalSuppliers,
-                                additionalSuppliersError))
-                            {
-                                return crow::response(
-                                    400,
-                                    additionalSuppliersError);
-                            }
+                            return crow::response(
+                                400,
+                                "Supplier not found. Please create the supplier first.");
                         }
-                        else
+
+                        // ------------------------------------------
+                        // Resolve additional (non-primary)
+                        // Suppliers - only meaningful once there is
+                        // a primary Supplier.
+                        // ------------------------------------------
+
+                        string additionalSuppliersError;
+
+                        if (!resolveAdditionalSuppliers(
+                            body,
+                            supplierManager,
+                            supplierName,
+                            additionalSuppliers,
+                            additionalSuppliersError))
                         {
-                            // No Supplier yet - Supplier Part
-                            // Number and Additional Suppliers don't
-                            // apply without a primary Supplier.
-                            supplierPartNumber = "";
+                            return crow::response(
+                                400,
+                                additionalSuppliersError);
+                        }
+                    }
+                    else
+                    {
+                        // No Supplier yet - Supplier Part Number and
+                        // Additional Suppliers don't apply without a
+                        // primary Supplier.
+                        supplierPartNumber = "";
+                    }
+
+                    if (isCustomMade)
+                    {
+                        // Custom-made parts have no commercial part
+                        // number at all, even once a Supplier is
+                        // assigned - clear the primary Supplier Part
+                        // Number and strip any that were sent along
+                        // with the Additional Suppliers.
+                        supplierPartNumber = "";
+
+                        for (MaterialSupplierLink& link : additionalSuppliers)
+                        {
+                            link.supplierPartNumber = "";
                         }
                     }
 
@@ -1045,7 +1067,10 @@ void WebServer::run()
 
                     vector<MaterialSupplierLink> additionalSuppliers;
 
-                    if (Material::requiresDrawingNumber(type))
+                    bool isCustomMade =
+                        Material::requiresDrawingNumber(type);
+
+                    if (isCustomMade)
                     {
                         if (!Material::isValidDrawingNumber(drawingNumber))
                         {
@@ -1063,47 +1088,63 @@ void WebServer::run()
                                 "letters (e.g. AA, BA).");
                         }
 
+                        // Design Part / PCB: no Manufacturer or
+                        // Manufacturer Part Number - see the same
+                        // block in /api/materials/create.
                         manufacturer = "";
                         manufacturerPartNumber = "";
-                        supplierPartNumber = "";
                     }
                     else
                     {
-                        // Supplier is optional here too - see the
-                        // same block in /api/materials/create.
                         drawingNumber = "";
                         drawingVersion = "";
+                    }
 
-                        if (!supplierName.empty())
+                    // Supplier is optional here too, for every
+                    // Material type - see the same block in
+                    // /api/materials/create.
+                    if (!supplierName.empty())
+                    {
+                        supplier =
+                            supplierManager.findSupplier(
+                                supplierName);
+
+                        if (supplier == nullptr)
                         {
-                            supplier =
-                                supplierManager.findSupplier(
-                                    supplierName);
-
-                            if (supplier == nullptr)
-                            {
-                                return crow::response(
-                                    400,
-                                    "Supplier not found. Please create the supplier first.");
-                            }
-
-                            string additionalSuppliersError;
-
-                            if (!resolveAdditionalSuppliers(
-                                body,
-                                supplierManager,
-                                supplierName,
-                                additionalSuppliers,
-                                additionalSuppliersError))
-                            {
-                                return crow::response(
-                                    400,
-                                    additionalSuppliersError);
-                            }
+                            return crow::response(
+                                400,
+                                "Supplier not found. Please create the supplier first.");
                         }
-                        else
+
+                        string additionalSuppliersError;
+
+                        if (!resolveAdditionalSuppliers(
+                            body,
+                            supplierManager,
+                            supplierName,
+                            additionalSuppliers,
+                            additionalSuppliersError))
                         {
-                            supplierPartNumber = "";
+                            return crow::response(
+                                400,
+                                additionalSuppliersError);
+                        }
+                    }
+                    else
+                    {
+                        supplierPartNumber = "";
+                    }
+
+                    if (isCustomMade)
+                    {
+                        // Custom-made parts have no commercial part
+                        // number at all - see the same block in
+                        // /api/materials/create.
+                        supplierPartNumber = "";
+
+                        for (MaterialSupplierLink& link : additionalSuppliers)
+                        {
+                            link.supplierPartNumber = "";
                         }
                     }
 
@@ -1570,6 +1611,17 @@ void WebServer::run()
                         ? body["leadTimeWeeks"].i()
                         : 0;
 
+                    // An Internal Supplier is 4Tex itself
+                    // (self-manufactured/custom-made parts) rather
+                    // than a real external vendor - its materials are
+                    // excluded from Projections and cannot be bought
+                    // through a Procurement Order.
+
+                    bool isInternal =
+                        body.has("isInternal")
+                        ? body["isInternal"].b()
+                        : false;
+
                     // ------------------------------------------------
                     // Create Supplier
                     // ------------------------------------------------
@@ -1583,7 +1635,8 @@ void WebServer::run()
                         website,
                         orderingMethods,
                         paymentMethod,
-                        leadTimeWeeks);
+                        leadTimeWeeks,
+                        isInternal);
 
                     SupplierManager& supplierManager =
                         warehouseSystem->getSupplierManager();
@@ -1673,6 +1726,9 @@ void WebServer::run()
 
                     item["leadTimeWeeks"] =
                         supplier->getLeadTimeWeeks();
+
+                    item["isInternal"] =
+                        supplier->getIsInternal();
 
                     supplierList.push_back(item);
                 }
@@ -1778,6 +1834,11 @@ void WebServer::run()
                         ? body["leadTimeWeeks"].i()
                         : 0;
 
+                    bool isInternal =
+                        body.has("isInternal")
+                        ? body["isInternal"].b()
+                        : false;
+
                     // ------------------------------------------------
                     // Modify
                     // ------------------------------------------------
@@ -1791,7 +1852,8 @@ void WebServer::run()
                         website,
                         orderingMethods,
                         paymentMethod,
-                        leadTimeWeeks);
+                        leadTimeWeeks,
+                        isInternal);
 
                     bool success =
                         supplierManager.modifySupplier(
@@ -1886,6 +1948,9 @@ void WebServer::run()
                 response["leadTimeWeeks"] =
                     supplier->getLeadTimeWeeks();
 
+                response["isInternal"] =
+                    supplier->getIsInternal();
+
                 return crow::response(response);
             });
 
@@ -1977,6 +2042,9 @@ void WebServer::run()
 
                 response["leadTimeWeeks"] =
                     supplier->getLeadTimeWeeks();
+
+                response["isInternal"] =
+                    supplier->getIsInternal();
 
                 return crow::response(response);
             });
@@ -4706,6 +4774,21 @@ void WebServer::run()
                             "before creating a Procurement Order for it.");
                     }
 
+                    // A Material made by an Internal Supplier (e.g.
+                    // "4Tex GmbH") is internal work, not a real
+                    // purchase - it cannot go through a Procurement
+                    // Order at all.
+
+                    if (material->hasInternalSupplier())
+                    {
+                        return crow::response(
+                            400,
+                            "This Material is made by an Internal Supplier ("
+                            + material->getSupplier()->getName() +
+                            "). It is internal work, not a purchase, so it "
+                            "cannot be ordered through a Procurement Order.");
+                    }
+
 
                     WarehouseManager& warehouseManager =
                         warehouseSystem->getWarehouseManager();
@@ -4922,6 +5005,18 @@ void WebServer::run()
                                 + " has no Supplier assigned yet. Please "
                                 "assign a Supplier in Modify Material "
                                 "before creating a Procurement Order for it.");
+                        }
+
+                        if (lineMaterial->hasInternalSupplier())
+                        {
+                            return crow::response(
+                                400,
+                                "Material " + materialID
+                                + " is made by an Internal Supplier ("
+                                + lineMaterial->getSupplier()->getName() +
+                                "). It is internal work, not a purchase, so "
+                                "it cannot be ordered through a Procurement "
+                                "Order.");
                         }
 
                         if (orderedQuantity <= 0)

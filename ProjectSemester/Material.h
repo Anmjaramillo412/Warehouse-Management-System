@@ -142,6 +142,14 @@ public:
     string getPhotoPath() const;
     bool isActive() const;
 
+    // True when this Material's primary Supplier is an Internal
+    // Supplier (e.g. "4Tex GmbH" - self-manufactured/custom-made,
+    // not a real external vendor). Such a Material is internal work
+    // rather than a real purchase, so it is skipped by Projections
+    // (see ProjectionManager::createProjection()) and refused by
+    // Procurement Order creation (see WebServer.cpp).
+    bool hasInternalSupplier() const;
+
     // Setters
     void setID(const string& id);
     void setName(const string& n);

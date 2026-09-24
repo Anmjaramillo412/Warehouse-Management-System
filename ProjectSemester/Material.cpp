@@ -317,6 +317,12 @@ bool Material::isActive() const
 }
 
 
+bool Material::hasInternalSupplier() const
+{
+    return (supplier != nullptr && supplier->getIsInternal());
+}
+
+
 // ================================================================
 // SETTERS
 // ================================================================

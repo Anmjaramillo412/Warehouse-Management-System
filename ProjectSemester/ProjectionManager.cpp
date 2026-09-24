@@ -86,12 +86,14 @@ ProjectionManager::ProjectionManager(
     WarehouseManager* whManager,
     InventoryManager* invManager,
     MovementLogger* logger,
-    string file)
+    string file,
+    MaterialManager* matManager)
 {
     productManager = prodManager;
     warehouseManager = whManager;
     inventoryManager = invManager;
     movementLogger = logger;
+    materialManager = matManager;
 
     filename = file;
 
@@ -140,6 +142,13 @@ void ProjectionManager::setMovementLogger(
     MovementLogger* logger)
 {
     movementLogger = logger;
+}
+
+
+void ProjectionManager::setMaterialManager(
+    MaterialManager* manager)
+{
+    materialManager = manager;
 }
 
 
@@ -309,6 +318,24 @@ Projection* ProjectionManager::createProjection(
 
     for (const auto& bomItem : product->getBOM())
     {
+        // A BOM material supplied by an Internal Supplier (e.g.
+        // "4Tex GmbH") is internal work, not a real purchase - it is
+        // skipped entirely here, the same way it is refused at
+        // Procurement Order creation (see WebServer.cpp).
+
+        if (materialManager != nullptr)
+        {
+            Material* bomMaterial =
+                materialManager->findMaterial(
+                    bomItem.materialID);
+
+            if (bomMaterial != nullptr &&
+                bomMaterial->hasInternalSupplier())
+            {
+                continue;
+            }
+        }
+
         int required =
             bomItem.quantity * manufactureQuantity;
 

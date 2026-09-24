@@ -32,6 +32,13 @@ private:
     // Open number of weeks
     int leadTimeWeeks;
 
+    // An Internal Supplier is 4Tex itself (self-manufactured/
+    // custom-made parts, e.g. "4Tex GmbH") rather than a real
+    // external vendor. Materials assigned to one are internal work,
+    // not a real purchase - see Material::hasInternalSupplier() and
+    // its uses in Projections and Procurement.
+    bool isInternal;
+
 public:
 
     // Constructor
@@ -44,7 +51,8 @@ public:
         string web = "",
         vector<string> ordering = {},
         string payment = "",
-        int leadTime = 0);
+        int leadTime = 0,
+        bool internal = false);
 
     // Destructor
     ~Supplier();
@@ -59,6 +67,7 @@ public:
     const vector<string>& getOrderingMethods() const;
     string getPaymentMethod() const;
     int getLeadTimeWeeks() const;
+    bool getIsInternal() const;
 
     // Setters
     void setName(const string& n);
@@ -70,6 +79,7 @@ public:
     void setOrderingMethods(const vector<string>& ordering);
     void setPaymentMethod(const string& payment);
     void setLeadTimeWeeks(int leadTime);
+    void setIsInternal(bool internal);
 
     // Serialization helpers
     // (ordering methods stored as a single ";" separated cell)

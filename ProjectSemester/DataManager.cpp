@@ -297,6 +297,7 @@ bool DataManager::save(
         suppliersSheet.cell("G1").value("Ordering Methods");
         suppliersSheet.cell("H1").value("Payment Method");
         suppliersSheet.cell("I1").value("Lead Time (weeks)");
+        suppliersSheet.cell("J1").value("Internal Supplier");
 
 
         int supplierRow = 2;
@@ -345,6 +346,13 @@ bool DataManager::save(
             suppliersSheet.cell(
                 "I" + to_string(supplierRow))
                 .value(supplier->getLeadTimeWeeks());
+
+            suppliersSheet.cell(
+                "J" + to_string(supplierRow))
+                .value(
+                    supplier->getIsInternal()
+                    ? "YES"
+                    : "NO");
 
             supplierRow++;
         }
@@ -658,6 +666,25 @@ bool DataManager::load(
                 int leadTimeWeeks =
                     row[8].value<int>();
 
+                // Internal Supplier (column J) is a newer column -
+                // older data files saved before this feature existed
+                // won't have it, so default to "not internal"
+                // instead of failing to load the whole row.
+
+                bool isInternal = false;
+
+                try
+                {
+                    string internalValue =
+                        row[9].value<string>();
+
+                    isInternal = (internalValue == "YES");
+                }
+                catch (...)
+                {
+                    isInternal = false;
+                }
+
 
                 Supplier supplier(
                     name,
@@ -669,7 +696,8 @@ bool DataManager::load(
                     Supplier::orderingMethodsFromString(
                         orderingMethodsValue),
                     paymentMethod,
-                    leadTimeWeeks);
+                    leadTimeWeeks,
+                    isInternal);
 
 
                 if (!supplierManager.createSupplier(supplier))

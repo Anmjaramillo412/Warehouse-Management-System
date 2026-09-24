@@ -602,6 +602,20 @@ function showCreateSupplier() {
             >
 
 
+            <label class="checkbox-label">
+                <input type="checkbox" id="supplier-is-internal">
+                Internal Supplier
+            </label>
+
+            <small>
+                This Supplier is 4Tex itself (self-manufactured/
+                custom-made parts), not a real external vendor.
+                Materials assigned to it are excluded from
+                Projections and cannot be ordered through a
+                Procurement Order.
+            </small>
+
+
             <div class="form-actions">
 
                 <button onclick="createSupplier()">
@@ -673,6 +687,11 @@ async function createSupplier() {
             ).value
         ) || 0;
 
+    const isInternal =
+        document.getElementById(
+            "supplier-is-internal"
+        ).checked;
+
     const message =
         document.getElementById(
             "supplier-message"
@@ -706,7 +725,9 @@ async function createSupplier() {
 
         paymentMethod: paymentMethod,
 
-        leadTimeWeeks: leadTimeWeeks
+        leadTimeWeeks: leadTimeWeeks,
+
+        isInternal: isInternal
     };
 
 
@@ -955,6 +976,20 @@ async function loadSupplierForModify() {
             <input type="number" id="ms-lead-time" min="0"
                 value="${data.leadTimeWeeks || 0}">
 
+            <label class="checkbox-label">
+                <input type="checkbox" id="ms-is-internal"
+                    ${data.isInternal ? "checked" : ""}>
+                Internal Supplier
+            </label>
+
+            <small>
+                This Supplier is 4Tex itself (self-manufactured/
+                custom-made parts), not a real external vendor.
+                Materials assigned to it are excluded from
+                Projections and cannot be ordered through a
+                Procurement Order.
+            </small>
+
             <div class="form-actions">
 
                 <button onclick="modifySupplierSubmit()">
@@ -1034,6 +1069,11 @@ async function modifySupplierSubmit() {
             ).value
         ) || 0;
 
+    const isInternal =
+        document.getElementById(
+            "ms-is-internal"
+        ).checked;
+
     const message =
         document.getElementById(
             "modify-supplier-message"
@@ -1057,7 +1097,9 @@ async function modifySupplierSubmit() {
 
         paymentMethod: paymentMethod,
 
-        leadTimeWeeks: leadTimeWeeks
+        leadTimeWeeks: leadTimeWeeks,
+
+        isInternal: isInternal
     };
 
     try {
@@ -1188,6 +1230,7 @@ async function displaySuppliers() {
                             <th>Ordering</th>
                             <th>Payment</th>
                             <th>Lead Time</th>
+                            <th>Internal</th>
 
                         </tr>
 
@@ -1211,6 +1254,7 @@ async function displaySuppliers() {
                     <td>${escapeHtml((supplier.orderingMethods || []).join(", "))}</td>
                     <td>${escapeHtml(supplier.paymentMethod || "")}</td>
                     <td>${supplier.leadTimeWeeks} week(s)</td>
+                    <td>${supplier.isInternal ? "Yes" : "No"}</td>
 
                 </tr>
             `;
@@ -1628,7 +1672,7 @@ function showCreateMaterial() {
             </div>
 
 
-            <div id="material-standard-fields-group">
+            <div id="material-manufacturer-fields-group">
 
                 <label>
                     Manufacturer
@@ -1651,6 +1695,10 @@ function showCreateMaterial() {
                     placeholder="Enter Manufacturer Part Number"
                 >
 
+            </div>
+
+
+            <div id="material-supplier-fields-group">
 
                 <label>
                     Primary Supplier
@@ -1684,15 +1732,19 @@ function showCreateMaterial() {
                 </small>
 
 
-                <label>
-                    Primary Supplier Part Number
-                </label>
+                <div id="material-supplier-pn-group">
 
-                <input
-                    type="text"
-                    id="material-supplier-pn"
-                    placeholder="Enter Supplier Part Number"
-                >
+                    <label>
+                        Primary Supplier Part Number
+                    </label>
+
+                    <input
+                        type="text"
+                        id="material-supplier-pn"
+                        placeholder="Enter Supplier Part Number"
+                    >
+
+                </div>
 
 
                 <label>
@@ -1781,9 +1833,14 @@ function toggleDrawingNumberField(prefix) {
             prefix + "-drawing-number-group"
         );
 
-    const standardGroup =
+    const manufacturerGroup =
         document.getElementById(
-            prefix + "-standard-fields-group"
+            prefix + "-manufacturer-fields-group"
+        );
+
+    const supplierPnGroup =
+        document.getElementById(
+            prefix + "-supplier-pn-group"
         );
 
     const requiresDrawing =
@@ -1793,16 +1850,38 @@ function toggleDrawingNumberField(prefix) {
         "hidden",
         !requiresDrawing);
 
-    // A Design Part / PCB material has no Manufacturer, Manufacturer
-    // Part Number, Supplier or Supplier Part Number at all - those
-    // only apply to a Standard Part, so the group toggles the
-    // opposite way from the drawing fields above.
-    if (standardGroup) {
+    // A Design Part / PCB material is custom-made: it has no
+    // Manufacturer, Manufacturer Part Number or Supplier Part
+    // Number (nothing here has a commercial part number) - those
+    // only apply to a Standard Part, so this group toggles the
+    // opposite way from the drawing fields above. The Supplier
+    // itself (just the name, who makes/will make the part) still
+    // applies to every Material type, so its group is never hidden
+    // here - only its Part Number sub-field is.
+    if (manufacturerGroup) {
 
-        standardGroup.classList.toggle(
+        manufacturerGroup.classList.toggle(
             "hidden",
             requiresDrawing);
     }
+
+    if (supplierPnGroup) {
+
+        supplierPnGroup.classList.toggle(
+            "hidden",
+            requiresDrawing);
+    }
+
+    // Additional Suppliers rows also have their own Supplier Part
+    // Number input per row - hide those the same way.
+    document.querySelectorAll(
+        `[id^="${prefix}-addsup-"][id$="-pn"]`
+    ).forEach(input => {
+
+        input.classList.toggle(
+            "hidden",
+            requiresDrawing);
+    });
 }
 
 // ============================================================
@@ -1957,7 +2036,11 @@ function renderSupplierOptions(prefix) {
             matches.map(supplier => `
                 <div class="combobox-option"
                     onmousedown="selectSupplierOption('${prefix}', '${escapeHtml(supplier.name)}')">
-                    ${escapeHtml(supplier.name)}
+                    ${escapeHtml(supplier.name)}${
+                        supplier.isInternal
+                            ? " (Internal - no Projections/Procurement)"
+                            : ""
+                    }
                 </div>
             `).join("");
     }
@@ -2136,6 +2219,30 @@ function addAdditionalSupplierRow(
         `${formPrefix}-addsup-${rowIndex}`,
         selectedName
     );
+
+    // A custom-made Material (Design Part / PCB) has no commercial
+    // part number at all - if that's the current Material Type,
+    // hide this new row's Supplier Part Number input too, same as
+    // the primary one.
+
+    const typeSelect =
+        document.getElementById(`${formPrefix}-type`);
+
+    const requiresDrawing =
+        typeSelect &&
+        (typeSelect.value === "Design Part" ||
+            typeSelect.value === "PCB");
+
+    if (requiresDrawing) {
+
+        const pnInput =
+            document.getElementById(`${formPrefix}-addsup-${rowIndex}-pn`);
+
+        if (pnInput) {
+
+            pnInput.classList.add("hidden");
+        }
+    }
 }
 
 // Reads every Additional Supplier row currently in the form back
@@ -2587,10 +2694,10 @@ async function createMaterial() {
     }
 
 
-    // A Design Part / PCB material needs its technical drawing
-    // (Drawing Number + Drawing Version) and has no Manufacturer or
-    // Supplier at all; a Standard Part is the reverse - see
-    // toggleDrawingNumberField().
+    // A Design Part / PCB material is custom-made, so it needs its
+    // technical drawing (Drawing Number + Drawing Version) and has
+    // no Manufacturer or commercial part number; a Standard Part is
+    // the reverse - see toggleDrawingNumberField().
 
     if (isDesignOrPCB) {
 
@@ -2612,8 +2719,8 @@ async function createMaterial() {
         }
     }
 
-    // Standard Part: the Supplier itself is optional here - a
-    // material can be registered before a Supplier has been
+    // The Supplier itself is optional here for every Material type -
+    // a material can be registered before a Supplier has been
     // sourced/confirmed. If the field was left empty this is fine;
     // if a name WAS typed, the backend confirms it is a real
     // Supplier.
@@ -2649,14 +2756,19 @@ async function createMaterial() {
         manufacturerPartNumber:
             isDesignOrPCB ? "" : manufacturerPartNumber,
 
-        supplier:
-            isDesignOrPCB ? "" : supplier,
+        // A custom-made Material (Design Part / PCB) can still have
+        // a Supplier - it's just identified by name, since a
+        // custom part has no commercial Supplier Part Number.
+        supplier: supplier,
 
         supplierPartNumber:
             isDesignOrPCB ? "" : supplierPartNumber,
 
         additionalSuppliers:
-            isDesignOrPCB ? [] : collectAdditionalSuppliers("material"),
+            collectAdditionalSuppliers("material").map(link =>
+                isDesignOrPCB
+                    ? { supplier: link.supplier, supplierPartNumber: "" }
+                    : link),
 
         photo: photoName,
 
@@ -3938,7 +4050,7 @@ async function loadMaterialForModify() {
                 </div>
 
 
-                <div id="modify-standard-fields-group"
+                <div id="modify-manufacturer-fields-group"
                     class="${
                         (data.type === "Design Part" || data.type === "PCB")
                         ? "hidden"
@@ -3966,6 +4078,10 @@ async function loadMaterialForModify() {
                         value="${escapeHtml(data.manufacturerPartNumber || "")}"
                     >
 
+                </div>
+
+
+                <div id="modify-supplier-fields-group">
 
                     <label>
                         Primary Supplier
@@ -3992,15 +4108,24 @@ async function loadMaterialForModify() {
                     </div>
 
 
-                    <label>
-                        Primary Supplier Part Number
-                    </label>
+                    <div id="modify-supplier-pn-group"
+                        class="${
+                            (data.type === "Design Part" || data.type === "PCB")
+                            ? "hidden"
+                            : ""
+                        }">
 
-                    <input
-                        type="text"
-                        id="modify-supplier-pn"
-                        value="${escapeHtml(data.supplierPartNumber || "")}"
-                    >
+                        <label>
+                            Primary Supplier Part Number
+                        </label>
+
+                        <input
+                            type="text"
+                            id="modify-supplier-pn"
+                            value="${escapeHtml(data.supplierPartNumber || "")}"
+                        >
+
+                    </div>
 
                     <label>
                         Additional Suppliers (optional)
@@ -4318,10 +4443,10 @@ async function modifyMaterial() {
     }
 
 
-    // A Design Part / PCB material needs its technical drawing
-    // (Drawing Number + Drawing Version) and has no Manufacturer or
-    // Supplier at all; a Standard Part is the reverse - see
-    // toggleDrawingNumberField().
+    // A Design Part / PCB material is custom-made, so it needs its
+    // technical drawing (Drawing Number + Drawing Version) and has
+    // no Manufacturer or commercial part number; a Standard Part is
+    // the reverse - see toggleDrawingNumberField().
 
     if (isDesignOrPCB) {
 
@@ -4343,8 +4468,8 @@ async function modifyMaterial() {
         }
     }
 
-    // Standard Part: Supplier is optional here too - see the same
-    // note in createMaterial().
+    // Supplier is optional here too, for every Material type - see
+    // the same note in createMaterial().
 
 
     const material = {
@@ -4373,14 +4498,18 @@ async function modifyMaterial() {
         manufacturerPartNumber:
             isDesignOrPCB ? "" : manufacturerPartNumber,
 
-        supplier:
-            isDesignOrPCB ? "" : supplier,
+        // A custom-made Material (Design Part / PCB) can still have
+        // a Supplier - see the same note in createMaterial().
+        supplier: supplier,
 
         supplierPartNumber:
             isDesignOrPCB ? "" : supplierPartNumber,
 
         additionalSuppliers:
-            isDesignOrPCB ? [] : collectAdditionalSuppliers("modify"),
+            collectAdditionalSuppliers("modify").map(link =>
+                isDesignOrPCB
+                    ? { supplier: link.supplier, supplierPartNumber: "" }
+                    : link),
 
         photo: photoPath,
 
