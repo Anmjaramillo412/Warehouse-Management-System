@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <sstream>
 #include <fstream>
+#include <limits>
 using namespace std;
 
 
@@ -45,6 +46,9 @@ DataManager::DataManager(string file, string configFile)
     // because nobody has visited Data Management Settings yet.
     autoSaveAndLoad = true;
 
+    // Empty until set once from Data Management Settings.
+    documentsFolder = "";
+
     loadConfig();
 }
 
@@ -79,6 +83,28 @@ bool DataManager::setAutoSaveAndLoad(bool enabled)
 }
 
 
+// ================================================================
+// DOCUMENTS FOLDER CONFIGURATION
+// ================================================================
+// Plain text config file, line 1 the "0"/"1" above, line 2 this
+// folder path (may be empty - not configured yet).
+
+string DataManager::getDocumentsFolder() const
+{
+    return documentsFolder;
+}
+
+
+bool DataManager::setDocumentsFolder(const string& folder)
+{
+    documentsFolder = folder;
+
+    saveConfig();
+
+    return true;
+}
+
+
 void DataManager::saveConfig()
 {
     ofstream file(configFilename);
@@ -90,6 +116,8 @@ void DataManager::saveConfig()
 
     file << (autoSaveAndLoad ? 1 : 0) << endl;
 
+    file << documentsFolder << endl;
+
     file.close();
 }
 
@@ -100,7 +128,7 @@ void DataManager::loadConfig()
 
     if (!file.is_open())
     {
-        // No config file yet - keep the default set in the
+        // No config file yet - keep the defaults set in the
         // constructor.
 
         return;
@@ -113,6 +141,21 @@ void DataManager::loadConfig()
     if (value == 0 || value == 1)
     {
         autoSaveAndLoad = (value == 1);
+    }
+
+    // Consume the rest of line 1 (the newline after the digit) before
+    // reading line 2 as a whole line - a folder path may contain
+    // spaces (e.g. "C:\Users\ajaramillo\4Tex Documents").
+
+    file.ignore(
+        numeric_limits<streamsize>::max(),
+        '\n');
+
+    string folderLine;
+
+    if (getline(file, folderLine))
+    {
+        documentsFolder = folderLine;
     }
 
     file.close();

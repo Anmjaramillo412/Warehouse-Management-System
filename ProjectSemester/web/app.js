@@ -426,6 +426,43 @@ function openModule(module) {
 
 
             <h2>
+                Documents Folder
+            </h2>
+
+            <small>
+                Root folder (anywhere on this computer, e.g. a synced
+                folder) where Procurement documents - Order
+                Confirmation and Lieferschein PDFs, attached from
+                Procurement Orders - get saved, one subfolder per
+                "PRC-######". Set this once; uploads are blocked until
+                it is set.
+            </small>
+
+            <div class="form-container">
+
+                <label>
+                    Folder path
+                </label>
+
+                <input
+                    type="text"
+                    id="documents-folder-path"
+                    placeholder="e.g. C:/Users/ajaramillo/4Tex Documents/Procurement"
+                >
+
+                <div class="form-actions">
+                    <button onclick="saveDocumentsFolder()">
+                        Save
+                    </button>
+                </div>
+
+                <div id="documents-folder-message">
+                </div>
+
+            </div>
+
+
+            <h2>
                 Reset Historial Completo
             </h2>
 
@@ -469,6 +506,7 @@ function openModule(module) {
 
         loadDataLoggingState();
         loadAutoSaveAndLoadState();
+        loadDocumentsFolderState();
     }
 }
 
@@ -6290,11 +6328,45 @@ function showCreateProduct() {
 
         </div>
     `;
+
+    bomItemCounter = 0;
 }
 
 // ============================================================
 // ADD BOM ITEM
 // ============================================================
+// Same Material search combobox used everywhere else (Transfer
+// Material, Goods Receipt/Issue, New Procurement Order) - lets a
+// component be found by typing part of its ID or name instead of
+// having to remember the exact Material ID.
+
+let bomItemCounter = 0;
+
+function bomItemRowHtml(prefix) {
+
+    return `
+        <div class="bom-row" id="${prefix}-row">
+
+            ${materialComboboxHtml(prefix, "Search by ID or name...")}
+
+            <input
+                type="number"
+                class="bom-quantity"
+                min="1"
+                placeholder="Quantity"
+            >
+
+            <button
+                type="button"
+                onclick="document.getElementById('${prefix}-row').remove()">
+
+                Remove
+
+            </button>
+
+        </div>
+    `;
+}
 
 function addBOMItemRow() {
 
@@ -6303,46 +6375,23 @@ function addBOMItemRow() {
             "bom-items"
         );
 
+    const rowIndex =
+        bomItemCounter++;
 
-    const row =
-        document.createElement(
-            "div"
-        );
+    const prefix =
+        `bom-item-${rowIndex}`;
 
-    row.className =
-        "bom-row";
+    const wrapper =
+        document.createElement("div");
 
+    wrapper.innerHTML =
+        bomItemRowHtml(prefix).trim();
 
-    row.innerHTML = `
+    container.appendChild(
+        wrapper.firstElementChild
+    );
 
-        <input
-            type="text"
-            class="bom-material-id"
-            placeholder="Material ID"
-            maxlength="10"
-        >
-
-
-        <input
-            type="number"
-            class="bom-quantity"
-            min="1"
-            placeholder="Quantity"
-        >
-
-
-        <button
-            type="button"
-            onclick="this.parentElement.remove()">
-
-            Remove
-
-        </button>
-
-    `;
-
-
-    container.appendChild(row);
+    initMaterialCombobox(prefix);
 }
 
 // ============================================================
@@ -6409,7 +6458,7 @@ async function createProduct() {
 
     const rows =
         document.querySelectorAll(
-            ".bom-row"
+            "#bom-items .bom-row"
         );
 
 
@@ -6418,10 +6467,14 @@ async function createProduct() {
 
     for (const row of rows) {
 
-        const materialID =
+        const materialIDInput =
             row.querySelector(
-                ".bom-material-id"
-            ).value.trim();
+                'input[type="hidden"][id$="-material-id"]'
+            );
+
+        const materialID =
+            materialIDInput ?
+            materialIDInput.value.trim() : "";
 
 
         const quantity =
@@ -6586,6 +6639,35 @@ function showModifyProduct(statusMessage) {
 // ADD BOM ITEM (MODIFY PRODUCT)
 // ============================================================
 
+let modifyBomItemCounter = 0;
+
+function modifyBomItemRowHtml(prefix, quantity) {
+
+    return `
+        <div class="bom-row modify-bom-row" id="${prefix}-row">
+
+            ${materialComboboxHtml(prefix, "Search by ID or name...")}
+
+            <input
+                type="number"
+                class="modify-bom-quantity"
+                min="1"
+                placeholder="Quantity"
+                value="${quantity || ""}"
+            >
+
+            <button
+                type="button"
+                onclick="document.getElementById('${prefix}-row').remove()">
+
+                Remove
+
+            </button>
+
+        </div>
+    `;
+}
+
 function addModifyBOMItemRow(materialID, quantity) {
 
     const container =
@@ -6593,43 +6675,23 @@ function addModifyBOMItemRow(materialID, quantity) {
             "modify-bom-items"
         );
 
-    const row =
-        document.createElement(
-            "div"
-        );
+    const rowIndex =
+        modifyBomItemCounter++;
 
-    row.className =
-        "bom-row modify-bom-row";
+    const prefix =
+        `modify-bom-item-${rowIndex}`;
 
-    row.innerHTML = `
+    const wrapper =
+        document.createElement("div");
 
-        <input
-            type="text"
-            class="modify-bom-material-id"
-            placeholder="Material ID"
-            maxlength="10"
-            value="${escapeHtml(materialID || "")}"
-        >
+    wrapper.innerHTML =
+        modifyBomItemRowHtml(prefix, quantity).trim();
 
-        <input
-            type="number"
-            class="modify-bom-quantity"
-            min="1"
-            placeholder="Quantity"
-            value="${quantity || ""}"
-        >
+    container.appendChild(
+        wrapper.firstElementChild
+    );
 
-        <button
-            type="button"
-            onclick="this.parentElement.remove()">
-
-            Remove
-
-        </button>
-
-    `;
-
-    container.appendChild(row);
+    initMaterialCombobox(prefix, materialID);
 }
 
 // ============================================================
@@ -6743,6 +6805,8 @@ async function loadProductForModify() {
             </div>
         `;
 
+        modifyBomItemCounter = 0;
+
         const bom =
             data.bom || [];
 
@@ -6801,17 +6865,21 @@ async function modifyProductSubmit() {
 
     const rows =
         document.querySelectorAll(
-            ".modify-bom-row"
+            "#modify-bom-items .modify-bom-row"
         );
 
     const bom = [];
 
     for (const row of rows) {
 
-        const materialID =
+        const materialIDInput =
             row.querySelector(
-                ".modify-bom-material-id"
-            ).value.trim();
+                'input[type="hidden"][id$="-material-id"]'
+            );
+
+        const materialID =
+            materialIDInput ?
+            materialIDInput.value.trim() : "";
 
         const quantity =
             Number(
@@ -7793,6 +7861,97 @@ async function toggleAutoSaveAndLoad() {
 
         message.textContent =
             data.message;
+    }
+    catch (error) {
+
+        console.error(error);
+
+        message.textContent =
+            "Could not connect to the server.";
+    }
+}
+
+// ============================================================
+// DOCUMENTS FOLDER (Procurement Order Confirmation / Lieferschein)
+// ============================================================
+
+async function loadDocumentsFolderState() {
+
+    try {
+
+        const response =
+            await fetch("/api/settings/documents-folder");
+
+        const data =
+            await response.json();
+
+        if (!response.ok) {
+            return;
+        }
+
+        const input =
+            document.getElementById(
+                "documents-folder-path"
+            );
+
+        if (input) {
+            input.value =
+                data.documentsFolder || "";
+        }
+    }
+    catch (error) {
+
+        console.error(
+            "Could not load Documents Folder setting:",
+            error
+        );
+    }
+}
+
+async function saveDocumentsFolder() {
+
+    const folder =
+        document.getElementById(
+            "documents-folder-path"
+        ).value.trim();
+
+    const message =
+        document.getElementById(
+            "documents-folder-message"
+        );
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/settings/documents-folder",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        documentsFolder: folder
+                    })
+                }
+            );
+
+        const data =
+            await response.json();
+
+        if (!response.ok) {
+
+            message.textContent =
+                data.message ||
+                "Could not save the Documents Folder.";
+
+            return;
+        }
+
+        message.textContent =
+            folder ?
+            "Documents Folder saved." :
+            "Documents Folder cleared - uploads are blocked until it is set again.";
     }
     catch (error) {
 
@@ -9980,6 +10139,21 @@ function renderProcurementCard(group, cardMode = "open") {
             `;
         }
 
+        // Received/Pending is meaningless before the order is even
+        // confirmed by the supplier - at this stage (Open Orders)
+        // this is still just the Order Confirmation, nothing has
+        // been received or is "pending" yet.
+
+        const receivedPendingFieldHtml =
+            cardMode === "open"
+            ? ""
+            : `
+                <div class="detail-field">
+                    <div class="detail-label">Received / Pending</div>
+                    <div class="detail-value">${line.totalReceivedQuantity} / ${line.pendingQuantity}</div>
+                </div>
+            `;
+
         materialRowsHtml += `
 
             <div class="procurement-line">
@@ -9998,10 +10172,7 @@ function renderProcurementCard(group, cardMode = "open") {
                         <div class="detail-value">${line.orderedQuantity}</div>
                     </div>
 
-                    <div class="detail-field">
-                        <div class="detail-label">Received / Pending</div>
-                        <div class="detail-value">${line.totalReceivedQuantity} / ${line.pendingQuantity}</div>
-                    </div>
+                    ${receivedPendingFieldHtml}
 
                     ${confirmQtyFieldHtml}
 
@@ -10119,6 +10290,84 @@ function renderProcurementCard(group, cardMode = "open") {
         `;
     }
 
+    // Documents (Order Confirmation / Lieferschein): shared across
+    // every line of the whole "PRC-######" - see
+    // ProcurementManager::setOrderConfirmationPath(). Order
+    // Confirmation is a single file that a new upload replaces;
+    // Lieferschein can be several files (one per shipment, for a
+    // partial delivery), so a new upload always adds another one
+    // instead of replacing. Lieferschein only makes sense once the
+    // supplier has actually confirmed the order.
+
+    const orderConfirmationPath =
+        lines[0].orderConfirmationPath || "";
+
+    const lieferscheinPaths =
+        lines[0].lieferscheinPaths || [];
+
+    const canAttachLieferschein =
+        combinedStatus !== "Ordered" &&
+        combinedStatus !== "Cancelled";
+
+    const documentsHtml = `
+
+        <div class="procurement-section">
+
+            <div class="detail-label">
+                Documents
+            </div>
+
+            <div class="procurement-document-row">
+
+                <span>Order Confirmation:</span>
+
+                ${orderConfirmationPath
+                    ? `<a href="/api/procurement/${encodeURIComponent(id)}/documents/order-confirmation/file" target="_blank">View PDF</a>`
+                    : `<em>Not attached</em>`}
+
+                <label class="procurement-document-upload">
+                    ${orderConfirmationPath ? "Replace" : "Upload"}
+                    <input
+                        type="file"
+                        accept="application/pdf"
+                        class="hidden"
+                        onchange="uploadProcurementDocument('${id}', 'order-confirmation', this)">
+                </label>
+
+            </div>
+
+            <div class="procurement-document-row">
+
+                <span>Lieferschein:</span>
+
+                ${canAttachLieferschein
+                    ? `
+                        ${lieferscheinPaths.length
+                            ? lieferscheinPaths
+                                .map((path, index) => `<a href="/api/procurement/${encodeURIComponent(id)}/documents/lieferschein/${index + 1}/file" target="_blank">View PDF ${index + 1}</a>`)
+                                .join(" ")
+                            : `<em>Not attached</em>`}
+
+                        <label class="procurement-document-upload">
+                            + Add Delivery Note
+                            <input
+                                type="file"
+                                accept="application/pdf"
+                                class="hidden"
+                                onchange="uploadProcurementDocument('${id}', 'lieferschein', this)">
+                        </label>
+                    `
+                    : `<em>Available once the order is confirmed</em>`}
+
+            </div>
+
+            <div id="${id}-documents-message" class="procurement-card-message">
+            </div>
+
+        </div>
+    `;
+
+
     return `
 
         <div class="procurement-card collapsed" id="order-${id}">
@@ -10159,6 +10408,8 @@ function renderProcurementCard(group, cardMode = "open") {
 
                 ${receiptButtonHtml}
 
+                ${documentsHtml}
+
                 <div id="${id}-message" class="procurement-card-message">
                 </div>
 
@@ -10166,6 +10417,83 @@ function renderProcurementCard(group, cardMode = "open") {
 
         </div>
     `;
+}
+
+// ============================================================
+// PROCUREMENT ORDERS - UPLOAD DOCUMENT (Order Confirmation /
+// Lieferschein)
+// ============================================================
+// kind is "order-confirmation" or "lieferschein", matching the
+// backend routes - one of each per whole "PRC-######", shared across
+// every material line, saved under the Documents Folder configured
+// in Data Management Settings.
+
+async function uploadProcurementDocument(id, kind, inputEl) {
+
+    const file =
+        inputEl.files[0];
+
+    if (!file) {
+        return;
+    }
+
+    const message =
+        document.getElementById(
+            `${id}-documents-message`
+        );
+
+    if (message) {
+        message.textContent = "Uploading...";
+    }
+
+    try {
+
+        const fileData =
+            await readFileAsBase64(file);
+
+        const response =
+            await fetch(
+                `/api/procurement/${encodeURIComponent(id)}/documents/${kind}`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        fileData: fileData
+                    })
+                }
+            );
+
+        if (!response.ok) {
+
+            const text =
+                await response.text();
+
+            if (message) {
+                message.textContent = text;
+            }
+
+            // Reset the file input so the same file can be retried.
+            inputEl.value = "";
+
+            return;
+        }
+
+        // Re-render the current view so the new "View PDF" link
+        // (and, for Lieferschein, the freshly unlocked section)
+        // appears right away.
+
+        await displayProcurementOrders();
+    }
+    catch (error) {
+
+        console.error(error);
+
+        if (message) {
+            message.textContent = "Could not connect to the server.";
+        }
+    }
 }
 
 // ============================================================
