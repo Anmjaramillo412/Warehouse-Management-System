@@ -3037,7 +3037,7 @@ async function renderMaterialsList(filterFn, headingText, emptyText) {
 
                             <th>Photo</th>
                             <th>Material ID</th>
-                            <th>Name</th>
+                            <th class="material-name-cell">Name</th>
                             <th>UoM</th>
                             <th>Drawing Number</th>
                             <th>Drawing Version</th>
@@ -3082,7 +3082,7 @@ async function renderMaterialsList(filterFn, headingText, emptyText) {
                         ${escapeHtml(material.id)}
                     </td>
 
-                    <td>
+                    <td class="material-name-cell">
                         ${escapeHtml(material.name)}
                     </td>
 
@@ -3213,6 +3213,10 @@ async function showMaterialDetail(id) {
                 <div class="module-buttons material-detail-back">
                     <button onclick="displayMaterials()">
                         ← Back to Materials
+                    </button>
+
+                    <button onclick="modifyMaterialFromDetail('${escapeHtml(data.id)}')">
+                        Modify Material
                     </button>
                 </div>
 
@@ -3572,6 +3576,20 @@ async function searchMaterial() {
 // ============================================================
 // MODIFY MATERIAL FORM
 // ============================================================
+
+// Jumps straight from the Material Detail dashboard into the Modify
+// Material form, with that same material already selected and
+// loaded - so a change from there doesn't need to be looked up again
+// by ID.
+
+async function modifyMaterialFromDetail(id) {
+
+    showModifyMaterial();
+
+    await initMaterialCombobox("modify", id);
+
+    loadMaterialForModify();
+}
 
 function showModifyMaterial(statusMessage) {
 
