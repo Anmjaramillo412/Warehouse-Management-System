@@ -31,6 +31,16 @@ private:
     // Management Settings, persisted across restarts.
     bool autoSaveAndLoad;
 
+    // Root folder (an absolute path anywhere on disk, e.g. a synced
+    // folder of the user's choosing) under which Procurement
+    // documents (Order Confirmation / Lieferschein PDFs) are stored
+    // directly (flat, named after their "PRC-######" number) - see
+    // ProcurementManager's setOrderConfirmationPath()/
+    // addLieferscheinPath() and WebServer.cpp's upload routes. Empty
+    // until set once from Data Management Settings; uploads are
+    // refused until it is set.
+    string documentsFolder;
+
     void loadConfig();
 
     void saveConfig();
@@ -66,4 +76,12 @@ public:
     bool getAutoSaveAndLoad() const;
 
     bool setAutoSaveAndLoad(bool enabled);
+
+    // ------------------------------------------------------------
+    // Documents Folder configuration
+    // ------------------------------------------------------------
+
+    string getDocumentsFolder() const;
+
+    bool setDocumentsFolder(const string& folder);
 };

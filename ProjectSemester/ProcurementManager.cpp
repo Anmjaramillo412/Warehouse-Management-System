@@ -109,7 +109,16 @@ ProcurementManager::ProcurementManager(
             path.parent_path());
     }
 
+    // Documents (Order Confirmation / Lieferschein) live in their own
+    // small file next to the orders file, e.g.
+    // "data/procurement_documents.txt" alongside
+    // "data/procurement_orders.txt".
+
+    documentsFilename =
+        (path.parent_path() / "procurement_documents.txt").string();
+
     load();
+    loadDocuments();
 }
 
 
@@ -815,4 +824,193 @@ void ProcurementManager::clear()
     orders.clear();
 
     nextNumber = 1;
+
+    orderConfirmationPaths.clear();
+    lieferscheinPaths.clear();
+}
+
+
+// ================================================================
+// PROCUREMENT DOCUMENTS (Order Confirmation / Lieferschein)
+// ================================================================
+// One line per document: "type|id|path", where type is either
+// "confirmation" (at most one per id - a new one replaces the
+// previous line) or "delivery" (any number per id, one per line, in
+// the order they were added - a new one is always an extra line,
+// never a replacement). Kept in its own file so the orders file's
+// format never has to change for this.
+
+bool ProcurementManager::setOrderConfirmationPath(
+    const string& id,
+    const string& path)
+{
+    if (id.empty())
+    {
+        return false;
+    }
+
+    if (path.empty())
+    {
+        orderConfirmationPaths.erase(id);
+    }
+    else
+    {
+        orderConfirmationPaths[id] = path;
+    }
+
+    return saveDocuments();
+}
+
+
+bool ProcurementManager::addLieferscheinPath(
+    const string& id,
+    const string& path)
+{
+    if (id.empty() || path.empty())
+    {
+        return false;
+    }
+
+    lieferscheinPaths[id].push_back(path);
+
+    return saveDocuments();
+}
+
+
+string ProcurementManager::getOrderConfirmationPath(
+    const string& id) const
+{
+    auto it = orderConfirmationPaths.find(id);
+
+    return (it != orderConfirmationPaths.end()) ? it->second : "";
+}
+
+
+vector<string> ProcurementManager::getLieferscheinPaths(
+    const string& id) const
+{
+    auto it = lieferscheinPaths.find(id);
+
+    return (it != lieferscheinPaths.end()) ? it->second : vector<string>();
+}
+
+
+bool ProcurementManager::saveDocuments()
+{
+    ofstream file(documentsFilename);
+
+    if (!file.is_open())
+    {
+        return false;
+    }
+
+    for (const auto& entry : orderConfirmationPaths)
+    {
+        file << "confirmation|"
+            << sanitizeField(entry.first) << "|"
+            << sanitizeField(entry.second)
+            << endl;
+    }
+
+    for (const auto& entry : lieferscheinPaths)
+    {
+        for (const string& path : entry.second)
+        {
+            file << "delivery|"
+                << sanitizeField(entry.first) << "|"
+                << sanitizeField(path)
+                << endl;
+        }
+    }
+
+    file.close();
+
+    return true;
+}
+
+
+bool ProcurementManager::loadDocuments()
+{
+    ifstream file(documentsFilename);
+
+    if (!file.is_open())
+    {
+        // No documents file yet - nothing attached anywhere so far.
+
+        return true;
+    }
+
+    orderConfirmationPaths.clear();
+    lieferscheinPaths.clear();
+
+    string line;
+
+    while (getline(file, line))
+    {
+        if (line.empty())
+        {
+            continue;
+        }
+
+        vector<string> fields =
+            splitBy(line, '|');
+
+        if (fields.size() < 2)
+        {
+            continue;
+        }
+
+        const string& type = fields[0];
+        const string& id = fields[1];
+
+        string path =
+            fields.size() > 2 ? fields[2] : "";
+
+        if (path.empty())
+        {
+            continue;
+        }
+
+        if (type == "confirmation")
+        {
+            orderConfirmationPaths[id] = path;
+        }
+        else if (type == "delivery")
+        {
+            lieferscheinPaths[id].push_back(path);
+        }
+        else
+        {
+            // Legacy pre-multi-lieferschein format, written before
+            // this "type|id|path" layout existed:
+            // "id|orderConfirmationPath|lieferscheinPath" - here
+            // fields[0] is actually the PRC id (not a type keyword),
+            // fields[1] the Order Confirmation path, fields[2] (if
+            // any) the single Lieferschein path of that time.
+
+            const string& legacyID = fields[0];
+
+            string legacyConfirmationPath =
+                fields.size() > 1 ? fields[1] : "";
+
+            string legacyLieferscheinPath =
+                fields.size() > 2 ? fields[2] : "";
+
+            if (!legacyConfirmationPath.empty())
+            {
+                orderConfirmationPaths[legacyID] =
+                    legacyConfirmationPath;
+            }
+
+            if (!legacyLieferscheinPath.empty())
+            {
+                lieferscheinPaths[legacyID].push_back(
+                    legacyLieferscheinPath);
+            }
+        }
+    }
+
+    file.close();
+
+    return true;
 }

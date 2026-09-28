@@ -1180,6 +1180,50 @@ footer {
 }
 
 
+.procurement-document-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: #374151;
+    padding: 6px 0;
+}
+
+    .procurement-document-row span {
+        font-weight: bold;
+        color: #1f2937;
+    }
+
+    .procurement-document-row em {
+        color: #6b7280;
+        font-style: normal;
+    }
+
+    .procurement-document-row a {
+        color: #2563eb;
+        text-decoration: underline;
+    }
+
+
+.procurement-document-upload {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: bold;
+    color: #374151;
+    background: #f9fafb;
+    cursor: pointer;
+}
+
+    .procurement-document-upload:hover {
+        background: #f1f5f9;
+    }
+
+
 .procurement-card-message {
     margin-top: 10px;
     font-weight: bold;

@@ -2252,6 +2252,88 @@ void WebServer::run()
             });
 
 // ============================================================
+// DATA MANAGEMENT - DOCUMENTS FOLDER (GET)
+// ============================================================
+// The root folder (an absolute path the user chooses, e.g. a synced
+// folder) under which Procurement documents (Order Confirmation /
+// Lieferschein PDFs) get saved - see the upload routes below.
+
+    CROW_ROUTE(app, "/api/settings/documents-folder")
+        .methods(crow::HTTPMethod::GET)
+        ([warehouseSystem]()
+            {
+                crow::json::wvalue response;
+
+                response["documentsFolder"] =
+                    warehouseSystem->getDataManager()
+                        .getDocumentsFolder();
+
+                return response;
+            });
+
+// ============================================================
+// DATA MANAGEMENT - DOCUMENTS FOLDER (SET)
+// ============================================================
+
+    CROW_ROUTE(app, "/api/settings/documents-folder")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body || !body.has("documentsFolder"))
+                    {
+                        return crow::response(
+                            400,
+                            "documentsFolder is required.");
+                    }
+
+                    string folder =
+                        body["documentsFolder"].s();
+
+                    // Validate it by actually creating it (or
+                    // confirming it already exists) right now,
+                    // instead of discovering later - at upload time -
+                    // that the path was invalid or not writable.
+
+                    if (!folder.empty())
+                    {
+                        try
+                        {
+                            fs::create_directories(folder);
+                        }
+                        catch (const exception&)
+                        {
+                            return crow::response(
+                                400,
+                                "Could not create or access that folder. "
+                                "Check the path and try again.");
+                        }
+                    }
+
+                    warehouseSystem->getDataManager()
+                        .setDocumentsFolder(folder);
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["documentsFolder"] = folder;
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
 // DATA MANAGEMENT - RESET PRC / INVOICE NUMBERING
 // ============================================================
 // Wipes every Procurement Order and every Purchase Invoice (and with
@@ -4016,6 +4098,25 @@ void WebServer::run()
                     item["status"] =
                         order->getStatus();
 
+                    // Shared per "PRC-######", not per line - see
+                    // ProcurementManager::setOrderConfirmationPath().
+
+                    item["orderConfirmationPath"] =
+                        procurementManager.getOrderConfirmationPath(
+                            order->getID());
+
+                    crow::json::wvalue::list lieferscheinList;
+
+                    for (const string& path :
+                        procurementManager.getLieferscheinPaths(
+                            order->getID()))
+                    {
+                        lieferscheinList.push_back(path);
+                    }
+
+                    item["lieferscheinPaths"] =
+                        std::move(lieferscheinList);
+
 
                     crow::json::wvalue::list receiptList;
 
@@ -4051,6 +4152,343 @@ void WebServer::run()
 
 
                 return response;
+            });
+
+// ============================================================
+// PROCUREMENT DOCUMENTS - UPLOAD ORDER CONFIRMATION
+// ============================================================
+// One Order Confirmation PDF per whole "PRC-######" (shared across
+// every material line) - always allowed once the order exists, since
+// a confirmation from the supplier is expected right after placing
+// it. Uploading again replaces the previous file.
+
+    CROW_ROUTE(app, "/api/procurement/<string>/documents/order-confirmation")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req, string id)
+            {
+                try
+                {
+                    ProcurementManager& procurementManager =
+                        warehouseSystem->getProcurementManager();
+
+                    if (procurementManager.findOrder(id) == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Procurement Order not found.");
+                    }
+
+                    string documentsFolder =
+                        warehouseSystem->getDataManager()
+                            .getDocumentsFolder();
+
+                    if (documentsFolder.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Set a Documents Folder first in Data "
+                            "Management Settings.");
+                    }
+
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body || !body.has("fileData"))
+                    {
+                        return crow::response(
+                            400,
+                            "fileData is required.");
+                    }
+
+                    string fileData =
+                        body["fileData"].s();
+
+                    size_t commaPosition =
+                        fileData.find(',');
+
+                    if (commaPosition == string::npos)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid file data.");
+                    }
+
+                    string decoded =
+                        decodeBase64(
+                            fileData.substr(commaPosition + 1));
+
+                    // Saved directly under the Documents Folder root,
+                    // named after the PRC number itself (e.g.
+                    // "PRC-000001 - confirmation.pdf") rather than in
+                    // a per-order subfolder - easier to spot when
+                    // browsing that folder directly.
+
+                    fs::create_directories(documentsFolder);
+
+                    fs::path filePath =
+                        fs::path(documentsFolder) /
+                        (id + " - confirmation.pdf");
+
+                    ofstream outFile(
+                        filePath,
+                        ios::binary);
+
+                    if (!outFile)
+                    {
+                        return crow::response(
+                            500,
+                            "Could not write file.");
+                    }
+
+                    outFile.write(
+                        decoded.data(),
+                        decoded.size());
+
+                    outFile.close();
+
+                    procurementManager.setOrderConfirmationPath(
+                        id,
+                        filePath.string());
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["path"] =
+                        filePath.string();
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
+// PROCUREMENT DOCUMENTS - UPLOAD LIEFERSCHEIN
+// ============================================================
+// Any number of Lieferschein (delivery note) PDFs per whole
+// "PRC-######" - one per shipment, since a partial delivery can
+// arrive in several batches - allowed only once the order has been
+// confirmed by the supplier (at least one line has a Confirmation
+// Date) - just for keeping the paperwork lined up, not a real
+// receiving step. Each upload always adds another file, never
+// replaces a previous one.
+
+    CROW_ROUTE(app, "/api/procurement/<string>/documents/lieferschein")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req, string id)
+            {
+                try
+                {
+                    ProcurementManager& procurementManager =
+                        warehouseSystem->getProcurementManager();
+
+                    vector<ProcurementOrder*> lines =
+                        procurementManager.findOrderLines(id);
+
+                    if (lines.empty())
+                    {
+                        return crow::response(
+                            404,
+                            "Procurement Order not found.");
+                    }
+
+                    bool anyConfirmed =
+                        any_of(
+                            lines.begin(),
+                            lines.end(),
+                            [](ProcurementOrder* line)
+                            {
+                                return !line->getConfirmationDate().empty();
+                            });
+
+                    if (!anyConfirmed)
+                    {
+                        return crow::response(
+                            400,
+                            "Confirm the order first before attaching a "
+                            "Lieferschein.");
+                    }
+
+                    string documentsFolder =
+                        warehouseSystem->getDataManager()
+                            .getDocumentsFolder();
+
+                    if (documentsFolder.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Set a Documents Folder first in Data "
+                            "Management Settings.");
+                    }
+
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body || !body.has("fileData"))
+                    {
+                        return crow::response(
+                            400,
+                            "fileData is required.");
+                    }
+
+                    string fileData =
+                        body["fileData"].s();
+
+                    size_t commaPosition =
+                        fileData.find(',');
+
+                    if (commaPosition == string::npos)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid file data.");
+                    }
+
+                    string decoded =
+                        decodeBase64(
+                            fileData.substr(commaPosition + 1));
+
+                    // Same flat layout as Order Confirmation - saved
+                    // directly under the Documents Folder root, named
+                    // "PRC-000001 - DeliveryNote1.pdf",
+                    // "PRC-000001 - DeliveryNote2.pdf", etc. (the
+                    // next sequential number after however many are
+                    // already attached), so they sit right next to
+                    // that order's confirmation file, one after
+                    // another, when browsing the folder.
+
+                    fs::create_directories(documentsFolder);
+
+                    int nextIndex =
+                        (int)procurementManager
+                            .getLieferscheinPaths(id).size() + 1;
+
+                    fs::path filePath =
+                        fs::path(documentsFolder) /
+                        (id + " - DeliveryNote" +
+                            to_string(nextIndex) + ".pdf");
+
+                    ofstream outFile(
+                        filePath,
+                        ios::binary);
+
+                    if (!outFile)
+                    {
+                        return crow::response(
+                            500,
+                            "Could not write file.");
+                    }
+
+                    outFile.write(
+                        decoded.data(),
+                        decoded.size());
+
+                    outFile.close();
+
+                    procurementManager.addLieferscheinPath(
+                        id,
+                        filePath.string());
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["path"] =
+                        filePath.string();
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
+// PROCUREMENT DOCUMENTS - VIEW (serve the PDF bytes)
+// ============================================================
+
+    CROW_ROUTE(app, "/api/procurement/<string>/documents/order-confirmation/file")
+        ([warehouseSystem](string id)
+            {
+                string path =
+                    warehouseSystem->getProcurementManager()
+                        .getOrderConfirmationPath(id);
+
+                if (path.empty() || !fs::exists(path))
+                {
+                    return crow::response(
+                        404,
+                        "No Order Confirmation on file for this order.");
+                }
+
+                ifstream inFile(
+                    path,
+                    ios::binary);
+
+                ostringstream contents;
+
+                contents << inFile.rdbuf();
+
+                crow::response res(contents.str());
+
+                res.set_header(
+                    "Content-Type",
+                    "application/pdf");
+
+                return res;
+            });
+
+    CROW_ROUTE(app, "/api/procurement/<string>/documents/lieferschein/<int>/file")
+        ([warehouseSystem](string id, int index)
+            {
+                vector<string> paths =
+                    warehouseSystem->getProcurementManager()
+                        .getLieferscheinPaths(id);
+
+                // index is 1-based, matching the DeliveryNote1/2/3...
+                // numbering used in the saved filenames.
+
+                if (index < 1 ||
+                    (size_t)index > paths.size())
+                {
+                    return crow::response(
+                        404,
+                        "No Lieferschein with that number on file for "
+                        "this order.");
+                }
+
+                string path = paths[index - 1];
+
+                if (path.empty() || !fs::exists(path))
+                {
+                    return crow::response(
+                        404,
+                        "No Lieferschein on file for this order.");
+                }
+
+                ifstream inFile(
+                    path,
+                    ios::binary);
+
+                ostringstream contents;
+
+                contents << inFile.rdbuf();
+
+                crow::response res(contents.str());
+
+                res.set_header(
+                    "Content-Type",
+                    "application/pdf");
+
+                return res;
             });
 
 // ============================================================

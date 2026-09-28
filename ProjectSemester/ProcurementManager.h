@@ -3,6 +3,7 @@
 #include <vector>
 #include <memory>
 #include <string>
+#include <map>
 
 #include "ProcurementOrder.h"
 #include "MaterialManager.h"
@@ -30,6 +31,26 @@ private:
     string filename;
 
     int nextNumber;
+
+    // One Order Confirmation PDF, and any number of Lieferschein
+    // (delivery note) PDFs, per "PRC-######" - shared across every
+    // material line of that order, since that is how the supplier's
+    // own documents cover it. Several Lieferscheine are expected
+    // (one per shipment, for a partial delivery), so those are a
+    // list rather than a single path; a new upload always adds
+    // another one, never replaces. Stored as absolute file paths
+    // under the user's configured Documents Folder (see DataManager::
+    // getDocumentsFolder()). Persisted separately from the order
+    // lines themselves (own file) so their fragile packed line format
+    // never has to change.
+
+    map<string, string> orderConfirmationPaths;
+    map<string, vector<string>> lieferscheinPaths;
+
+    string documentsFilename;
+
+    bool saveDocuments();
+    bool loadDocuments();
 
     MaterialManager* materialManager;
     InventoryManager* inventoryManager;
@@ -153,4 +174,29 @@ public:
 
     // Clear all orders (used when reloading system data)
     void clear();
+
+    // ------------------------------------------------------------
+    // Procurement documents (Order Confirmation / Lieferschein)
+    // ------------------------------------------------------------
+    // Shared across every material line of a "PRC-######" - see the
+    // fields above. Saves immediately, same as every other mutating
+    // call here.
+
+    // Order Confirmation: a single file - a new upload replaces the
+    // previous one. Setting an empty path clears the attachment.
+    bool setOrderConfirmationPath(
+        const string& id,
+        const string& path);
+
+    string getOrderConfirmationPath(
+        const string& id) const;
+
+    // Lieferschein: any number of files (one per shipment/partial
+    // delivery) - a new upload always adds another one.
+    bool addLieferscheinPath(
+        const string& id,
+        const string& path);
+
+    vector<string> getLieferscheinPaths(
+        const string& id) const;
 };
