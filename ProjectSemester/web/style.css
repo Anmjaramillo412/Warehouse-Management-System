@@ -691,6 +691,16 @@ footer {
     }
 
 
+    /* Name column: wraps onto two lines instead of stretching the
+       whole table wide enough to fit the longest material name on
+       one line. */
+    .material-table .material-name-cell {
+        max-width: 160px;
+        white-space: normal;
+        word-wrap: break-word;
+    }
+
+
 .empty-message {
     margin-top: 30px;
     padding: 20px;
