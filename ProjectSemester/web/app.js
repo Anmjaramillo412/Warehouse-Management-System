@@ -2441,7 +2441,33 @@ async function initMaterialCombobox(prefix, selectedID) {
     }
 
     hiddenInput.value = selectedID || "";
-    searchInput.value = selectedID || "";
+
+    // Show the full "ID - Name" label, the same as the dropdown
+    // option itself, instead of just the bare ID - much easier to
+    // recognize a Material at a glance than its ID alone (see
+    // selectMaterialOption(), which fills this in the same way right
+    // after a fresh selection).
+
+    searchInput.value =
+        selectedID ?
+        materialComboboxLabel(selectedID) : "";
+}
+
+// Returns "ID - Name" for a Material already in materialCache, or
+// just the ID if it can't be found there (e.g. cache not loaded yet,
+// or the Material was since deleted) - shared by initMaterialCombobox
+// and selectMaterialOption so both fill the search box the same way.
+
+function materialComboboxLabel(materialID) {
+
+    const material =
+        (materialCache || []).find(
+            m => m.id === materialID
+        );
+
+    return material ?
+        `${material.id} — ${material.name}` :
+        materialID;
 }
 
 function renderMaterialOptions(prefix) {
@@ -2532,9 +2558,14 @@ function selectMaterialOption(prefix, id) {
         prefix + "-material-id"
     ).value = id;
 
+    // Full "ID - Name" label, same as materialComboboxLabel() used by
+    // initMaterialCombobox() - so a Material picked from the dropdown
+    // reads the same way whether it was just now selected or loaded
+    // in already selected.
+
     document.getElementById(
         prefix + "-material-id-search"
-    ).value = id;
+    ).value = materialComboboxLabel(id);
 
     document.getElementById(
         prefix + "-material-id-options"
@@ -2646,7 +2677,7 @@ function materialComboboxHtml(prefix, placeholder) {
                 autocomplete="off"
                 placeholder="${placeholder || "Search by ID or name..."}"
                 oninput="handleMaterialSearchInput('${prefix}')"
-                onfocus="renderMaterialOptions('${prefix}')"
+                onfocus="this.select(); renderMaterialOptions('${prefix}')"
                 onblur="hideMaterialOptionsDelayed('${prefix}')"
             >
 
@@ -9648,6 +9679,18 @@ async function displayProcurementOrders() {
 
         content.innerHTML =
             renderProcurementGroupedList(groups, stage);
+
+        // Each Open Order card renders its own "Add Material"
+        // combobox (see renderProcurementCard) - the markup is in the
+        // DOM already (cards start collapsed, not unrendered), so the
+        // material cache just needs to be loaded into each one now.
+
+        if (stage === "open") {
+
+            for (const group of groups) {
+                await initMaterialCombobox(`${group.id}-addmat`, "");
+            }
+        }
     }
     catch (error) {
 
@@ -10215,6 +10258,69 @@ function combineProcurementStatus(lines) {
 }
 
 // ============================================================
+// PROCUREMENT ORDERS - DOCUMENT ROWS MARKUP (Order Confirmation /
+// Lieferschein), shared by the initial card render and by the
+// in-place refresh after an upload (see uploadProcurementDocument) -
+// factored out so uploading a document never has to re-render the
+// whole card (which would collapse it and throw away whatever the
+// operator already typed into Confirmation Date / Qty).
+// ============================================================
+
+function renderProcurementDocumentRows(
+    id,
+    orderConfirmationPath,
+    lieferscheinPaths,
+    canAttachLieferschein) {
+
+    return `
+
+        <div class="procurement-document-row">
+
+            <span>Order Confirmation:</span>
+
+            ${orderConfirmationPath
+                ? `<a href="/api/procurement/${encodeURIComponent(id)}/documents/order-confirmation/file" target="_blank">View PDF</a>`
+                : `<em>Not attached</em>`}
+
+            <label class="procurement-document-upload">
+                ${orderConfirmationPath ? "Replace" : "Upload"}
+                <input
+                    type="file"
+                    accept="application/pdf"
+                    class="hidden"
+                    onchange="uploadProcurementDocument('${id}', 'order-confirmation', this)">
+            </label>
+
+        </div>
+
+        <div class="procurement-document-row">
+
+            <span>Lieferschein:</span>
+
+            ${canAttachLieferschein
+                ? `
+                    ${lieferscheinPaths.length
+                        ? lieferscheinPaths
+                            .map((path, index) => `<a href="/api/procurement/${encodeURIComponent(id)}/documents/lieferschein/${index + 1}/file" target="_blank">View PDF ${index + 1}</a>`)
+                            .join(" ")
+                        : `<em>Not attached</em>`}
+
+                    <label class="procurement-document-upload">
+                        + Add Delivery Note
+                        <input
+                            type="file"
+                            accept="application/pdf"
+                            class="hidden"
+                            onchange="uploadProcurementDocument('${id}', 'lieferschein', this)">
+                    </label>
+                `
+                : `<em>Available once the order is confirmed</em>`}
+
+        </div>
+    `;
+}
+
+// ============================================================
 // PROCUREMENT ORDERS - CARD MARKUP (one order, 1+ material lines)
 // ============================================================
 
@@ -10406,6 +10512,60 @@ function renderProcurementCard(group, cardMode = "open") {
     }
 
 
+    // Add Material (Open Orders only): sometimes another Material for
+    // the same Supplier turns out to be needed only after this
+    // "PRC-######" was already placed - this appends it as one more
+    // line on the same Order (same Warehouse/Order Date) instead of
+    // forcing a whole separate Order for it. Only offered while the
+    // Order is still fully unconfirmed - see the backend route.
+
+    let addMaterialHtml = "";
+
+    if (cardMode === "open") {
+
+        const addMaterialPrefix =
+            `${id}-addmat`;
+
+        addMaterialHtml = `
+
+            <div class="procurement-section">
+
+                <div class="detail-label">
+                    Add Material
+                </div>
+
+                <div class="procurement-inline-form">
+
+                    ${materialComboboxHtml(
+                        addMaterialPrefix,
+                        "Search by ID or name...")}
+
+                    <input
+                        type="number"
+                        min="1"
+                        class="procurement-qty-input"
+                        id="${addMaterialPrefix}-qty"
+                        placeholder="Qty"
+                    >
+
+                    <button
+                        type="button"
+                        onclick="addMaterialToOrder('${id}')">
+
+                        Add Material
+
+                    </button>
+
+                </div>
+
+                <div id="${addMaterialPrefix}-message" class="procurement-card-message">
+                </div>
+
+            </div>
+        `;
+    }
+
+
     // Confirmation (Open Orders only): one shared Order Date and pair
     // of actions for the whole order plus the resulting status badge -
     // the per-material Qty fields now live in each material's own row
@@ -10536,48 +10696,12 @@ function renderProcurementCard(group, cardMode = "open") {
                 Documents
             </div>
 
-            <div class="procurement-document-row">
-
-                <span>Order Confirmation:</span>
-
-                ${orderConfirmationPath
-                    ? `<a href="/api/procurement/${encodeURIComponent(id)}/documents/order-confirmation/file" target="_blank">View PDF</a>`
-                    : `<em>Not attached</em>`}
-
-                <label class="procurement-document-upload">
-                    ${orderConfirmationPath ? "Replace" : "Upload"}
-                    <input
-                        type="file"
-                        accept="application/pdf"
-                        class="hidden"
-                        onchange="uploadProcurementDocument('${id}', 'order-confirmation', this)">
-                </label>
-
-            </div>
-
-            <div class="procurement-document-row">
-
-                <span>Lieferschein:</span>
-
-                ${canAttachLieferschein
-                    ? `
-                        ${lieferscheinPaths.length
-                            ? lieferscheinPaths
-                                .map((path, index) => `<a href="/api/procurement/${encodeURIComponent(id)}/documents/lieferschein/${index + 1}/file" target="_blank">View PDF ${index + 1}</a>`)
-                                .join(" ")
-                            : `<em>Not attached</em>`}
-
-                        <label class="procurement-document-upload">
-                            + Add Delivery Note
-                            <input
-                                type="file"
-                                accept="application/pdf"
-                                class="hidden"
-                                onchange="uploadProcurementDocument('${id}', 'lieferschein', this)">
-                        </label>
-                    `
-                    : `<em>Available once the order is confirmed</em>`}
-
+            <div id="${id}-documents-rows">
+                ${renderProcurementDocumentRows(
+                    id,
+                    orderConfirmationPath,
+                    lieferscheinPaths,
+                    canAttachLieferschein)}
             </div>
 
             <div id="${id}-documents-message" class="procurement-card-message">
@@ -10622,6 +10746,8 @@ function renderProcurementCard(group, cardMode = "open") {
             <div class="procurement-body" id="order-${id}-body" hidden>
 
                 ${materialRowsHtml}
+
+                ${addMaterialHtml}
 
                 ${confirmationHtml}
 
@@ -10699,11 +10825,53 @@ async function uploadProcurementDocument(id, kind, inputEl) {
             return;
         }
 
-        // Re-render the current view so the new "View PDF" link
-        // (and, for Lieferschein, the freshly unlocked section)
-        // appears right away.
+        // Refresh only this card's Documents rows in place (new "View
+        // PDF" link, "Replace"/"+ Add Delivery Note" label, etc.)
+        // instead of re-rendering the whole Open/Confirmed Orders
+        // list. A full re-render would collapse every card back down
+        // and wipe out a Confirmation Date/Qty the operator already
+        // started typing into THIS SAME card - forcing two separate
+        // round trips (attach the file, re-open the card, then fill
+        // in the rest) instead of doing everything in one.
 
-        await displayProcurementOrders();
+        const ordersResponse =
+            await fetch("/api/procurement");
+
+        if (ordersResponse.ok) {
+
+            const ordersData =
+                await ordersResponse.json();
+
+            const orderLines =
+                (ordersData.orders || [])
+                    .filter(order => order.id === id);
+
+            if (orderLines.length > 0) {
+
+                const combinedStatus =
+                    combineProcurementStatus(orderLines);
+
+                const rowsContainer =
+                    document.getElementById(
+                        `${id}-documents-rows`
+                    );
+
+                if (rowsContainer) {
+
+                    rowsContainer.innerHTML =
+                        renderProcurementDocumentRows(
+                            id,
+                            orderLines[0].orderConfirmationPath || "",
+                            orderLines[0].lieferscheinPaths || [],
+                            combinedStatus !== "Ordered" &&
+                                combinedStatus !== "Cancelled");
+                }
+            }
+        }
+
+        if (message) {
+            message.textContent = "";
+        }
     }
     catch (error) {
 
@@ -11044,6 +11212,109 @@ async function cancelOrderGroup(id) {
                     },
 
                     body: JSON.stringify({ id: id })
+                }
+            );
+
+        if (!response.ok) {
+
+            const errorText =
+                await response.text();
+
+            if (message) {
+                message.textContent =
+                    "Error: " + errorText;
+            }
+
+            return;
+        }
+
+        await displayProcurementOrders();
+    }
+    catch (error) {
+
+        console.error(error);
+
+        if (message) {
+            message.textContent =
+                "Could not connect to the server.";
+        }
+    }
+}
+
+// ============================================================
+// PROCUREMENT ORDERS - ADD MATERIAL TO AN EXISTING OPEN ORDER
+// ============================================================
+// Lets one more Material be added straight onto an already-placed
+// but still unconfirmed "PRC-######", instead of forcing a whole new
+// Order for something that came up after the fact for the same
+// Supplier - see the backend route for the full reasoning and the
+// checks it runs (same Supplier, not yet confirmed, not already on
+// this order).
+
+async function addMaterialToOrder(id) {
+
+    const prefix =
+        `${id}-addmat`;
+
+    const materialID =
+        document.getElementById(
+            `${prefix}-material-id`
+        ).value.trim();
+
+    const qtyInput =
+        document.getElementById(
+            `${prefix}-qty`
+        );
+
+    const orderedQuantity =
+        Number(qtyInput.value);
+
+    const message =
+        document.getElementById(
+            `${prefix}-message`
+        );
+
+    if (message) {
+        message.textContent = "";
+    }
+
+    if (!materialID) {
+
+        if (message) {
+            message.textContent =
+                "Please select a Material from the list.";
+        }
+
+        return;
+    }
+
+    if (!qtyInput.value || orderedQuantity <= 0) {
+
+        if (message) {
+            message.textContent =
+                "Please enter a Quantity greater than zero.";
+        }
+
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch(
+                `/api/procurement/${encodeURIComponent(id)}/add-material`,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        materialID: materialID,
+                        orderedQuantity: orderedQuantity
+                    })
                 }
             );
 

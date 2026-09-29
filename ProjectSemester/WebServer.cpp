@@ -4700,7 +4700,23 @@ void WebServer::run()
                                 projectionManager,
                                 procurementManager);
 
-                        if (ordered < projItem.requiredQuantity)
+                        // Live Virtual Stock also covers part (or
+                        // all) of the requirement, the same as in the
+                        // single-Projection endpoint below - without
+                        // this, a material with plenty of stock but
+                        // zero Procurement Orders would always read
+                        // as "Pending Orders", even though nothing
+                        // actually needs to be ordered for it.
+
+                        int stock =
+                            projectionManager.getVirtualStock(
+                                projItem.materialID,
+                                projection->getID());
+
+                        int stillNeeded =
+                            projItem.requiredQuantity - stock - ordered;
+
+                        if (stillNeeded > 0)
                         {
                             fullyOrdered = false;
                             break;
@@ -4817,8 +4833,25 @@ void WebServer::run()
                             projectionManager,
                             procurementManager);
 
+                    // Live Virtual Stock (see below) also covers part
+                    // of the requirement before anything even needs
+                    // to be ordered - the previous version only
+                    // subtracted what was already covered by real
+                    // Procurement Orders, so a material that still had
+                    // plenty of stock on the shelf (e.g. 22 in stock
+                    // for 30 required) was shown as needing the FULL
+                    // required quantity ordered (30) instead of just
+                    // the actual shortfall (8).
+
+                    int stockForPending =
+                        projectionManager.getVirtualStock(
+                            projItem.materialID,
+                            projection->getID());
+
                     int pending =
-                        projItem.requiredQuantity - ordered;
+                        projItem.requiredQuantity -
+                        stockForPending -
+                        ordered;
 
                     if (pending < 0)
                     {
@@ -4867,12 +4900,11 @@ void WebServer::run()
                     // has already reserved for this material - see
                     // ProjectionManager::getVirtualStock(). This
                     // Projection's own reservation is excluded so it
-                    // is not subtracted from itself.
+                    // is not subtracted from itself. Same value used
+                    // above to compute "pending".
 
                     itemJson["currentStock"] =
-                        projectionManager.getVirtualStock(
-                            projItem.materialID,
-                            projection->getID());
+                        stockForPending;
 
 
                     itemJson["orderedQuantity"] =
@@ -5643,6 +5675,224 @@ void WebServer::run()
 
                     response["message"] =
                         "Procurement Order created successfully.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
+// PROCUREMENT - ADD MATERIAL TO AN EXISTING (UNCONFIRMED) ORDER
+// ============================================================
+// Sometimes another Material for the same Supplier is only needed
+// after the "PRC-######" was already placed - rather than forcing a
+// brand new Order (and a new Supplier confirmation/Lieferschein
+// cycle) for it, this adds one more line straight onto the existing
+// Order, sharing its Warehouse and Order Date. Only allowed while
+// the Order is still fully unconfirmed (Open Orders) - once the
+// Supplier has confirmed anything on it, appending a line would be
+// changing an order they already agreed to.
+// Body: { materialID, orderedQuantity, comment }
+
+    CROW_ROUTE(app, "/api/procurement/<string>/add-material")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req, string id)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+
+                    string materialID =
+                        body["materialID"].s();
+
+                    int orderedQuantity =
+                        body["orderedQuantity"].i();
+
+                    string comment = "";
+
+                    if (body.has("comment"))
+                    {
+                        comment =
+                            body["comment"].s();
+                    }
+
+
+                    // ------------------------------------------------
+                    // Existing order must already exist and still be
+                    // fully unconfirmed
+                    // ------------------------------------------------
+
+                    ProcurementManager& procurementManager =
+                        warehouseSystem->getProcurementManager();
+
+                    vector<ProcurementOrder*> existingLines =
+                        procurementManager.findOrderLines(id);
+
+                    if (existingLines.empty())
+                    {
+                        return crow::response(
+                            404,
+                            "Procurement Order not found.");
+                    }
+
+                    for (ProcurementOrder* line : existingLines)
+                    {
+                        if (line->getStatus() != "Ordered")
+                        {
+                            return crow::response(
+                                400,
+                                "Materials can only be added to an Order "
+                                "that has not been confirmed yet.");
+                        }
+
+                        if (line->getMaterialID() == materialID)
+                        {
+                            return crow::response(
+                                400,
+                                "This Material is already part of this "
+                                "Procurement Order. Use its Qty field to "
+                                "change the quantity instead.");
+                        }
+                    }
+
+
+                    // ------------------------------------------------
+                    // Validate the new Material the same way as when
+                    // creating an Order
+                    // ------------------------------------------------
+
+                    if (!Material::isValidID(materialID))
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid Material ID. Expected format ###-###### or ######-00.");
+                    }
+
+                    MaterialManager& materialManager =
+                        warehouseSystem->getMaterialManager();
+
+                    Material* material =
+                        materialManager.findMaterial(materialID);
+
+                    if (material == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Material not found.");
+                    }
+
+                    if (material->getSupplier() == nullptr)
+                    {
+                        return crow::response(
+                            400,
+                            "This Material has no Supplier assigned yet. "
+                            "Please assign a Supplier in Modify Material "
+                            "before adding it to a Procurement Order.");
+                    }
+
+                    if (material->hasInternalSupplier())
+                    {
+                        return crow::response(
+                            400,
+                            "This Material is made by an Internal Supplier ("
+                            + material->getSupplier()->getName() +
+                            "). It is internal work, not a purchase, so it "
+                            "cannot be ordered through a Procurement Order.");
+                    }
+
+
+                    // Every line of one "PRC-######" is shown under one
+                    // Supplier heading in the UI - a new line for a
+                    // different Supplier would be misleading there, and
+                    // an Order Confirmation/Lieferschein from Supplier A
+                    // should not end up covering a line meant for
+                    // Supplier B.
+
+                    Material* firstLineMaterial =
+                        materialManager.findMaterial(
+                            existingLines[0]->getMaterialID());
+
+                    Supplier* orderSupplier =
+                        (firstLineMaterial != nullptr) ?
+                        firstLineMaterial->getSupplier() : nullptr;
+
+                    string orderSupplierName =
+                        (orderSupplier != nullptr) ?
+                        orderSupplier->getName() : "";
+
+                    string newMaterialSupplierName =
+                        material->getSupplier()->getName();
+
+                    if (!orderSupplierName.empty() &&
+                        newMaterialSupplierName != orderSupplierName)
+                    {
+                        return crow::response(
+                            400,
+                            "This Material's Supplier (" +
+                            newMaterialSupplierName +
+                            ") does not match this Order's Supplier (" +
+                            orderSupplierName +
+                            "). Create a separate Procurement Order for a "
+                            "different Supplier.");
+                    }
+
+
+                    if (orderedQuantity <= 0)
+                    {
+                        return crow::response(
+                            400,
+                            "Ordered Quantity must be greater than zero.");
+                    }
+
+
+                    // ------------------------------------------------
+                    // Add the line - same Warehouse and Order Date as
+                    // the rest of this Order, not tied to any Product/
+                    // Projection since it was added independently.
+                    // ------------------------------------------------
+
+                    ProcurementOrder* newLine =
+                        procurementManager.createOrder(
+                            "",
+                            materialID,
+                            existingLines[0]->getWarehouseID(),
+                            existingLines[0]->getOrderDate(),
+                            orderedQuantity,
+                            comment,
+                            "",
+                            id);
+
+                    if (newLine == nullptr)
+                    {
+                        return crow::response(
+                            400,
+                            "Could not add Material to this Procurement Order.");
+                    }
+
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["id"] = id;
+
+                    response["message"] =
+                        "Material added to the Procurement Order.";
 
                     return crow::response(response);
                 }
