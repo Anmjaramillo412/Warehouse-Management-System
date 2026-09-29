@@ -697,6 +697,16 @@ footer {
     }
 
 
+    /* Display Materials only: every column gets a fixed share of the
+       table's width (see the <colgroup> in the table's HTML), so the
+       whole thing fits within the page without a horizontal scroll
+       bar - unlike the other tables sharing .material-table-container
+       above, which can still be wider than the screen and scroll. */
+    .material-table-container-fit {
+        overflow-x: visible;
+    }
+
+
 .material-table {
     width: 100%;
     border-collapse: collapse;
@@ -725,11 +735,40 @@ footer {
     }
 
 
-    /* Name column: wraps onto two lines instead of stretching the
-       whole table wide enough to fit the longest material name on
-       one line. */
+    /* Display Materials only (the table also marked
+       .material-table-clickable): fixed column widths from the
+       <colgroup> in the HTML instead of auto-sizing to content, so
+       the table always fits the page width - the space that used to
+       go to a wide, one-line "Drawing Version" header is given to
+       the other columns instead. Text wraps within each column's
+       fixed width rather than forcing it wider. */
+    .material-table-clickable {
+        table-layout: fixed;
+    }
+
+        .material-table-clickable th {
+            white-space: normal;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+
+        .material-table-clickable td {
+            overflow-wrap: break-word;
+            word-break: break-word;
+        }
+
+        .material-table-clickable .material-drawing-version-cell {
+            text-align: center;
+            line-height: 1.3;
+        }
+
+
+    /* Name column: wraps onto two (or more) lines instead of
+       stretching the whole table wide enough to fit the longest
+       material name on one line - the actual width now comes from
+       the <colgroup> above. */
     .material-table .material-name-cell {
-        max-width: 160px;
         white-space: normal;
         word-wrap: break-word;
     }
