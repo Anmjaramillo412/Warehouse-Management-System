@@ -124,6 +124,40 @@ body {
 }
 
 
+/* Exit: same menu-card layout, colored to read as "leaving the app"
+   rather than another module to open. */
+.menu-card-exit {
+    background: #fef2f2;
+}
+
+    .menu-card-exit h2 {
+        color: #991b1b;
+    }
+
+    .menu-card-exit .arrow {
+        color: #b91c1c;
+    }
+
+
+/* Shown in place of the whole page once Exit has shut the server
+   down - there is nothing left to interact with. */
+.exit-message {
+    max-width: 600px;
+    margin: 100px auto;
+    padding: 40px;
+    text-align: center;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+    .exit-message p {
+        color: #6b7280;
+        font-size: 16px;
+        margin-top: 15px;
+    }
+
+
 /* ============================================================
    MODULE VIEW
 ============================================================ */
