@@ -27,6 +27,14 @@ WarehouseSystem::WarehouseSystem()
 {
     dataManager.setMovementLogger(
         &movementLogger);
+
+    // So sellProduct() can skip BOM materials made by an Internal
+    // Supplier (see InventoryManager.h) - not passed as a constructor
+    // argument above because inventoryManager's constructor predates
+    // this need and other code already calls it with just
+    // (warehouseManager, movementLogger) elsewhere.
+    inventoryManager.setMaterialManager(
+        &materialManager);
 }
 
 

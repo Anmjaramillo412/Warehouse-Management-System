@@ -12,13 +12,16 @@ using namespace std;
 Product::Product(
     string id,
     string n,
-    string d)
+    string d,
+    int mainWhID)
 {
     ID = id;
 
     name = n;
 
     description = d;
+
+    mainWarehouseID = mainWhID;
 }
 
 
@@ -60,6 +63,12 @@ Product::getBOM() const
 }
 
 
+int Product::getMainWarehouseID() const
+{
+    return mainWarehouseID;
+}
+
+
 // ================================================================
 // SETTERS
 // ================================================================
@@ -82,6 +91,13 @@ void Product::setDescription(
     const string& d)
 {
     description = d;
+}
+
+
+void Product::setMainWarehouseID(
+    int id)
+{
+    mainWarehouseID = id;
 }
 
 

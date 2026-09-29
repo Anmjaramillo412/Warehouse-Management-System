@@ -3349,6 +3349,12 @@ void WebServer::run()
                     string description =
                         body["description"].s();
 
+                    // Optional - 0 means "none set", same as a
+                    // Product that never had one assigned.
+                    int mainWarehouseID =
+                        body.has("mainWarehouseID") ?
+                        body["mainWarehouseID"].i() : 0;
+
 
                     // ------------------------------------------------
                     // Validate Product ID
@@ -3370,6 +3376,16 @@ void WebServer::run()
                     }
 
 
+                    if (mainWarehouseID != 0 &&
+                        warehouseSystem->getWarehouseManager()
+                            .findWarehouse(mainWarehouseID) == nullptr)
+                    {
+                        return crow::response(
+                            400,
+                            "Main Warehouse not found.");
+                    }
+
+
                     // ------------------------------------------------
                     // Create Product
                     // ------------------------------------------------
@@ -3377,7 +3393,8 @@ void WebServer::run()
                     Product product(
                         id,
                         name,
-                        description);
+                        description,
+                        mainWarehouseID);
 
 
                     // ------------------------------------------------
@@ -3496,6 +3513,9 @@ void WebServer::run()
                 response["description"] =
                     product->getDescription();
 
+                response["mainWarehouseID"] =
+                    product->getMainWarehouseID();
+
                 crow::json::wvalue::list bomList;
 
                 for (const auto& bomItem :
@@ -3553,7 +3573,10 @@ void WebServer::run()
                     ProductManager& productManager =
                         warehouseSystem->getProductManager();
 
-                    if (productManager.findProduct(id) == nullptr)
+                    Product* existingProduct =
+                        productManager.findProduct(id);
+
+                    if (existingProduct == nullptr)
                     {
                         return crow::response(
                             404,
@@ -3565,6 +3588,24 @@ void WebServer::run()
                         return crow::response(
                             400,
                             "Product Name is required.");
+                    }
+
+                    // Optional - if the request does not send it at
+                    // all, keep whatever the Product already has
+                    // rather than silently clearing it back to "none
+                    // set". Sending 0 explicitly does clear it.
+                    int mainWarehouseID =
+                        body.has("mainWarehouseID") ?
+                        body["mainWarehouseID"].i() :
+                        existingProduct->getMainWarehouseID();
+
+                    if (mainWarehouseID != 0 &&
+                        warehouseSystem->getWarehouseManager()
+                            .findWarehouse(mainWarehouseID) == nullptr)
+                    {
+                        return crow::response(
+                            400,
+                            "Main Warehouse not found.");
                     }
 
 
@@ -3631,7 +3672,8 @@ void WebServer::run()
                         id,
                         name,
                         description,
-                        bom))
+                        bom,
+                        mainWarehouseID))
                     {
                         return crow::response(
                             400,
@@ -3702,6 +3744,33 @@ void WebServer::run()
                     item["description"] =
                         product->getDescription();
 
+                    int mainWarehouseID =
+                        product->getMainWarehouseID();
+
+                    item["mainWarehouseID"] =
+                        mainWarehouseID;
+
+                    // Looked up here once per product rather than
+                    // making the frontend match IDs against the
+                    // separate /api/warehouses list.
+                    Warehouse* mainWarehouse = nullptr;
+
+                    if (mainWarehouseID != 0)
+                    {
+                        for (Warehouse* warehouse : warehouses)
+                        {
+                            if (warehouse->getID() == mainWarehouseID)
+                            {
+                                mainWarehouse = warehouse;
+                                break;
+                            }
+                        }
+                    }
+
+                    item["mainWarehouseName"] =
+                        (mainWarehouse != nullptr) ?
+                        mainWarehouse->getName() : "";
+
 
                     crow::json::wvalue::list bomList;
 
@@ -3722,6 +3791,10 @@ void WebServer::run()
                             (material != nullptr) ?
                             material->getName() : "";
 
+                        bom["drawingNumber"] =
+                            (material != nullptr) ?
+                            material->getDrawingNumber() : "";
+
                         bom["quantity"] =
                             bomItem.quantity;
 
@@ -3730,14 +3803,25 @@ void WebServer::run()
                         // Stock of this material in each Warehouse, so the
                         // UI can flag whether there is enough on hand to
                         // build 10 units of this Product (10 * bomItem's
-                        // per-unit quantity, per Warehouse).
-                        // ------------------------------------------------
+                        // per-unit quantity, per Warehouse). Once a
+                        // Product has a Main Warehouse set, only that
+                        // Warehouse's stock is worth showing - every other
+                        // Warehouse is almost always irrelevant/zero for
+                        // this Product, and just adds noise. A Product
+                        // that has never had a Main Warehouse assigned
+                        // (mainWarehouse == nullptr) falls back to the
+                        // original behavior of listing every Warehouse.
 
                         crow::json::wvalue::list warehouseStockList;
 
-
                         for (const Warehouse* warehouse : warehouses)
                         {
+                            if (mainWarehouse != nullptr &&
+                                warehouse != mainWarehouse)
+                            {
+                                continue;
+                            }
+
                             crow::json::wvalue stockItem;
 
                             stockItem["warehouseID"] =

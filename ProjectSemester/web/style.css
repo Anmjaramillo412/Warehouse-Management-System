@@ -774,6 +774,39 @@ footer {
     }
 
 
+    /* Sticky header, without forcing table-layout:fixed the way
+       .material-table-clickable does - used where a table's columns
+       don't need fixed widths (e.g. Display Products), just a header
+       that stays visible while scrolling past a long table. Needs
+       .material-table-container-fit on the table's container (see
+       above) - a container left at overflow-x:auto silently becomes
+       a scroll container of its own (per the CSS spec, overflow-x
+       auto with overflow-y visible computes overflow-y to auto too),
+       which would trap the sticky header inside it instead of the
+       page. */
+    .material-table-sticky thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+    }
+
+
+.product-main-warehouse {
+    margin: -10px 0 15px;
+    color: #374151;
+    font-size: 14px;
+}
+
+    .product-main-warehouse-unset {
+        color: #b45309;
+    }
+
+
+.product-bom-drawing-number {
+    color: #6b7280;
+}
+
+
 .empty-message {
     margin-top: 30px;
     padding: 20px;

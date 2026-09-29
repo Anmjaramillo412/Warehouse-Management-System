@@ -455,6 +455,9 @@ bool DataManager::save(
         productsSheet.cell("C1")
             .value("Description");
 
+        productsSheet.cell("D1")
+            .value("Main Warehouse ID");
+
 
         int productRow = 2;
 
@@ -476,6 +479,10 @@ bool DataManager::save(
             productsSheet.cell(
                 "C" + to_string(productRow))
                 .value(product->getDescription());
+
+            productsSheet.cell(
+                "D" + to_string(productRow))
+                .value(product->getMainWarehouseID());
 
             productRow++;
         }
@@ -1126,10 +1133,29 @@ bool DataManager::load(
                     row[2].value<string>();
 
 
+                // Main Warehouse ID: added after the Products sheet
+                // already existed for some users, so an older file
+                // simply has no column D - defaults to 0 ("none set")
+                // in that case, same as any newly created Product.
+
+                int mainWarehouseID = 0;
+
+                try
+                {
+                    mainWarehouseID =
+                        row[3].value<int>();
+                }
+                catch (...)
+                {
+                    mainWarehouseID = 0;
+                }
+
+
                 Product product(
                     id,
                     name,
-                    description);
+                    description,
+                    mainWarehouseID);
 
 
                 if (!productManager.createProduct(

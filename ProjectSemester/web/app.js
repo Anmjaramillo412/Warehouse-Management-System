@@ -1981,6 +1981,67 @@ async function populateSupplierSelect(selectId, selectedName) {
     }
 }
 
+// Same pattern as populateSupplierSelect() above, for a Product's
+// Main Warehouse (Create Product / Modify Product) - see
+// showDisplayProducts() for where that choice ends up being used, to
+// show only that one Warehouse's stock instead of every Warehouse.
+// "" (empty selection) means "none set", sent to the backend as 0.
+
+async function populateWarehouseSelect(selectId, selectedID) {
+
+    const select =
+        document.getElementById(selectId);
+
+    if (!select) {
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch("/api/warehouses");
+
+        const data =
+            await response.json();
+
+        const warehouses =
+            data.warehouses || [];
+
+        if (warehouses.length === 0) {
+
+            select.innerHTML = `
+                <option value="">
+                    No warehouses available
+                </option>
+            `;
+
+            return;
+        }
+
+        select.innerHTML =
+            `<option value="">No Main Warehouse</option>` +
+            warehouses.map(warehouse => `
+                <option value="${warehouse.id}">
+                    ${escapeHtml(warehouse.name)}
+                </option>
+            `).join("");
+
+        if (selectedID) {
+            select.value = String(selectedID);
+        }
+    }
+    catch (error) {
+
+        console.error(error);
+
+        select.innerHTML = `
+            <option value="">
+                Could not load warehouses
+            </option>
+        `;
+    }
+}
+
 // ============================================================
 // SUPPLIER SEARCH COMBOBOX
 // ============================================================
@@ -6324,6 +6385,24 @@ function showCreateProduct() {
                 placeholder="Enter Product Description"></textarea>
 
 
+            <label>
+                Main Warehouse
+            </label>
+
+            <select id="product-main-warehouse">
+                <option value="">
+                    Loading warehouses...
+                </option>
+            </select>
+
+            <small>
+                Optional. Display Products shows only this
+                Warehouse's stock for this Product instead of every
+                Warehouse - can be set or changed later from Modify
+                Product.
+            </small>
+
+
             <h3>
                 Bill of Materials
             </h3>
@@ -6361,6 +6440,8 @@ function showCreateProduct() {
     `;
 
     bomItemCounter = 0;
+
+    populateWarehouseSelect("product-main-warehouse");
 }
 
 // ============================================================
@@ -6445,6 +6526,13 @@ async function createProduct() {
         document.getElementById(
             "product-description"
         ).value.trim();
+
+    const mainWarehouseID =
+        Number(
+            document.getElementById(
+                "product-main-warehouse"
+            ).value
+        ) || 0;
 
 
     const message =
@@ -6558,6 +6646,8 @@ async function createProduct() {
 
         description: description,
 
+        mainWarehouseID: mainWarehouseID,
+
         bom: bom
 
     };
@@ -6598,7 +6688,8 @@ async function createProduct() {
             clearInputFields([
                 "product-id",
                 "product-name",
-                "product-description"
+                "product-description",
+                "product-main-warehouse"
             ]);
         }
         else {
@@ -6644,12 +6735,7 @@ function showModifyProduct(statusMessage) {
                 Product ID
             </label>
 
-            <input
-                type="text"
-                id="modify-product-lookup-id"
-                placeholder="###-######"
-                maxlength="10"
-            >
+            ${productComboboxHtml("modify-lookup")}
 
             <div class="form-actions">
 
@@ -6664,6 +6750,8 @@ function showModifyProduct(statusMessage) {
 
         </div>
     `;
+
+    initProductCombobox("modify-lookup");
 }
 
 // ============================================================
@@ -6733,7 +6821,7 @@ async function loadProductForModify() {
 
     const id =
         document.getElementById(
-            "modify-product-lookup-id"
+            "modify-lookup-product-id"
         ).value.trim();
 
     const modifyForm =
@@ -6748,7 +6836,7 @@ async function loadProductForModify() {
 
         modifyForm.innerHTML = `
             <p>
-                Invalid Product ID. Expected format ###-######.
+                Please select a valid Product from the list.
             </p>
         `;
 
@@ -6809,6 +6897,22 @@ async function loadProductForModify() {
                 rows="4"
             >${escapeHtml(data.description || "")}</textarea>
 
+            <label>
+                Main Warehouse
+            </label>
+
+            <select id="modify-product-main-warehouse">
+                <option value="">
+                    Loading warehouses...
+                </option>
+            </select>
+
+            <small>
+                Optional. Display Products shows only this
+                Warehouse's stock for this Product instead of every
+                Warehouse.
+            </small>
+
             <h3>
                 Bill of Materials
             </h3>
@@ -6847,6 +6951,10 @@ async function loadProductForModify() {
                 item.materialID,
                 item.quantity);
         }
+
+        populateWarehouseSelect(
+            "modify-product-main-warehouse",
+            data.mainWarehouseID);
     }
     catch (error) {
 
@@ -6880,6 +6988,13 @@ async function modifyProductSubmit() {
         document.getElementById(
             "modify-product-description"
         ).value.trim();
+
+    const mainWarehouseID =
+        Number(
+            document.getElementById(
+                "modify-product-main-warehouse"
+            ).value
+        ) || 0;
 
     const message =
         document.getElementById(
@@ -6945,6 +7060,7 @@ async function modifyProductSubmit() {
         id: id,
         name: name,
         description: description,
+        mainWarehouseID: mainWarehouseID,
         bom: bom
     };
 
@@ -7065,7 +7181,7 @@ async function showDisplayProducts() {
 
             html += `
 
-                <div class="material-table-container">
+                <div class="material-table-container material-table-container-fit">
 
                     <h2>
                         ${escapeHtml(product.id)}
@@ -7078,6 +7194,18 @@ async function showDisplayProducts() {
                             product.description || ""
                         )}
                     </p>
+
+                    ${
+                        product.mainWarehouseName
+                        ? `<p class="product-main-warehouse">
+                                Main Warehouse:
+                                <strong>${escapeHtml(product.mainWarehouseName)}</strong>
+                           </p>`
+                        : `<p class="product-main-warehouse product-main-warehouse-unset">
+                                No Main Warehouse set - showing every warehouse below.
+                                Set one from Modify Product.
+                           </p>`
+                    }
             `;
 
 
@@ -7099,7 +7227,7 @@ async function showDisplayProducts() {
 
                 html += `
 
-                    <table class="material-table">
+                    <table class="material-table material-table-sticky">
 
                         <thead>
 
@@ -7111,6 +7239,10 @@ async function showDisplayProducts() {
 
                                 <th>
                                     Name
+                                </th>
+
+                                <th>
+                                    Drawing Number
                                 </th>
 
                                 <th>
@@ -7171,6 +7303,10 @@ async function showDisplayProducts() {
                                 ${escapeHtml(
                                     item.materialName || ""
                                 )}
+                            </td>
+
+                            <td class="product-bom-drawing-number">
+                                ${escapeHtml(item.drawingNumber || "")}
                             </td>
 
                             <td>
