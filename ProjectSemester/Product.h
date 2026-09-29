@@ -34,13 +34,24 @@ private:
 
     vector<BOMItem> bom;
 
+    // Which Warehouse this product's stock is tracked/displayed
+    // against on the Display Products dashboard - most products only
+    // really live in one warehouse, and always listing every
+    // warehouse's stock (most of it zero/irrelevant) just adds noise.
+    // 0 means "none set yet" - Display Products falls back to
+    // showing every warehouse in that case, the same as before this
+    // field existed. Set from Create Product, or from Modify Product
+    // for a product that already exists.
+    int mainWarehouseID;
+
 public:
 
     // Constructor
     Product(
         string id = "",
         string n = "",
-        string d = "");
+        string d = "",
+        int mainWhID = 0);
 
     // Destructor
     ~Product();
@@ -54,12 +65,16 @@ public:
 
     const vector<BOMItem>& getBOM() const;
 
+    int getMainWarehouseID() const;
+
     // Setters
     void setID(const string& id);
 
     void setName(const string& n);
 
     void setDescription(const string& d);
+
+    void setMainWarehouseID(int id);
 
     // BOM operations
     bool addBOMItem(

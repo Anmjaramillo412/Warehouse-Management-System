@@ -91,7 +91,8 @@ bool ProductManager::modifyProduct(
     const string& id,
     const string& name,
     const string& description,
-    const vector<BOMItem>& bom)
+    const vector<BOMItem>& bom,
+    int mainWarehouseID)
 {
     Product* product =
         findProduct(id);
@@ -128,6 +129,8 @@ bool ProductManager::modifyProduct(
     product->setDescription(description);
 
     product->setBOM(bom);
+
+    product->setMainWarehouseID(mainWarehouseID);
 
 
     return true;

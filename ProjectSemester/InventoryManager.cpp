@@ -11,6 +11,7 @@ InventoryManager::InventoryManager(
 {
     warehouseManager = manager;
     movementLogger = logger;
+    materialManager = nullptr;
 }
 
 
@@ -32,6 +33,16 @@ void InventoryManager::setMovementLogger(
     MovementLogger* logger)
 {
     movementLogger = logger;
+}
+
+// ================================================================
+// SET MATERIAL MANAGER
+// ================================================================
+
+void InventoryManager::setMaterialManager(
+    MaterialManager* manager)
+{
+    materialManager = manager;
 }
 
 // ================================================================
@@ -406,9 +417,32 @@ bool InventoryManager::sellProduct(
     // ============================================================
     // CHECK ALL COMPONENTS BEFORE CHANGING STOCK
     // ============================================================
+    // A BOM material made by an Internal Supplier (see
+    // Material::hasInternalSupplier()) is self-manufactured in-house,
+    // not a purchased item ever received into a Warehouse - it is
+    // internal work that happens alongside the sale, not stock the
+    // sale draws down. Requiring Warehouse stock of it here would
+    // make it impossible to ever sell a Product built around one, so
+    // it is skipped entirely (same reasoning, same pattern as
+    // ProjectionManager::createProjection() skipping it from a
+    // production Projection's shortfall calculation).
 
     for (const BOMItem& item : bom)
     {
+        if (materialManager != nullptr)
+        {
+            Material* bomMaterial =
+                materialManager->findMaterial(
+                    item.materialID);
+
+            if (bomMaterial != nullptr &&
+                bomMaterial->hasInternalSupplier())
+            {
+                continue;
+            }
+        }
+
+
         WarehouseNode* node =
             warehouse->findMaterial(
                 item.materialID);
@@ -436,6 +470,20 @@ bool InventoryManager::sellProduct(
 
     for (const BOMItem& item : bom)
     {
+        if (materialManager != nullptr)
+        {
+            Material* bomMaterial =
+                materialManager->findMaterial(
+                    item.materialID);
+
+            if (bomMaterial != nullptr &&
+                bomMaterial->hasInternalSupplier())
+            {
+                continue;
+            }
+        }
+
+
         int requiredQuantity =
             item.quantity * quantity;
 
