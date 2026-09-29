@@ -9,6 +9,8 @@
 #include <string>
 #include <ctime>
 #include <algorithm>
+#include <thread>
+#include <chrono>
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -2154,6 +2156,54 @@ void WebServer::run()
                 return crow::response(
                     200,
                     "Data saved successfully.");
+            });
+
+// ============================================================
+// EXIT APPLICATION
+// ============================================================
+// Used by the "Exit" button on the main menu, so the user does not
+// have to go back to Visual Studio / the console window to stop the
+// server. Saves everything first (the same save the "Save Data"
+// button performs), then shuts the server down a moment later - the
+// short delay lets this response actually reach the browser before
+// the process exits, instead of the connection dropping mid-request.
+// app.stop() makes app.port(...).run() (see the bottom of this file)
+// return normally, so control flows back to main() and the program
+// ends on its own "return 0;" rather than being killed abruptly.
+
+    CROW_ROUTE(app, "/api/data/exit")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem, &app]()
+            {
+                bool saved =
+                    warehouseSystem->getDataManager()
+                    .save(
+                        warehouseSystem->getMaterialManager(),
+                        warehouseSystem->getSupplierManager(),
+                        warehouseSystem->getWarehouseManager(),
+                        warehouseSystem->getProductManager());
+
+                thread([&app]()
+                    {
+                        this_thread::sleep_for(
+                            chrono::milliseconds(300));
+
+                        app.stop();
+                    }).detach();
+
+                crow::json::wvalue response;
+
+                response["success"] = true;
+
+                response["dataSaved"] = saved;
+
+                response["message"] =
+                    saved ?
+                    "Data saved. Shutting down - you can close this tab." :
+                    "Could not save data, but shutting down anyway - "
+                    "you can close this tab.";
+
+                return crow::response(response);
             });
 
 // ============================================================

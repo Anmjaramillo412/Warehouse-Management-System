@@ -8071,6 +8071,58 @@ function closeModule() {
 }
 
 // ============================================================
+// EXIT APPLICATION
+// ============================================================
+// Saves everything (same as the "Save Data" button) and then shuts
+// the backend server down, so the user does not have to go back to
+// Visual Studio / the console window to stop it. Because this closes
+// the server this page depends on, the response itself may not make
+// it back before the connection drops - that is expected, not an
+// error, so it is not reported as "Could not connect to the server."
+// like every other fetch failure in this app.
+
+async function exitApplication() {
+
+    const confirmed = await showConfirmDialog(
+        "This will save all data and shut down the Warehouse " +
+        "Management System server. You will need to start it again " +
+        "(from Visual Studio) to keep working. Continue?"
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+
+        await fetch(
+            "/api/data/exit",
+            { method: "POST" }
+        );
+    }
+    catch (error) {
+
+        // Expected: the server may shut down before the response
+        // finishes, which surfaces here as a failed fetch.
+    }
+
+    document.body.innerHTML = `
+        <div class="exit-message">
+
+            <h1>
+                Warehouse Management System
+            </h1>
+
+            <p>
+                Data saved. The server has been shut down - you can
+                close this tab.
+            </p>
+
+        </div>
+    `;
+}
+
+// ============================================================
 // PRODUCT SEARCH COMBOBOX
 // ============================================================
 // Same pattern as the Material combobox, used by Production
