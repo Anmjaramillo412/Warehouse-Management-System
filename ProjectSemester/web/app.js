@@ -3023,13 +3023,26 @@ async function renderMaterialsList(filterFn, headingText, emptyText) {
 
         let html = `
 
-            <div class="material-table-container">
+            <div class="material-table-container material-table-container-fit">
 
                 <h2>
                     ${escapeHtml(headingText)}
                 </h2>
 
                 <table class="material-table material-table-clickable">
+
+                    <colgroup>
+                        <col style="width: 6%">
+                        <col style="width: 9%">
+                        <col style="width: 14%">
+                        <col style="width: 5%">
+                        <col style="width: 11%">
+                        <col style="width: 6%">
+                        <col style="width: 12%">
+                        <col style="width: 11%">
+                        <col style="width: 15%">
+                        <col style="width: 11%">
+                    </colgroup>
 
                     <thead>
 
@@ -3040,7 +3053,7 @@ async function renderMaterialsList(filterFn, headingText, emptyText) {
                             <th class="material-name-cell">Name</th>
                             <th>UoM</th>
                             <th>Drawing Number</th>
-                            <th>Drawing Version</th>
+                            <th class="material-drawing-version-cell">Drawing<br>Version</th>
                             <th>Manufacturer</th>
                             <th>Mfr Part #</th>
                             <th>Supplier</th>
@@ -3094,7 +3107,7 @@ async function renderMaterialsList(filterFn, headingText, emptyText) {
                         ${escapeHtml(material.drawingNumber || "")}
                     </td>
 
-                    <td>
+                    <td class="material-drawing-version-cell">
                         ${escapeHtml(material.drawingVersion || "")}
                     </td>
 
