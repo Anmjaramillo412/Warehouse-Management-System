@@ -138,6 +138,28 @@ public:
         const string& materialID,
         bool fullyCovered);
 
+    // Re-scans this Projection's Product BOM for any material that
+    // has newly become short (live) since this Projection was created
+    // or last refreshed, and adds it as a proper item if so - using
+    // the exact same shortfall math as createProjection() (this
+    // Projection's own requirement plus every other open Projection's
+    // requirement for that material/Warehouse, minus actual stock).
+    //
+    // Without this, a material whose stock was comfortable when the
+    // Projection was created but has since been consumed (by another
+    // Projection, a Sale, a Goods Issue - anything) would never
+    // surface as needing an order from ANY open Projection, because
+    // membership was otherwise decided once, at creation time, and
+    // frozen from then on. WebServer.cpp calls this every time an
+    // open Projection is read (list or detail), so the item list
+    // stays current without ever removing a line once added (removal
+    // would lose its orderRegistered/orderRegistrationCount history).
+    //
+    // No-op on a completed Projection or one that cannot be found.
+    // Returns true if anything was added.
+    bool refreshShortfallItems(
+        const string& projectionID);
+
     // Search
     Projection* findProjection(
         const string& id);

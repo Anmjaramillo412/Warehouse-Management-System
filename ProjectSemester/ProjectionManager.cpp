@@ -589,6 +589,111 @@ bool ProjectionManager::registerItemOrderAttempt(
 
 
 // ================================================================
+// REFRESH SHORTFALL ITEMS
+// ================================================================
+// See the header comment on this function (ProjectionManager.h) for
+// why an open Projection's item list needs to keep picking up newly-
+// emerged shortfalls instead of staying frozen at creation time.
+
+bool ProjectionManager::refreshShortfallItems(
+    const string& projectionID)
+{
+    Projection* projection =
+        findProjection(projectionID);
+
+    if (projection == nullptr ||
+        projection->isCompleted() ||
+        productManager == nullptr)
+    {
+        return false;
+    }
+
+    Product* product =
+        productManager->findProduct(
+            projection->getProductID());
+
+    if (product == nullptr)
+    {
+        return false;
+    }
+
+    int warehouseID =
+        projection->getWarehouseID();
+
+    bool anyAdded = false;
+
+    for (const auto& bomItem : product->getBOM())
+    {
+        bool alreadyPresent = false;
+
+        for (const auto& existing : projection->getItems())
+        {
+            if (existing.materialID == bomItem.materialID)
+            {
+                alreadyPresent = true;
+                break;
+            }
+        }
+
+        if (alreadyPresent)
+        {
+            continue;
+        }
+
+        // Same Internal Supplier skip as createProjection() - see
+        // that function for why.
+
+        if (materialManager != nullptr)
+        {
+            Material* bomMaterial =
+                materialManager->findMaterial(
+                    bomItem.materialID);
+
+            if (bomMaterial != nullptr &&
+                bomMaterial->hasInternalSupplier())
+            {
+                continue;
+            }
+        }
+
+        int required =
+            bomItem.quantity *
+            projection->getManufactureQuantity();
+
+        int alreadyOpen =
+            getOpenRequiredQuantity(
+                bomItem.materialID,
+                warehouseID);
+
+        int stock =
+            getWarehouseStock(
+                bomItem.materialID,
+                warehouseID);
+
+        int shortfall =
+            (alreadyOpen + required) - stock;
+
+        if (shortfall > 0)
+        {
+            projection->addItem(
+                bomItem.materialID,
+                required,
+                stock);
+
+            anyAdded = true;
+        }
+    }
+
+    if (anyAdded)
+    {
+        save();
+    }
+
+    return anyAdded;
+}
+
+
+// ================================================================
 // FIND PROJECTION
 // ================================================================
 

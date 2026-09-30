@@ -4641,6 +4641,20 @@ void WebServer::run()
                 for (const auto& projection :
                     projectionManager.getProjections())
                 {
+                    // Pull in any material that has newly become
+                    // short since this Projection was created or last
+                    // refreshed (see ProjectionManager::
+                    // refreshShortfallItems()), so a still-open
+                    // Projection never permanently "misses" a
+                    // shortfall just because it wasn't one yet back
+                    // when the Projection was created.
+
+                    if (!projection->isCompleted())
+                    {
+                        projectionManager.refreshShortfallItems(
+                            projection->getID());
+                    }
+
                     crow::json::wvalue item;
 
                     item["id"] =
@@ -4741,6 +4755,16 @@ void WebServer::run()
                     return crow::response(
                         404,
                         "Projection not found.");
+                }
+
+
+                // Same live "pick up new shortfalls" refresh as the
+                // list route above - see ProjectionManager::
+                // refreshShortfallItems().
+
+                if (!projection->isCompleted())
+                {
+                    projectionManager.refreshShortfallItems(id);
                 }
 
 
