@@ -202,14 +202,28 @@ int ProjectionManager::getWarehouseStock(
 // ================================================================
 // GET OPEN REQUIRED QUANTITY
 // ================================================================
-// Sum of this material's own requiredQuantity across every currently
-// open Projection tied to this Warehouse. "Open" means not yet
-// completed AND the deadline has not passed - a completed Projection
-// already issued (consumed) its BOM from the Warehouse at completion
-// time, so counting its requirement again here would subtract the
-// same units a second time. An overdue-but-not-completed Projection
-// is likewise dropped, on the assumption its plan was already acted on
-// outside the system (goods issued/sold).
+// Sum of this material's TRUE requirement across every currently open
+// Projection tied to this Warehouse. "Open" means not yet completed
+// AND the deadline has not passed - a completed Projection already
+// issued (consumed) its BOM from the Warehouse at completion time, so
+// counting its requirement again here would subtract the same units a
+// second time. An overdue-but-not-completed Projection is likewise
+// dropped, on the assumption its plan was already acted on outside the
+// system (goods issued/sold).
+//
+// This is computed LIVE from each open Projection's Product BOM
+// (quantity * manufactureQuantity), never from that Projection's own
+// recorded items list. Recorded items only hold a material once IT
+// ALONE has already crossed the shortfall line for that Projection -
+// so summing from items would miss a material that no single open
+// Projection needs enough of on its own, even when two or more of
+// them combined clearly exceed stock (e.g. two Projections each
+// needing 30 and 35 units of a material with 54 in stock: neither one
+// alone is short, so neither would ever record it, and the shared
+// total would stay stuck at 0 forever). Summing the live BOM need of
+// every open Projection instead means the true combined demand always
+// shows up, regardless of which Projection's item list has or hasn't
+// caught up yet.
 
 int ProjectionManager::getOpenRequiredQuantity(
     const string& materialID,
@@ -219,6 +233,11 @@ int ProjectionManager::getOpenRequiredQuantity(
 
     string today =
         todayISO();
+
+    if (productManager == nullptr)
+    {
+        return 0;
+    }
 
     for (const auto& projection : projections)
     {
@@ -244,12 +263,43 @@ int ProjectionManager::getOpenRequiredQuantity(
             continue;
         }
 
-        for (const auto& item : projection->getItems())
+        Product* product =
+            productManager->findProduct(
+                projection->getProductID());
+
+        if (product == nullptr)
         {
-            if (item.materialID == materialID)
+            continue;
+        }
+
+        for (const auto& bomItem : product->getBOM())
+        {
+            if (bomItem.materialID != materialID)
             {
-                total += item.requiredQuantity;
+                continue;
             }
+
+            // Same Internal Supplier skip as createProjection() /
+            // refreshShortfallItems() - see those for why.
+
+            if (materialManager != nullptr)
+            {
+                Material* bomMaterial =
+                    materialManager->findMaterial(
+                        bomItem.materialID);
+
+                if (bomMaterial != nullptr &&
+                    bomMaterial->hasInternalSupplier())
+                {
+                    break;
+                }
+            }
+
+            total +=
+                bomItem.quantity *
+                projection->getManufactureQuantity();
+
+            break;
         }
     }
 
@@ -656,11 +706,20 @@ bool ProjectionManager::refreshShortfallItems(
             }
         }
 
+        // This Projection's own share, frozen into the item purely as
+        // its displayed "Required" value - NOT added into the
+        // shortfall check below, since this Projection is already one
+        // of the open Projections getOpenRequiredQuantity() sums over
+        // (it lives in the same projections list this call reads),
+        // and that sum now always reads every open Projection's need
+        // straight from its Product's live BOM. Adding it again here
+        // would double-count it.
+
         int required =
             bomItem.quantity *
             projection->getManufactureQuantity();
 
-        int alreadyOpen =
+        int combinedRequired =
             getOpenRequiredQuantity(
                 bomItem.materialID,
                 warehouseID);
@@ -671,7 +730,7 @@ bool ProjectionManager::refreshShortfallItems(
                 warehouseID);
 
         int shortfall =
-            (alreadyOpen + required) - stock;
+            combinedRequired - stock;
 
         if (shortfall > 0)
         {
