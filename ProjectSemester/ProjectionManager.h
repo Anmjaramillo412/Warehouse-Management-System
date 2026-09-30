@@ -45,12 +45,21 @@ private:
     // Generates the next consecutive ID, e.g. "PRJ-000001"
     string generateNextID();
 
-    // Sum of this material's own requiredQuantity across every
-    // currently open Projection (not completed, deadline today or
-    // later, or no deadline at all) tied to this ONE Warehouse. This
-    // is the "everyone who is competing for this material in this
-    // Warehouse" total - see getQuantityToOrder() below for why it is
-    // never split/attributed per-Projection any more.
+    // Sum of this material's TRUE requirement, computed live from each
+    // Product's BOM, across every currently open Projection (not
+    // completed, deadline today or later, or no deadline at all) tied
+    // to this ONE Warehouse. This is the "everyone who is competing
+    // for this material in this Warehouse" total - see
+    // getQuantityToOrder() below for why it is never split/attributed
+    // per-Projection any more.
+    //
+    // Deliberately NOT summed from each Projection's own recorded
+    // items list: an item is only recorded once a Projection's OWN
+    // share already crosses the shortfall line on its own, so two or
+    // more Projections that are each individually fine but combined
+    // exceed stock would otherwise never surface at all. Reading the
+    // live BOM instead means the true combined demand always counts,
+    // whether or not any single Projection has "caught up" to it yet.
     int getOpenRequiredQuantity(
         const string& materialID,
         int warehouseID) const;
