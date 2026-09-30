@@ -22,6 +22,24 @@ struct ProjectionItem
     int requiredQuantity;
 
     int stockAtCreation;
+
+    // How many times a Procurement Order has been registered against
+    // this line FROM this Projection (see Projection::
+    // registerOrderAttempt()). Capped in practice at 2 - see
+    // orderRegistered below.
+    int orderRegistrationCount = 0;
+
+    // Frozen "no more ordering from this line" flag. Set the moment
+    // either: (a) a single registration already covered this line's
+    // full requiredQuantity, or (b) two registrations have been made
+    // from this line regardless of whether they were enough - by
+    // design, a line only ever gets at most two chances to be ordered
+    // from the Projection view; anything still missing after that is
+    // placed manually from New Order instead. Once set it does not
+    // un-set itself if stock or orders change later (e.g. an order
+    // gets cancelled) - it stays closed until the whole Projection is
+    // completed.
+    bool orderRegistered = false;
 };
 
 
@@ -102,6 +120,23 @@ public:
 
     void setItems(
         const vector<ProjectionItem>& newItems);
+
+    // Registers one order-placement attempt against this item from
+    // the Projection UI: increments orderRegistrationCount, and
+    // freezes orderRegistered (see ProjectionItem) if fullyCovered is
+    // true or this is now the item's second attempt. No-op if
+    // materialID is not one of this Projection's items.
+    void registerOrderAttempt(
+        const string& materialID,
+        bool fullyCovered);
+
+    // Restores a persisted item's order-registration state exactly as
+    // saved - used only by ProjectionManager::load(). No-op if
+    // materialID is not one of this Projection's items.
+    void setItemOrderState(
+        const string& materialID,
+        bool registered,
+        int registrationCount);
 
     // Completion (production confirmed / archived)
     bool isCompleted() const;

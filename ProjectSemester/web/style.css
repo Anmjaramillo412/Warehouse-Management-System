@@ -307,6 +307,28 @@ body {
         }
 
 
+/* Any "...Today" one-click shortcut (Confirm Today, Receipt Today,
+   Register Today): same dark button, one shade lighter at rest so it
+   reads as the quicker/less deliberate variant next to its full-form
+   sibling button, with its own (lighter) hover shade above that. */
+
+.button-today {
+    background: #374151;
+}
+
+    .button-today:hover {
+        background: #4b5563;
+    }
+
+    .procurement-inline-form button.button-today {
+        background: #374151;
+    }
+
+        .procurement-inline-form button.button-today:hover {
+            background: #4b5563;
+        }
+
+
 #module-content {
     background: white;
     padding: 40px;

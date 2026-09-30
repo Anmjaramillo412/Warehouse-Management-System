@@ -141,63 +141,47 @@ static void computeOrderTiming(
 
 
 // ================================================================
-// ORDERED COVERAGE (how much of a Projection's need is actually
-// covered by real Procurement Orders)
+// OUTSTANDING ORDERED QUANTITY (informational only)
 // ================================================================
-// A Procurement Order can be registered two ways: tied to one
-// specific Projection (projectionID set, from that Projection's
-// "Register Order" button), or untied/general (projectionID empty,
-// e.g. registered straight from Procurement Orders). Summing every
-// order's quantity globally for a material - regardless of which
-// Projection it was tied to - let the SAME order satisfy several
-// different Projections' needs for that material at once, so
-// everything read "Fully Ordered" even when only one of them had
-// actually been covered.
-//
-// By decision, an untied order does NOT count as coverage for any
-// Projection - it sits in Procurement as unassigned stock-on-order
-// until someone links it (or it is received, at which point it
-// becomes real stock and shows up through getVirtualStock instead).
-// Only an order tied directly to a Projection counts toward that
-// Projection's "Fully Ordered" status.
+// Live sum of every still-outstanding Procurement Order quantity for
+// a material inside one Warehouse, tied to any Projection or to none.
+// This is shown next to "Qty to Order" purely so the user can judge
+// how much more actually needs ordering - by design the two numbers
+// are never netted against each other (see the Projection/Warehouse
+// redesign notes in ProjectionManager.h/.cpp): the units already on
+// order might be meant for a different Projection than the one being
+// viewed, so the app shows both numbers and leaves that judgment call
+// to the user instead of guessing at an attribution.
 
-static int sumDirectOrdered(
+static int getOutstandingOrderedQuantity(
     const string& materialID,
-    const string& projectionID,
+    int warehouseID,
     ProcurementManager& procurementManager)
 {
     int total = 0;
 
     for (const auto& order : procurementManager.getOrders())
     {
-        if (order->getMaterialID() == materialID &&
-            order->getProjectionID() == projectionID)
+        if (order->getMaterialID() != materialID)
         {
-            total += order->getOrderedQuantity();
+            continue;
         }
+
+        if (order->getWarehouseID() != warehouseID)
+        {
+            continue;
+        }
+
+        if (order->isClosed() ||
+            order->isCancelled())
+        {
+            continue;
+        }
+
+        total += order->getPendingQuantity();
     }
 
     return total;
-}
-
-static int computeOrderedCoverage(
-    const string& materialID,
-    int requiredQuantity,
-    const string& projectionID,
-    ProjectionManager& projectionManager,
-    ProcurementManager& procurementManager)
-{
-    // requiredQuantity, projectionManager are kept as parameters so
-    // every call site stays unchanged even though only the directly
-    // tied orders count now - see the comment block above.
-
-    (void)requiredQuantity;
-    (void)projectionManager;
-
-    return sumDirectOrdered(
-        materialID,
-        projectionID,
-        procurementManager);
 }
 
 
@@ -4640,9 +4624,6 @@ void WebServer::run()
                 ProjectionManager& projectionManager =
                     warehouseSystem->getProjectionManager();
 
-                ProcurementManager& procurementManager =
-                    warehouseSystem->getProcurementManager();
-
                 ProductManager& productManager =
                     warehouseSystem->getProductManager();
 
@@ -4682,41 +4663,24 @@ void WebServer::run()
 
 
                     // Status: "Fully Ordered" once every item's
-                    // required quantity is actually covered - see
-                    // computeOrderedCoverage() above for why a plain
-                    // global sum over-credited shared orders to more
-                    // than one Projection at once.
+                    // shared, Warehouse-scoped "Qty to Order" has
+                    // reached zero - see ProjectionManager::
+                    // getQuantityToOrder() for why this is a single
+                    // live number per material+Warehouse rather than
+                    // something computed per-Projection.
 
                     bool fullyOrdered = true;
 
                     for (const auto& projItem :
                         projection->getItems())
                     {
-                        int ordered =
-                            computeOrderedCoverage(
+                        int toOrder =
+                            projectionManager.getQuantityToOrder(
                                 projItem.materialID,
-                                projItem.requiredQuantity,
-                                projection->getID(),
-                                projectionManager,
-                                procurementManager);
+                                projection->getWarehouseID());
 
-                        // Live Virtual Stock also covers part (or
-                        // all) of the requirement, the same as in the
-                        // single-Projection endpoint below - without
-                        // this, a material with plenty of stock but
-                        // zero Procurement Orders would always read
-                        // as "Pending Orders", even though nothing
-                        // actually needs to be ordered for it.
-
-                        int stock =
-                            projectionManager.getVirtualStock(
-                                projItem.materialID,
-                                projection->getID());
-
-                        int stillNeeded =
-                            projItem.requiredQuantity - stock - ordered;
-
-                        if (stillNeeded > 0)
+                        if (toOrder > 0 &&
+                            !projItem.orderRegistered)
                         {
                             fullyOrdered = false;
                             break;
@@ -4818,50 +4782,58 @@ void WebServer::run()
                 for (const auto& projItem :
                     projection->getItems())
                 {
-                    // Coverage from real Procurement Orders - orders
-                    // tied to this Projection count for it directly;
-                    // untied orders are shared with every other still
-                    // open Projection that also needs this material,
-                    // so the same units are never credited twice (see
-                    // computeOrderedCoverage() above).
-
-                    int ordered =
-                        computeOrderedCoverage(
-                            projItem.materialID,
-                            projItem.requiredQuantity,
-                            projection->getID(),
-                            projectionManager,
-                            procurementManager);
-
-                    // Live Virtual Stock (see below) also covers part
-                    // of the requirement before anything even needs
-                    // to be ordered - the previous version only
-                    // subtracted what was already covered by real
-                    // Procurement Orders, so a material that still had
-                    // plenty of stock on the shelf (e.g. 22 in stock
-                    // for 30 required) was shown as needing the FULL
-                    // required quantity ordered (30) instead of just
-                    // the actual shortfall (8).
-
-                    int stockForPending =
-                        projectionManager.getVirtualStock(
-                            projItem.materialID,
-                            projection->getID());
+                    // "Qty to Order": the SHARED, live total needed
+                    // for this material across every currently open
+                    // Projection tied to this same Warehouse (this
+                    // Projection included), minus that Warehouse's
+                    // actual stock right now - see
+                    // ProjectionManager::getQuantityToOrder(). The
+                    // same value shows up identically on every open
+                    // Projection competing for this material in this
+                    // Warehouse, which is what avoids the previous
+                    // double-counting (each Projection independently
+                    // believing it alone needed to cover the whole
+                    // shortfall).
 
                     int pending =
-                        projItem.requiredQuantity -
-                        stockForPending -
-                        ordered;
+                        projectionManager.getQuantityToOrder(
+                            projItem.materialID,
+                            projection->getWarehouseID());
 
-                    if (pending < 0)
-                    {
-                        pending = 0;
-                    }
+                    // Once this line has been frozen as "already
+                    // ordered" (see ProjectionItem::orderRegistered),
+                    // it counts as done for status purposes even if
+                    // the live shared "Qty to Order" above is still
+                    // above zero (e.g. another Projection is now
+                    // competing for the same material) - the freeze
+                    // is permanent until this Projection is completed.
 
-                    if (pending > 0)
+                    if (pending > 0 &&
+                        !projItem.orderRegistered)
                     {
                         fullyOrdered = false;
                     }
+
+                    // Outstanding Ordered Quantity: purely
+                    // informational, shown alongside "Qty to Order"
+                    // but never subtracted from it - see
+                    // getOutstandingOrderedQuantity() above.
+
+                    int ordered =
+                        getOutstandingOrderedQuantity(
+                            projItem.materialID,
+                            projection->getWarehouseID(),
+                            procurementManager);
+
+                    // Actual current stock of this material in this
+                    // Projection's Warehouse (not netted against other
+                    // Projections - that is what "Qty to Order" above
+                    // already accounts for).
+
+                    int stockForPending =
+                        projectionManager.getWarehouseStock(
+                            projItem.materialID,
+                            projection->getWarehouseID());
 
 
                     crow::json::wvalue itemJson;
@@ -4894,24 +4866,31 @@ void WebServer::run()
                         projItem.stockAtCreation;
 
 
-                    // Virtual stock (live, not the snapshot taken
-                    // when the projection was created): total stock
-                    // minus what every other still-active Projection
-                    // has already reserved for this material - see
-                    // ProjectionManager::getVirtualStock(). This
-                    // Projection's own reservation is excluded so it
-                    // is not subtracted from itself. Same value used
-                    // above to compute "pending".
+                    // Actual current stock (live) of this material in
+                    // this Projection's Warehouse - see comment above
+                    // computing stockForPending.
 
                     itemJson["currentStock"] =
                         stockForPending;
 
+
+                    // Informational only, never netted against
+                    // "pendingQuantity" (Qty to Order) - see
+                    // getOutstandingOrderedQuantity() above.
 
                     itemJson["orderedQuantity"] =
                         ordered;
 
                     itemJson["pendingQuantity"] =
                         pending;
+
+                    // Frozen "already ordered" state - see
+                    // ProjectionItem::orderRegistered. The frontend
+                    // uses this (not a live comparison) to decide
+                    // whether this row can still be selected to
+                    // register another order.
+                    itemJson["orderRegistered"] =
+                        projItem.orderRegistered;
 
 
                     // Order-by timing: deadline minus this
@@ -5163,8 +5142,10 @@ void WebServer::run()
                     string productID =
                         body["productID"].s();
 
-                    int warehouseID =
-                        body["warehouseID"].i();
+                    // The Warehouse is no longer supplied by the
+                    // caller - Projection creation always uses the
+                    // Product's own Main Warehouse (see
+                    // ProjectionManager::createProjection()).
 
                     string deadline = "";
 
@@ -5193,17 +5174,6 @@ void WebServer::run()
                     }
 
 
-                    WarehouseManager& warehouseManager =
-                        warehouseSystem->getWarehouseManager();
-
-                    if (warehouseManager.findWarehouse(warehouseID) == nullptr)
-                    {
-                        return crow::response(
-                            404,
-                            "Warehouse not found.");
-                    }
-
-
                     if (manufactureQuantity <= 0)
                     {
                         return crow::response(
@@ -5229,21 +5199,22 @@ void WebServer::run()
                     ProjectionManager& projectionManager =
                         warehouseSystem->getProjectionManager();
 
+                    string errorMessage;
+
                     Projection* projection =
                         projectionManager.createProjection(
                             productID,
-                            warehouseID,
                             deadline,
                             manufactureQuantity,
-                            string(dateBuffer));
+                            string(dateBuffer),
+                            errorMessage);
 
 
                     if (projection == nullptr)
                     {
                         return crow::response(
                             400,
-                            "Nothing to order: enough stock for all materials, "
-                            "or the Product has no Bill of Materials.");
+                            errorMessage);
                     }
 
 
@@ -5664,6 +5635,90 @@ void WebServer::run()
                             comment,
                             projectionID,
                             batchID);
+                    }
+
+
+                    // If this batch was registered from a Projection,
+                    // record one order-placement attempt against each
+                    // line ordered - see Projection::
+                    // registerOrderAttempt(). A line only ever gets at
+                    // most two such attempts from the Projection view:
+                    // it freezes immediately if outstanding orders now
+                    // cover the shared "Qty to Order" shortfall in
+                    // full, or otherwise once this was its second
+                    // attempt regardless of whether it was enough -
+                    // anything still missing after that is placed
+                    // manually from New Order. Once frozen, a line
+                    // stays closed for ordering from this Projection
+                    // even if stock or orders shift again later (e.g.
+                    // an order gets cancelled), until the Projection
+                    // is completed.
+
+                    if (!projectionID.empty())
+                    {
+                        ProjectionManager& projectionManager =
+                            warehouseSystem->getProjectionManager();
+
+                        Projection* sourceProjection =
+                            projectionManager.findProjection(
+                                projectionID);
+
+                        if (sourceProjection != nullptr)
+                        {
+                            for (const auto& line : lines)
+                            {
+                                bool isProjectionItem = false;
+
+                                for (const auto& projItem :
+                                    sourceProjection->getItems())
+                                {
+                                    if (projItem.materialID ==
+                                        line.materialID)
+                                    {
+                                        isProjectionItem = true;
+                                        break;
+                                    }
+                                }
+
+                                if (!isProjectionItem)
+                                {
+                                    continue;
+                                }
+
+                                // "Fully covered" has to compare
+                                // against the shared "Qty to Order"
+                                // shortfall (stock already subtracted),
+                                // NOT against this line's own raw
+                                // requiredQuantity - requiredQuantity
+                                // ignores stock entirely, so a line
+                                // that only ever needed the shortfall
+                                // amount (e.g. Required 30, Stock 20,
+                                // Qty to Order 10) would never read as
+                                // covered even after ordering exactly
+                                // the 10 it actually needed.
+
+                                int neededQuantity =
+                                    projectionManager.getQuantityToOrder(
+                                        line.materialID,
+                                        warehouseID);
+
+                                int outstandingOrdered =
+                                    getOutstandingOrderedQuantity(
+                                        line.materialID,
+                                        warehouseID,
+                                        procurementManager);
+
+                                bool fullyCovered =
+                                    outstandingOrdered >=
+                                    neededQuantity;
+
+                                projectionManager
+                                    .registerItemOrderAttempt(
+                                        projectionID,
+                                        line.materialID,
+                                        fullyCovered);
+                            }
+                        }
                     }
 
 
