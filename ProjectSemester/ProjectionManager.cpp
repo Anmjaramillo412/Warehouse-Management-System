@@ -15,7 +15,7 @@ namespace fs = std::filesystem;
 
 // ================================================================
 // TODAY (ISO "YYYY-MM-DD"), for deciding whether a Projection's
-// deadline has passed - see getVirtualStock().
+// deadline has passed - see getOpenRequiredQuantity().
 // ================================================================
 
 static string todayISO()
@@ -172,74 +172,57 @@ string ProjectionManager::generateNextID()
 
 
 // ================================================================
-// GET TOTAL STOCK (summed across every warehouse)
+// GET WAREHOUSE STOCK (one material, one Warehouse)
 // ================================================================
 
-int ProjectionManager::getTotalStock(
-    const string& materialID) const
+int ProjectionManager::getWarehouseStock(
+    const string& materialID,
+    int warehouseID) const
 {
-    int total = 0;
-
     if (warehouseManager == nullptr)
     {
-        return total;
+        return 0;
     }
 
-    for (Warehouse* warehouse : warehouseManager->getWarehouses())
+    Warehouse* warehouse =
+        warehouseManager->findWarehouse(warehouseID);
+
+    if (warehouse == nullptr)
     {
-        if (warehouse == nullptr)
-        {
-            continue;
-        }
-
-        WarehouseNode* node = warehouse->getHead();
-
-        while (node != nullptr)
-        {
-            if (node->material != nullptr &&
-                node->material->getID() == materialID)
-            {
-                total += node->quantity;
-            }
-
-            node = node->next;
-        }
+        return 0;
     }
 
-    return total;
+    WarehouseNode* node =
+        warehouse->findMaterial(materialID);
+
+    return (node != nullptr) ? node->quantity : 0;
 }
 
 
 // ================================================================
-// GET VIRTUAL STOCK
+// GET OPEN REQUIRED QUANTITY
 // ================================================================
-// Total stock minus what every other still-open Projection has
-// already reserved for this material (see header for the full
-// reasoning). "Open" means not yet completed AND the deadline has
-// not passed - a completed Projection already issued (consumed) its
-// BOM from the Warehouse at completion time, so getTotalStock()
-// above already reflects that consumption; counting its required
-// quantity again here would subtract the same units a second time,
-// which is exactly what made Virtual Stock read 0 even with real
-// stock on the shelf (a completed Projection whose deadline simply
-// had not arrived yet was still being treated as an open reservation
-// forever). An overdue-but-not-completed Projection is likewise
-// dropped, on the assumption its plan was already acted on outside
-// the system (goods issued/sold).
+// Sum of this material's own requiredQuantity across every currently
+// open Projection tied to this Warehouse. "Open" means not yet
+// completed AND the deadline has not passed - a completed Projection
+// already issued (consumed) its BOM from the Warehouse at completion
+// time, so counting its requirement again here would subtract the
+// same units a second time. An overdue-but-not-completed Projection
+// is likewise dropped, on the assumption its plan was already acted on
+// outside the system (goods issued/sold).
 
-int ProjectionManager::getVirtualStock(
+int ProjectionManager::getOpenRequiredQuantity(
     const string& materialID,
-    const string& excludeProjectionID) const
+    int warehouseID) const
 {
-    int stock =
-        getTotalStock(materialID);
+    int total = 0;
 
     string today =
         todayISO();
 
     for (const auto& projection : projections)
     {
-        if (projection->getID() == excludeProjectionID)
+        if (projection->getWarehouseID() != warehouseID)
         {
             continue;
         }
@@ -265,17 +248,36 @@ int ProjectionManager::getVirtualStock(
         {
             if (item.materialID == materialID)
             {
-                stock -= item.requiredQuantity;
+                total += item.requiredQuantity;
             }
         }
     }
 
-    if (stock < 0)
-    {
-        stock = 0;
-    }
+    return total;
+}
 
-    return stock;
+
+// ================================================================
+// GET QUANTITY TO ORDER
+// ================================================================
+// See the header comment on this function (ProjectionManager.h) for
+// why this is a single shared number per material+Warehouse instead
+// of a per-Projection calculation.
+
+int ProjectionManager::getQuantityToOrder(
+    const string& materialID,
+    int warehouseID) const
+{
+    int required =
+        getOpenRequiredQuantity(materialID, warehouseID);
+
+    int stock =
+        getWarehouseStock(materialID, warehouseID);
+
+    int toOrder =
+        required - stock;
+
+    return (toOrder > 0) ? toOrder : 0;
 }
 
 
@@ -285,23 +287,61 @@ int ProjectionManager::getVirtualStock(
 
 Projection* ProjectionManager::createProjection(
     const string& productID,
-    int warehouseID,
     const string& deadline,
     int manufactureQuantity,
-    const string& creationDate)
+    const string& creationDate,
+    string& errorMessage)
 {
-    if (productManager == nullptr ||
-        manufactureQuantity <= 0)
+    errorMessage = "";
+
+    if (manufactureQuantity <= 0)
     {
+        errorMessage =
+            "Quantity to Manufacture must be greater than zero.";
+
+        return nullptr;
+    }
+
+    if (productManager == nullptr)
+    {
+        errorMessage = "Product not found.";
+
         return nullptr;
     }
 
     Product* product =
         productManager->findProduct(productID);
 
-    if (product == nullptr ||
-        product->getBOM().empty())
+    if (product == nullptr)
     {
+        errorMessage = "Product not found.";
+
+        return nullptr;
+    }
+
+    if (product->getBOM().empty())
+    {
+        errorMessage =
+            "This Product has no Bill of Materials.";
+
+        return nullptr;
+    }
+
+    // The Warehouse is no longer picked by the caller - it is always
+    // this Product's own Main Warehouse (set from Modify Product), so
+    // every Projection for this Product always checks stock against
+    // the same, single Warehouse.
+
+    int warehouseID =
+        product->getMainWarehouseID();
+
+    if (warehouseID == 0)
+    {
+        errorMessage =
+            "This Product has no Main Warehouse assigned yet. "
+            "Please assign one from Modify Product before creating "
+            "a Projection.";
+
         return nullptr;
     }
 
@@ -339,15 +379,25 @@ Projection* ProjectionManager::createProjection(
         int required =
             bomItem.quantity * manufactureQuantity;
 
-        // Virtual stock, not raw stock: material already reserved by
-        // another still-active Projection must not be counted twice.
-        // excludeProjectionID is "" here since this Projection does
-        // not exist yet (nothing to exclude).
+        // Every OTHER currently open Projection already competing for
+        // this material in this same Warehouse - this new Projection
+        // is not in the list yet, so it is naturally not counted
+        // twice here; its own "required" is added on top below.
+
+        int alreadyOpen =
+            getOpenRequiredQuantity(
+                bomItem.materialID,
+                warehouseID);
 
         int stock =
-            getVirtualStock(bomItem.materialID, "");
+            getWarehouseStock(
+                bomItem.materialID,
+                warehouseID);
 
-        if (required > stock)
+        int shortfall =
+            (alreadyOpen + required) - stock;
+
+        if (shortfall > 0)
         {
             projection->addItem(
                 bomItem.materialID,
@@ -359,6 +409,9 @@ Projection* ProjectionManager::createProjection(
     if (projection->getItems().empty())
     {
         // Enough stock for everything - nothing worth recording.
+        errorMessage =
+            "Nothing to order: enough stock for all materials.";
+
         return nullptr;
     }
 
@@ -495,6 +548,47 @@ bool ProjectionManager::completeProjection(
 
 
 // ================================================================
+// REGISTER ITEM ORDER ATTEMPT
+// ================================================================
+
+bool ProjectionManager::registerItemOrderAttempt(
+    const string& projectionID,
+    const string& materialID,
+    bool fullyCovered)
+{
+    Projection* projection =
+        findProjection(projectionID);
+
+    if (projection == nullptr)
+    {
+        return false;
+    }
+
+    bool found = false;
+
+    for (const auto& item : projection->getItems())
+    {
+        if (item.materialID == materialID)
+        {
+            found = true;
+            break;
+        }
+    }
+
+    if (!found)
+    {
+        return false;
+    }
+
+    projection->registerOrderAttempt(materialID, fullyCovered);
+
+    save();
+
+    return true;
+}
+
+
+// ================================================================
 // FIND PROJECTION
 // ================================================================
 
@@ -574,8 +668,8 @@ ProjectionManager::getProjections() const
 //
 // id|productID|warehouseID|deadline|manufactureQuantity|creationDate|items
 //
-// items: each as "materialID,requiredQuantity,stockAtCreation",
-// several joined by "~"
+// items: each as "materialID,requiredQuantity,stockAtCreation,
+// orderRegistered,orderRegistrationCount", several joined by "~"
 
 bool ProjectionManager::save()
 {
@@ -603,7 +697,9 @@ bool ProjectionManager::save()
             itemsField +=
                 items[i].materialID + "," +
                 to_string(items[i].requiredQuantity) + "," +
-                to_string(items[i].stockAtCreation);
+                to_string(items[i].stockAtCreation) + "," +
+                (items[i].orderRegistered ? "1" : "0") + "," +
+                to_string(items[i].orderRegistrationCount);
         }
 
         file << projection->getID() << "|"
@@ -688,6 +784,21 @@ bool ProjectionManager::load()
                     itemFields[0],
                     atoi(itemFields[1].c_str()),
                     atoi(itemFields[2].c_str()));
+
+                if (itemFields.size() > 3)
+                {
+                    bool registered =
+                        itemFields[3] == "1";
+
+                    int registrationCount =
+                        (itemFields.size() > 4) ?
+                        atoi(itemFields[4].c_str()) : 0;
+
+                    projection->setItemOrderState(
+                        itemFields[0],
+                        registered,
+                        registrationCount);
+                }
             }
         }
 

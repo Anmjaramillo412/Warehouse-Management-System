@@ -8510,15 +8510,11 @@ function showNewProjection() {
 
             ${productComboboxHtml("projection")}
 
-            <label>
-                Warehouse ID (destination for orders placed from this batch)
-            </label>
-
-            <input
-                type="number"
-                id="projection-warehouse-id"
-                placeholder="Enter Warehouse ID"
-            >
+            <small>
+                Stock is checked against this Product's Main Warehouse
+                (set from Modify Product). If it has none yet, assign
+                one there before creating a Projection.
+            </small>
 
             <label>
                 Manufacturing Deadline
@@ -8563,10 +8559,11 @@ function showNewProjection() {
 // ============================================================
 // NEW PROJECTION - SUBMIT
 // ============================================================
-// Creates a persisted Projection batch on the backend: BOM
-// quantity x units to manufacture, minus current stock (summed
-// across every warehouse), frozen at creation time. Only materials
-// with an actual shortfall are stored.
+// Creates a persisted Projection batch on the backend: BOM quantity x
+// units to manufacture, checked against the Product's own Main
+// Warehouse (chosen automatically, not entered here) and against what
+// every other open Projection in that Warehouse already needs. Only
+// materials with an actual shortfall are stored.
 
 async function createProjectionSubmit() {
 
@@ -8574,11 +8571,6 @@ async function createProjectionSubmit() {
         document.getElementById(
             "projection-product-id"
         ).value.trim();
-
-    const warehouseID =
-        document.getElementById(
-            "projection-warehouse-id"
-        ).value;
 
     const deadline =
         document.getElementById(
@@ -8604,14 +8596,6 @@ async function createProjectionSubmit() {
         return;
     }
 
-    if (!warehouseID) {
-
-        message.textContent =
-            "Please enter a Warehouse ID.";
-
-        return;
-    }
-
     if (!quantity ||
         Number(quantity) <= 0) {
 
@@ -8629,8 +8613,6 @@ async function createProjectionSubmit() {
     const payload = {
 
         productID: productID,
-
-        warehouseID: Number(warehouseID),
 
         deadline: deadline,
 
@@ -9045,12 +9027,13 @@ async function openProjectionDetail(id) {
                             <th>Material ID</th>
                             <th>Name</th>
                             <th>UoM</th>
-                            <th title="Warehouse stock minus what other active Projections have already reserved">Virtual Stock</th>
-                            <th>Required</th>
-                            <th>Pending</th>
+                            <th title="This Product's Main Warehouse - current stock, right now">Stock</th>
+                            <th title="How much of this material THIS Projection needs">Required</th>
+                            <th title="Shared total: what every open Projection in this Warehouse still needs for this material, minus current stock">Qty to Order</th>
+                            <th title="Still-outstanding Procurement Order quantity for this material in this Warehouse - informational, not subtracted from Qty to Order">Ordered</th>
                             <th>Order By</th>
                             <th>Status</th>
-                            <th>Qty to Order</th>
+                            <th>Register Order Qty</th>
                         </tr>
 
                     </thead>
@@ -9066,22 +9049,36 @@ async function openProjectionDetail(id) {
             const rowID =
                 "projdet-" + item.materialID;
 
-            const alreadyOrdered =
-                readOnly || item.pendingQuantity <= 0;
+            // "Qty to Order" (item.pendingQuantity) is the shared,
+            // live total for this material across every open
+            // Projection in this Warehouse - it can stay above zero
+            // even after this exact row has already been ordered
+            // (another Projection may still need more), so it is NOT
+            // what decides whether this row can still be selected.
+            //
+            // That decision uses item.orderRegistered instead: a
+            // frozen, backend-persisted flag (see ProjectionManager::
+            // registerItemOrderAttempt()) set either when a single
+            // order from this Projection already covered this line's
+            // requiredQuantity, or once two orders have been placed
+            // from it regardless of whether they were enough (a line
+            // gets at most two chances here - the rest goes through
+            // New Order manually). It stays frozen - it will not flip
+            // back even if stock or orders change later - until this
+            // Projection is completed.
 
-            // Once anything is already on order for this material
-            // (from any Projection), replace the raw Pending number
-            // with a status - a bare number next to an order that
-            // already exists reads as "still needs everything",
-            // which is confusing. The exact remaining amount is
-            // still available, prefilled into "Qty to Order" below.
+            const alreadyOrdered =
+                readOnly || !!item.orderRegistered;
 
             const pendingCell =
                 alreadyOrdered
-                ? `<span class="status-badge status-active">&#10003; Fully ordered</span>`
-                : (item.orderedQuantity > 0
-                    ? `<span class="status-badge status-partial">Partially Ordered</span>`
-                    : `<strong>${item.pendingQuantity}</strong>`);
+                ? `<span class="status-badge status-active">&#10003; Already ordered</span>`
+                : `<strong>${item.pendingQuantity}</strong>`;
+
+            const orderedCell =
+                item.orderedQuantity > 0
+                ? item.orderedQuantity
+                : "-";
 
             if (!alreadyOrdered) {
                 anySelectable = true;
@@ -9120,6 +9117,7 @@ async function openProjectionDetail(id) {
                     <td>${item.currentStock}</td>
                     <td>${item.requiredQuantity}</td>
                     <td>${pendingCell}</td>
+                    <td>${orderedCell}</td>
                     <td>${escapeHtml(item.orderByDate || "-")}</td>
 
                     <td>
@@ -9176,6 +9174,7 @@ async function openProjectionDetail(id) {
 
                         <button
                             type="button"
+                            class="button-today"
                             onclick="registerSelectedOrdersToday('${escapeHtml(projection.id)}', '${escapeHtml(projection.productID)}', ${projection.warehouseID})">
 
                             Register Today
@@ -9409,9 +9408,9 @@ async function deleteProjectionConfirm(id) {
 // ============================================================
 // PROJECTION DETAIL - REGISTER ORDER, TODAY (quick convenience)
 // ============================================================
-// Same one-click convenience as "Confirm as Ordered Today"/"Receipt
-// Today": fills the Order Date with today and reuses the normal
-// registration path so validation/behavior stays identical.
+// Same one-click convenience as "Confirm Today"/"Receipt Today":
+// fills the Order Date with today and reuses the normal registration
+// path so validation/behavior stays identical.
 
 function registerSelectedOrdersToday(projectionID, productID, warehouseID) {
 
@@ -10605,9 +10604,10 @@ function renderProcurementCard(group, cardMode = "open") {
 
                     <button
                         type="button"
+                        class="button-today"
                         onclick="quickConfirmGroup('${id}')">
 
-                        Confirm as Ordered Today
+                        Confirm Today
 
                     </button>
 
@@ -10663,6 +10663,7 @@ function renderProcurementCard(group, cardMode = "open") {
 
                 <button
                     type="button"
+                    class="button-today"
                     onclick="quickReceiptGroup('${id}')">
 
                     Receipt Today
@@ -11081,9 +11082,9 @@ async function saveGroupConfirmation(id) {
 // ============================================================
 // PROCUREMENT ORDERS - QUICK RECEIPT (today, whatever Qty is filled)
 // ============================================================
-// Same one-click convenience as "Confirm as Ordered (Today)": fills
-// today's date into every material's Receipt Date field, then reuses
-// the normal save path - the operator still enters each Qty by hand
+// Same one-click convenience as "Confirm Today": fills today's date
+// into every material's Receipt Date field, then reuses the normal
+// save path - the operator still enters each Qty by hand
 // (there is no "ordered quantity" default here, since a receipt is
 // often partial).
 

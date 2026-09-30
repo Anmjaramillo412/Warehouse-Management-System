@@ -45,23 +45,45 @@ private:
     // Generates the next consecutive ID, e.g. "PRJ-000001"
     string generateNextID();
 
-    // Stock of a material summed across every warehouse
-    int getTotalStock(
-        const string& materialID) const;
+    // Sum of this material's own requiredQuantity across every
+    // currently open Projection (not completed, deadline today or
+    // later, or no deadline at all) tied to this ONE Warehouse. This
+    // is the "everyone who is competing for this material in this
+    // Warehouse" total - see getQuantityToOrder() below for why it is
+    // never split/attributed per-Projection any more.
+    int getOpenRequiredQuantity(
+        const string& materialID,
+        int warehouseID) const;
 
 public:
 
-    // "Virtual" stock: total warehouse stock for this material minus
-    // what every other still-active Projection (deadline today or
-    // later, or no deadline at all) has already reserved for it.
-    // This is what a Projection must check to decide whether it is
-    // actually short on a material - otherwise two Projections could
-    // both plan around the same physical units of stock. Pass the
-    // Projection's own ID as excludeProjectionID so a Projection
-    // does not subtract its own reservation from itself.
-    int getVirtualStock(
+    // Actual current stock of one material inside one Warehouse right
+    // now - no Projection reservations subtracted (see
+    // getQuantityToOrder() for that).
+    int getWarehouseStock(
         const string& materialID,
-        const string& excludeProjectionID = "") const;
+        int warehouseID) const;
+
+    // Live, SHARED "Qty to Order" for one material inside one
+    // Warehouse: the combined requirement of every currently open
+    // Projection tied to that Warehouse that needs this material
+    // (this necessarily includes the Projection asking, once it
+    // exists, since it is part of "every open Projection") minus that
+    // Warehouse's actual current stock, floored at 0.
+    //
+    // This replaces the old per-Projection "Virtual Stock" model
+    // (total stock minus every OTHER open Projection's reservation,
+    // computed independently for each Projection), which double-
+    // counted a scarce material whenever two or more Projections
+    // competed for it: each one excluded only itself and so each
+    // concluded, on its own, that it needed to cover the full
+    // combined shortfall a second time. Because this number is now
+    // computed once from the shared totals instead of per-Projection,
+    // it comes out identical (and correct) no matter which open
+    // Projection asks for it.
+    int getQuantityToOrder(
+        const string& materialID,
+        int warehouseID) const;
 
     // Constructor
     ProjectionManager(
@@ -89,14 +111,32 @@ public:
 
     // Creates a new Projection from the Product's BOM, the quantity
     // to manufacture, and current stock (only materials with a
-    // shortfall are included). Returns nullptr if the Product does
-    // not exist, has no BOM, or nothing is actually short.
+    // shortfall are included). The Warehouse is no longer chosen by
+    // the caller - it is always the Product's own Main Warehouse, so
+    // stock is checked against that one Warehouse alone rather than
+    // summed across every Warehouse. Returns nullptr - with
+    // errorMessage explaining why - if the Product does not exist,
+    // has no BOM, has no Main Warehouse assigned yet, or nothing is
+    // actually short.
     Projection* createProjection(
         const string& productID,
-        int warehouseID,
         const string& deadline,
         int manufactureQuantity,
-        const string& creationDate);
+        const string& creationDate,
+        string& errorMessage);
+
+    // Records one order-placement attempt against a Projection item
+    // (see Projection::registerOrderAttempt()) and saves immediately.
+    // fullyCovered should be true when this attempt's registered
+    // quantity, combined with whatever was already on order, meets or
+    // exceeds the item's requiredQuantity - the item freezes
+    // immediately in that case; otherwise it freezes only once this
+    // was its second attempt. Returns false if the Projection or the
+    // item is not found.
+    bool registerItemOrderAttempt(
+        const string& projectionID,
+        const string& materialID,
+        bool fullyCovered);
 
     // Search
     Projection* findProjection(

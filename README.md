@@ -106,10 +106,12 @@ The `data/` folder is created automatically on first run - see Data Persistence 
 
 ### Projection Management
 
-- Create Projections (a planned production batch for a Product/Warehouse, with its own BOM requirement and deadline)
+- Create Projections (a planned production batch for a Product, with its own BOM requirement and deadline) - the Warehouse is not chosen manually, it is always the Product's own Main Warehouse (set from Modify Product); a Product with no Main Warehouse assigned yet cannot have a Projection created for it
 - Open Projections / Archived Projections views
-- Virtual Stock per material: real warehouse stock minus what every other still-open Projection has already reserved
-- Register Procurement Orders directly from a Projection's missing materials, with a one-click "Register Today" shortcut
+- "Qty to Order" per material is a single number shared by every open Projection in that Warehouse that needs it: the combined requirement of all of them minus that Warehouse's actual current stock - so two Projections competing for the same scarce material never each get told to order the full shortfall on their own
+- "Ordered" shows, purely for reference, how much of that material is already outstanding on Procurement Orders for that Warehouse - it is never netted against "Qty to Order" automatically, so the user decides how much more (if anything) to actually register
+- A material line gets at most two chances to be ordered from the Projection view: if a single Procurement Order placed from that Projection already covers the line's full required quantity, the line freezes ("Already ordered") right away; if the first order placed was for less than that, one more order may be registered afterward - after that second attempt the line freezes regardless of whether it was enough. Once frozen it can no longer be selected to register another order from that same Projection - even if an order is later cancelled or the Warehouse's stock changes - and anything still missing has to be ordered manually from New Order instead. The freeze only lifts when the Projection itself is completed (Confirm Production) or deleted
+- Register Procurement Orders directly from a Projection's still-open materials, with a one-click "Register Today" shortcut
 - Delete a Projection
 - Confirm Production once a Projection is Fully Ordered, issuing the BOM from inventory and archiving the Projection
 

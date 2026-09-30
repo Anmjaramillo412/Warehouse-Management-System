@@ -149,6 +149,45 @@ void Projection::setItems(
 }
 
 
+void Projection::registerOrderAttempt(
+    const string& materialID,
+    bool fullyCovered)
+{
+    for (auto& item : items)
+    {
+        if (item.materialID == materialID)
+        {
+            item.orderRegistrationCount++;
+
+            if (fullyCovered ||
+                item.orderRegistrationCount >= 2)
+            {
+                item.orderRegistered = true;
+            }
+
+            return;
+        }
+    }
+}
+
+
+void Projection::setItemOrderState(
+    const string& materialID,
+    bool registered,
+    int registrationCount)
+{
+    for (auto& item : items)
+    {
+        if (item.materialID == materialID)
+        {
+            item.orderRegistered = registered;
+            item.orderRegistrationCount = registrationCount;
+            return;
+        }
+    }
+}
+
+
 // ================================================================
 // COMPLETION (production confirmed / archived)
 // ================================================================
