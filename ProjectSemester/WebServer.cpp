@@ -3782,6 +3782,16 @@ void WebServer::run()
                         bom["quantity"] =
                             bomItem.quantity;
 
+                        // Internal Supplier materials are self-
+                        // manufactured, not purchased or stocked in a
+                        // Warehouse the same way (see Supplier
+                        // Management) - the frontend greys this row
+                        // out and skips the stock column entirely
+                        // instead of showing a misleading "0".
+                        bom["hasInternalSupplier"] =
+                            (material != nullptr) &&
+                            material->hasInternalSupplier();
+
 
                         // ------------------------------------------------
                         // Stock of this material in each Warehouse, so the

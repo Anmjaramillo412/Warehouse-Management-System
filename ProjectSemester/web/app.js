@@ -7301,32 +7301,43 @@ async function showDisplayProducts() {
                     const item of product.bom
                 ) {
 
+                    // Internal Supplier materials are self-
+                    // manufactured, not purchased or held as Warehouse
+                    // stock (see Supplier Management) - greyed out and
+                    // with no stock column, instead of a misleading
+                    // "0" that reads like a shortage.
+
+                    const isInternal =
+                        !!item.hasInternalSupplier;
+
                     const warehouseStock =
                         item.warehouseStock || [];
 
                     const stockCell =
-                        warehouseStock.length === 0
-                            ? "<small>No warehouses.</small>"
-                            : warehouseStock.map(stock => {
+                        isInternal
+                            ? `<small>Internal Supplier - not stocked</small>`
+                            : (warehouseStock.length === 0
+                                ? "<small>No warehouses.</small>"
+                                : warehouseStock.map(stock => {
 
-                                const color =
-                                    stock.sufficientForSafetyStock
-                                        ? "#15803d"
-                                        : "#b91c1c";
+                                    const color =
+                                        stock.sufficientForSafetyStock
+                                            ? "#15803d"
+                                            : "#b91c1c";
 
-                                return `
-                                    <div style="white-space: nowrap;">
-                                        ${escapeHtml(stock.warehouseName)}:
-                                        <strong style="color: ${color};">
-                                            ${stock.quantity}
-                                        </strong>
-                                    </div>
-                                `;
-                            }).join("");
+                                    return `
+                                        <div style="white-space: nowrap;">
+                                            ${escapeHtml(stock.warehouseName)}:
+                                            <strong style="color: ${color};">
+                                                ${stock.quantity}
+                                            </strong>
+                                        </div>
+                                    `;
+                                }).join(""));
 
                     html += `
 
-                        <tr>
+                        <tr class="${isInternal ? "product-bom-internal" : ""}">
 
                             <td>
                                 ${escapeHtml(
