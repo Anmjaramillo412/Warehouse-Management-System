@@ -7352,6 +7352,9 @@ void WebServer::run()
                 ProductManager& productManager =
                     warehouseSystem->getProductManager();
 
+                MaterialManager& materialManager =
+                    warehouseSystem->getMaterialManager();
+
 
                 for (const auto& product :
                     productManager.getProducts())
@@ -7385,6 +7388,20 @@ void WebServer::run()
                         lineItem["unitPriceEUR"] = line.unitPriceEUR;
                         lineItem["lineCostEUR"] = line.lineCostEUR;
 
+                        // See the single-Product cost route below for
+                        // why this falls back to "Other".
+
+                        Material* lineMaterial =
+                            materialManager.findMaterial(
+                                line.materialID);
+
+                        string category =
+                            (lineMaterial != nullptr &&
+                             !lineMaterial->getCategory().empty()) ?
+                            lineMaterial->getCategory() : "Other";
+
+                        lineItem["category"] = category;
+
                         lineList.push_back(
                             std::move(lineItem));
                     }
@@ -7417,6 +7434,9 @@ void WebServer::run()
 
                 ProductManager& productManager =
                     warehouseSystem->getProductManager();
+
+                MaterialManager& materialManager =
+                    warehouseSystem->getMaterialManager();
 
 
                 Product* product =
@@ -7458,6 +7478,21 @@ void WebServer::run()
                     lineItem["hasPrice"] = line.hasPrice;
                     lineItem["unitPriceEUR"] = line.unitPriceEUR;
                     lineItem["lineCostEUR"] = line.lineCostEUR;
+
+                    // Used to group this Product's cost by Category
+                    // (see "Cost by Category" in the Purchase module) -
+                    // a Material with no Category set falls back to
+                    // "Other" rather than showing up blank.
+
+                    Material* lineMaterial =
+                        materialManager.findMaterial(line.materialID);
+
+                    string category =
+                        (lineMaterial != nullptr &&
+                         !lineMaterial->getCategory().empty()) ?
+                        lineMaterial->getCategory() : "Other";
+
+                    lineItem["category"] = category;
 
                     lineList.push_back(
                         std::move(lineItem));

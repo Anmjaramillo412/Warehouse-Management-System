@@ -337,6 +337,10 @@ function openModule(module) {
                     Product Cost
                 </button>
 
+                <button onclick="showPurchaseCostByCategory()">
+                    Cost by Category
+                </button>
+
                 <button class="button-muted" onclick="showPurchaseSettings()">
                     Settings
                 </button>
@@ -13371,6 +13375,313 @@ function renderPurchaseProductCostCard(product) {
 
         </div>
     `;
+}
+
+// ============================================================
+// PURCHASE - COST BY CATEGORY (pie chart)
+// ============================================================
+// Looks up one Product (same searchable combobox as elsewhere) and
+// breaks its landed BOM cost down by each Material's Category,
+// reusing the same /api/purchase/products/<id>/cost endpoint the
+// Product Cost tab already uses - just grouped client-side instead of
+// listed line by line. A Material with no Category set is grouped
+// under "Other" (see the backend route). Drawn as a plain inline SVG
+// pie chart - no charting library dependency.
+
+async function showPurchaseCostByCategory() {
+
+    const content =
+        document.getElementById(
+            "purchase-content"
+        );
+
+    content.innerHTML = `
+
+        <div class="form-container form-container-wide">
+
+            <h2>
+                Cost by Category
+            </h2>
+
+            <label>
+                Product
+            </label>
+
+            ${productComboboxHtml("costcategory", "Search by ID or name...")}
+
+            <div class="form-actions">
+                <button onclick="loadPurchaseCostByCategory()">
+                    Show Breakdown
+                </button>
+            </div>
+
+        </div>
+
+        <div id="costcategory-result">
+        </div>
+    `;
+
+    await initProductCombobox("costcategory");
+}
+
+async function loadPurchaseCostByCategory() {
+
+    const productID =
+        document.getElementById(
+            "costcategory-product-id"
+        ).value.trim();
+
+    const result =
+        document.getElementById(
+            "costcategory-result"
+        );
+
+    if (!productID) {
+
+        result.innerHTML = `
+            <p>Please select a Product.</p>
+        `;
+
+        return;
+    }
+
+    result.innerHTML = `
+        <p>Loading cost breakdown...</p>
+    `;
+
+    try {
+
+        const response =
+            await fetch(
+                `/api/purchase/products/${encodeURIComponent(productID)}/cost`
+            );
+
+        if (!response.ok) {
+
+            const errorMessage =
+                await response.text();
+
+            result.innerHTML = `
+                <p>Error: ${escapeHtml(errorMessage)}</p>
+            `;
+
+            return;
+        }
+
+        const data =
+            await response.json();
+
+        result.innerHTML =
+            renderPurchaseCostByCategory(data);
+    }
+    catch (error) {
+
+        console.error(error);
+
+        result.innerHTML = `
+            <p>Could not connect to the server.</p>
+        `;
+    }
+}
+
+// A fixed palette, reused in order per Category (cycling if there are
+// more Categories than colors) - no per-Category color is stored
+// anywhere, so the same Category can land on a different color across
+// two lookups if the set of Categories involved changes.
+
+const PURCHASE_CATEGORY_COLORS = [
+    "#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed",
+    "#0891b2", "#db2777", "#65a30d", "#ea580c", "#4f46e5"
+];
+
+function renderPurchaseCostByCategory(product) {
+
+    const categoryTotals = {};
+
+    // Only priced lines contribute - same as Product Cost's Total
+    // Cost, an incomplete Product's breakdown reflects only what is
+    // actually known.
+
+    for (const line of (product.lines || [])) {
+
+        if (!line.hasPrice) {
+            continue;
+        }
+
+        const category =
+            line.category || "Other";
+
+        categoryTotals[category] =
+            (categoryTotals[category] || 0) + line.lineCostEUR;
+    }
+
+    const categories =
+        Object.keys(categoryTotals)
+            .sort((a, b) => categoryTotals[b] - categoryTotals[a]);
+
+    const headerHtml = `
+        <h3>
+            ${escapeHtml(product.productID)}
+            &nbsp;&mdash;&nbsp;
+            ${escapeHtml(product.productName)}
+            &nbsp;
+            <span class="status-badge ${product.complete ? "status-active" : "status-inactive"}">
+                ${product.complete ? "Complete" : "Incomplete"}
+            </span>
+        </h3>
+
+        ${!product.complete
+            ? `<p><small>Partial - at least one BOM material has no
+                price history yet, so it is left out of this
+                breakdown.</small></p>`
+            : ""}
+    `;
+
+    if (categories.length === 0) {
+
+        return `
+            ${headerHtml}
+
+            <div class="empty-message">
+                No priced BOM materials yet - nothing to break down by
+                Category.
+            </div>
+        `;
+    }
+
+    const pricedTotal =
+        categories.reduce(
+            (sum, category) => sum + categoryTotals[category], 0);
+
+    // Pie slices as SVG arc paths, one per Category, clockwise from
+    // the top (12 o'clock, i.e. -90 degrees in SVG's angle system).
+
+    const radius = 90;
+    const centerX = 100;
+    const centerY = 100;
+
+    let cumulativeAngle = -90;
+    let slicesHtml = "";
+    let legendHtml = "";
+
+    categories.forEach((category, index) => {
+
+        const amount =
+            categoryTotals[category];
+
+        const percentage =
+            pricedTotal > 0 ? (amount / pricedTotal) * 100 : 0;
+
+        const color =
+            PURCHASE_CATEGORY_COLORS[
+                index % PURCHASE_CATEGORY_COLORS.length];
+
+        if (categories.length === 1) {
+
+            // A single Category is 100% of the pie - a 360 degree arc
+            // is degenerate in SVG, so this draws a full circle
+            // instead of an arc path.
+
+            slicesHtml = `
+                <circle cx="${centerX}" cy="${centerY}" r="${radius}"
+                    fill="${color}">
+                </circle>
+            `;
+        }
+        else {
+
+            const sweepAngle =
+                pricedTotal > 0 ? (amount / pricedTotal) * 360 : 0;
+
+            const startAngle = cumulativeAngle;
+            const endAngle = cumulativeAngle + sweepAngle;
+
+            const startPoint =
+                purchaseCategoryPolarPoint(
+                    centerX, centerY, radius, startAngle);
+
+            const endPoint =
+                purchaseCategoryPolarPoint(
+                    centerX, centerY, radius, endAngle);
+
+            const largeArcFlag =
+                sweepAngle > 180 ? 1 : 0;
+
+            slicesHtml += `
+                <path
+                    d="M ${centerX} ${centerY}
+                       L ${startPoint.x} ${startPoint.y}
+                       A ${radius} ${radius} 0 ${largeArcFlag} 1 ${endPoint.x} ${endPoint.y}
+                       Z"
+                    fill="${color}">
+                </path>
+            `;
+
+            cumulativeAngle = endAngle;
+        }
+
+        legendHtml += `
+            <tr>
+                <td>
+                    <span class="category-swatch" style="background: ${color};"></span>
+                    ${escapeHtml(category)}
+                </td>
+                <td>${percentage.toFixed(1)}%</td>
+                <td>${formatMoney(amount)}</td>
+            </tr>
+        `;
+    });
+
+    return `
+
+        ${headerHtml}
+
+        <div class="purchase-category-layout">
+
+            <svg width="200" height="200" viewBox="0 0 200 200"
+                class="purchase-category-chart">
+
+                ${slicesHtml}
+
+            </svg>
+
+            <table class="material-table purchase-category-legend">
+
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th>%</th>
+                        <th>Cost (EUR)</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    ${legendHtml}
+                </tbody>
+
+                <tfoot>
+                    <tr>
+                        <td><strong>Total</strong></td>
+                        <td><strong>100%</strong></td>
+                        <td><strong>${formatMoney(pricedTotal)}</strong></td>
+                    </tr>
+                </tfoot>
+
+            </table>
+
+        </div>
+    `;
+}
+
+function purchaseCategoryPolarPoint(centerX, centerY, radius, angleInDegrees) {
+
+    const angleInRadians =
+        angleInDegrees * Math.PI / 180;
+
+    return {
+        x: centerX + radius * Math.cos(angleInRadians),
+        y: centerY + radius * Math.sin(angleInRadians)
+    };
 }
 
 // ============================================================

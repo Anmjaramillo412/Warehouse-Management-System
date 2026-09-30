@@ -8,6 +8,25 @@ The system provides functionality for managing materials, warehouses, inventory 
 
 The application combines an object-oriented C++ backend with a web-based user interface.
 
+## Table of Contents
+
+- [Technologies](#technologies)
+- [Getting Started](#getting-started)
+- [Main Features](#main-features)
+  - [Material Management](#material-management)
+  - [Supplier Management](#supplier-management)
+  - [Warehouse Management](#warehouse-management)
+  - [Inventory Management](#inventory-management)
+  - [Product Management](#product-management)
+  - [Projection Management](#projection-management)
+  - [Procurement Management](#procurement-management)
+  - [Purchase Management](#purchase-management)
+  - [Data Management](#data-management)
+  - [Data Persistence](#data-persistence)
+- [Architecture](#architecture)
+- [Data Structures](#data-structures)
+- [Author](#author)
+
 ## Technologies
 
 - C++
@@ -17,6 +36,20 @@ The application combines an object-oriented C++ backend with a web-based user in
 - CSS
 - JavaScript
 - Microsoft Excel
+
+## Getting Started
+
+Requirements: Visual Studio with the "Desktop development with C++" workload, and [vcpkg](https://vcpkg.io) cloned and bootstrapped at `C:\vcpkg` (the project's **Debug | x64** configuration points there directly).
+
+1. Install the two dependencies with vcpkg:
+   ```
+   C:\vcpkg\vcpkg install crow xlnt --triplet x64-windows
+   ```
+2. Open `ProjectSemester/ProjectSemester.vcxproj` in Visual Studio, keep the configuration on **Debug | x64** (the only one set up with vcpkg's paths), and build.
+3. Run the project. It starts a Crow web server on port `18080` and keeps running until stopped from the dashboard's **Exit** button (see Data Management below) or the console window.
+4. Open `http://localhost:18080` in a browser to use the application.
+
+The `data/` folder is created automatically on first run - see Data Persistence below for what it contains and why none of it is tracked by git.
 
 ## Main Features
 
@@ -95,16 +128,31 @@ The application combines an object-oriented C++ backend with a web-based user in
   - **Lieferschein / Delivery Note**: any number of PDFs (one per shipment, for a partial delivery); every upload adds another one instead of replacing, saved as `PRC-###### - DeliveryNote1.pdf`, `PRC-###### - DeliveryNote2.pdf`, and so on
   - Both are saved under a single "Documents Folder" the user chooses once, from Data Management Settings, and can be viewed again directly from the order's card
 
+### Purchase Management
+
+Procurement Management (above) places and receives orders; Purchase Management records what they actually cost.
+
+- Purchase Invoices (`INV-######`, own counter) record what a Material actually cost once the supplier's invoice and the customs/freight bill are in hand - the Procurement Order itself carries no price, so price only enters the system here, at receipt time
+- One invoice can cover several materials, even from different Procurement Orders, if they arrived in the same shipment; each line ties back to its Procurement Order and receipt, or to a **Manual Price Adjustment** when a Material is priced with no delivery behind it at all (a price known from another source, or registering several materials' initial prices at once)
+- Customs cost and freight cost are entered once per invoice and prorated across its lines "by value" (each line's share of the invoice's total material cost), giving every line its own landed unit price, converted to EUR using the invoice's own exchange rate
+- Material Price History, and the "current price" hints shown elsewhere in the app, are derived on demand from every Purchase Invoice line recorded for that material - editing an invoice's unit cost later (for when the supplier invoice and the customs bill arrive separately) updates history immediately, with nothing to migrate
+- Product cost (heater cost evaluation) is computed from the current (latest by date) purchase price of every BOM material, multiplied by its BOM quantity
+
 ### Data Management
 
-- Auto Save and Load Data toggle: when on, Material/Supplier/Warehouse/Product data loads automatically at startup and saves automatically after every change, instead of relying on the manual "Save Data" button
+- Auto Save and Load Data toggle (default on): when enabled, every operation that changes Material/Supplier/Warehouse stock/Product data (Goods Receipt/Issue/Transfer, Procurement receiving, creating/deleting a Material, Supplier, Warehouse or Product, selling a Product) saves automatically right after, and data loads automatically when the server starts - instead of relying on the manual "Save Data"/"Load Data" buttons
 - Manual Save Data / Load Data
 - Documents Folder setting: the root folder (anywhere on disk) that Procurement's Order Confirmation and Lieferschein PDFs are saved under
+- Reset PRC / Invoice Numbering (type `RESET` to confirm): deletes every Procurement Order and every Purchase Invoice outright and restarts both the "PRC-######" and "INV-######" counters at 1 - no undo, meant for clearing test data before real use begins
 - Exit: saves all data and shuts the web server down from the dashboard itself, so the application does not need to be stopped from Visual Studio or the console window
 
 ### Data Persistence
 
-Materials, Warehouses, Inventory, Products, BOM and Suppliers are stored using XLNT in an Excel workbook. Procurement Orders, Procurement document attachments, and Projections are stored separately as plain text (`data/procurement_orders.txt`, `data/procurement_documents.txt` and `data/projections.txt`), since all three need to be updated after every single action rather than only on a manual save.
+Materials, Warehouses, Inventory, Products, BOM and Suppliers are stored using XLNT in an Excel workbook, saved only when Auto Save/Load is on or "Save Data" is clicked manually.
+
+Procurement Orders, Procurement document attachments, Projections and Purchase Invoices are each stored separately as plain text (`data/procurement_orders.txt`, `data/procurement_documents.txt`, `data/projections.txt` and `data/purchase_invoices.txt`), saved immediately on every change instead of only on a manual save. A few small settings are stored the same immediate way, each in its own config file: the default exchange rate for Purchase (`data/purchase_config.txt`), Safety Stock units (`data/product_config.txt`), and the Auto Save/Load on/off flag itself (`data/datamanager_config.txt`).
+
+None of `data/` is committed to git - every Material, Supplier, Warehouse stock level, Product, Procurement Order and Purchase Invoice is local to whichever machine/folder the program runs from. Cloning the repository elsewhere gives identical code and an empty `data/` folder - nothing carries over automatically unless the folder is copied across on purpose.
 
 ## Architecture
 
@@ -134,6 +182,10 @@ WarehouseSystem
 ├── ProjectionManager
 │   └── Projection
 │
+├── PurchaseManager
+│   └── PurchaseInvoice
+│       └── PurchaseInvoiceLine
+│
 ├── DataManager
 │
 └── WebServer
@@ -151,6 +203,8 @@ Each WarehouseNode stores:
 
 Materials are owned by MaterialManager and warehouses keep pointers to the existing material objects. This avoids duplicating material master data.
 
+A Material's additional Suppliers are stored as a list embedded directly in the Material record itself (each entry: a Supplier plus its own Supplier Part Number), rather than as a separate table - simpler, but it means the primary Supplier and an additional one cannot currently be swapped, and there is no per-supplier lead time override.
+
 ### Product and BOM Concept
 
 A Product contains a Bill of Materials consisting of Material IDs and required quantities.
@@ -163,7 +217,7 @@ Before changing the inventory, the system checks that all required components ar
 
 Excel (via XLNT) is used as the persistence layer for Materials, Suppliers, Warehouses, Inventory, Products and BOM (the Products sheet includes each Product's optional Main Warehouse ID).
 
-Procurement Orders, Procurement document attachments, and Projections use their own plain text files instead, so that every action (an order confirmed, a receipt logged, a projection registered) is saved immediately, without depending on a manual save to Excel.
+Procurement Orders, Procurement document attachments, Projections and Purchase Invoices use their own plain text files instead, so that every action (an order confirmed, a receipt logged, a projection registered, an invoice recorded) is saved immediately, without depending on a manual save to Excel.
 
 The runtime system uses C++ objects and data structures either way; the persistence layer is only responsible for saving and restoring that state.
 
