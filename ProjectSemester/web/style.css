@@ -829,6 +829,20 @@ footer {
 }
 
 
+/* Internal Supplier BOM lines in Display Products - greyed out since
+   they are self-manufactured, not purchased/stocked (see Supplier
+   Management); the row's own links (Material ID / Name) stay their
+   normal color so they are still clickable and readable. */
+
+.product-bom-internal td {
+    color: #9ca3af;
+}
+
+    .product-bom-internal td a {
+        color: #9ca3af;
+    }
+
+
 .empty-message {
     margin-top: 30px;
     padding: 20px;
