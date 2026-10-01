@@ -9012,8 +9012,26 @@ async function openProjectionDetail(id) {
                         Production confirmed: ${projection.producedQuantity} units on ${escapeHtml(projection.completionDate || "-")}.
                         BOM materials were issued from the Warehouse.
                     </p>
+                    <div class="projection-delete-button-row">
+                        <button
+                            type="button"
+                            class="button-secondary"
+                            onclick="exportProjectionToExcel('${escapeHtml(projection.id)}')">
+
+                            Export to Excel
+
+                        </button>
+                    </div>
                 ` : `
                     <div class="projection-delete-button-row">
+                        <button
+                            type="button"
+                            class="button-secondary"
+                            onclick="exportProjectionToExcel('${escapeHtml(projection.id)}')">
+
+                            Export to Excel
+
+                        </button>
                         <button
                             type="button"
                             class="button-danger"
@@ -9349,6 +9367,125 @@ async function confirmProduction(id) {
             "Could not connect to the server.";
     }
 }
+
+// ============================================================
+// PROJECTIONS - EXPORT TO EXCEL
+// ============================================================
+// Downloads a CSV (opens directly in Excel, no extra library needed)
+// of this Projection's material table. Re-fetches the Projection right
+// before building the file so the export always reflects whatever is
+// on screen right now (live "Qty to Order", freshly-refreshed shortfall
+// items, etc.) rather than a stale copy from when the page first loaded.
+
+function csvEscapeCell(value) {
+
+    const text =
+        (value === undefined || value === null) ? "" : String(value);
+
+    if (/[",\n]/.test(text)) {
+        return '"' + text.replace(/"/g, '""') + '"';
+    }
+
+    return text;
+}
+
+
+function downloadCSV(filename, rows) {
+
+    const csvBody =
+        rows
+            .map(row => row.map(csvEscapeCell).join(","))
+            .join("\r\n");
+
+    // UTF-8 BOM so Excel renders accented characters correctly instead
+    // of guessing the wrong encoding.
+
+    const blob =
+        new Blob(["﻿" + csvBody], { type: "text/csv;charset=utf-8;" });
+
+    const url =
+        URL.createObjectURL(blob);
+
+    const link =
+        document.createElement("a");
+
+    link.href = url;
+    link.download = filename;
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
+}
+
+
+async function exportProjectionToExcel(id) {
+
+    try {
+
+        const response =
+            await fetch(`/api/projections/${id}`);
+
+        if (!response.ok) {
+
+            alert("Could not load this Projection to export it.");
+
+            return;
+        }
+
+        const projection =
+            await response.json();
+
+        const displayStatus =
+            projection.completed ? "Completed" : projection.status;
+
+        const rows = [
+            ["Projection", projection.id],
+            ["Product", `${projection.productID} ${projection.productName || ""}`.trim()],
+            ["Warehouse", projection.warehouseID],
+            ["Deadline", projection.deadline || ""],
+            ["Qty to Manufacture", projection.manufactureQuantity],
+            ["Status", displayStatus],
+            [],
+            [
+                "Material ID",
+                "Name",
+                "UoM",
+                "Stock",
+                "Required",
+                "Qty to Order",
+                "Ordered",
+                "Order By",
+                "Status"
+            ]
+        ];
+
+        for (const item of (projection.items || [])) {
+
+            rows.push([
+                item.materialID,
+                item.materialName || "",
+                item.uom || "",
+                item.currentStock,
+                item.requiredQuantity,
+                item.pendingQuantity,
+                item.orderedQuantity > 0 ? item.orderedQuantity : "",
+                item.orderByDate || "",
+                item.timingStatus || ""
+            ]);
+        }
+
+        downloadCSV(`${projection.id}_export.csv`, rows);
+    }
+    catch (error) {
+
+        console.error(error);
+
+        alert("Could not export this Projection.");
+    }
+}
+
 
 // ============================================================
 // PROJECTIONS - DELETE
