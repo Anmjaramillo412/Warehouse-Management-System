@@ -37,6 +37,24 @@ static string todayISO()
 
 
 // ================================================================
+// EFFECTIVE DEADLINE FOR ORDERING
+// ================================================================
+// Deadlines are "YYYY-MM-DD" so plain string comparison already sorts
+// them earliest-first. A Projection with NO deadline at all is treated
+// as the furthest-out, least-urgent date possible for THIS comparison
+// only (deciding which open Projections count toward which other open
+// Projection's shared material need) - it does not change whether a
+// no-deadline Projection itself stays "open" (see the separate
+// stillActive check in getOpenRequiredQuantity(), which always treats
+// an empty deadline as active).
+
+static string effectiveDeadlineForOrdering(const string& deadline)
+{
+    return deadline.empty() ? "9999-12-31" : deadline;
+}
+
+
+// ================================================================
 // FIELD SANITIZING (free text fields must not break the format)
 // ================================================================
 
@@ -203,13 +221,15 @@ int ProjectionManager::getWarehouseStock(
 // GET OPEN REQUIRED QUANTITY
 // ================================================================
 // Sum of this material's TRUE requirement across every currently open
-// Projection tied to this Warehouse. "Open" means not yet completed
-// AND the deadline has not passed - a completed Projection already
-// issued (consumed) its BOM from the Warehouse at completion time, so
-// counting its requirement again here would subtract the same units a
-// second time. An overdue-but-not-completed Projection is likewise
-// dropped, on the assumption its plan was already acted on outside the
-// system (goods issued/sold).
+// Projection tied to this Warehouse whose OWN deadline is AT OR BEFORE
+// asOfDeadline (deadline-order reservation - see the header comment on
+// this function in ProjectionManager.h). "Open" means not yet
+// completed AND the deadline has not passed - a completed Projection
+// already issued (consumed) its BOM from the Warehouse at completion
+// time, so counting its requirement again here would subtract the
+// same units a second time. An overdue-but-not-completed Projection is
+// likewise dropped, on the assumption its plan was already acted on
+// outside the system (goods issued/sold).
 //
 // This is computed LIVE from each open Projection's Product BOM
 // (quantity * manufactureQuantity), never from that Projection's own
@@ -221,13 +241,14 @@ int ProjectionManager::getWarehouseStock(
 // needing 30 and 35 units of a material with 54 in stock: neither one
 // alone is short, so neither would ever record it, and the shared
 // total would stay stuck at 0 forever). Summing the live BOM need of
-// every open Projection instead means the true combined demand always
-// shows up, regardless of which Projection's item list has or hasn't
-// caught up yet.
+// every open, due-at-or-before-asOf Projection instead means the true
+// combined demand always shows up, regardless of which Projection's
+// item list has or hasn't caught up yet.
 
 int ProjectionManager::getOpenRequiredQuantity(
     const string& materialID,
-    int warehouseID) const
+    int warehouseID,
+    const string& asOfDeadline) const
 {
     int total = 0;
 
@@ -238,6 +259,9 @@ int ProjectionManager::getOpenRequiredQuantity(
     {
         return 0;
     }
+
+    string asOfEffective =
+        effectiveDeadlineForOrdering(asOfDeadline);
 
     for (const auto& projection : projections)
     {
@@ -259,6 +283,16 @@ int ProjectionManager::getOpenRequiredQuantity(
             deadline >= today;
 
         if (!stillActive)
+        {
+            continue;
+        }
+
+        // Deadline-order cutoff: a Projection due LATER than
+        // asOfDeadline must never affect a Projection due sooner. Ties
+        // (same deadline) count both ways - equally urgent Projections
+        // genuinely compete for the same material.
+
+        if (effectiveDeadlineForOrdering(deadline) > asOfEffective)
         {
             continue;
         }
@@ -311,15 +345,20 @@ int ProjectionManager::getOpenRequiredQuantity(
 // GET QUANTITY TO ORDER
 // ================================================================
 // See the header comment on this function (ProjectionManager.h) for
-// why this is a single shared number per material+Warehouse instead
-// of a per-Projection calculation.
+// why this is computed as-of one specific deadline (a Projection due
+// sooner is never affected by one due later) instead of being one
+// number shared identically by every open Projection.
 
 int ProjectionManager::getQuantityToOrder(
     const string& materialID,
-    int warehouseID) const
+    int warehouseID,
+    const string& asOfDeadline) const
 {
     int required =
-        getOpenRequiredQuantity(materialID, warehouseID);
+        getOpenRequiredQuantity(
+            materialID,
+            warehouseID,
+            asOfDeadline);
 
     int stock =
         getWarehouseStock(materialID, warehouseID);
@@ -432,12 +471,16 @@ Projection* ProjectionManager::createProjection(
         // Every OTHER currently open Projection already competing for
         // this material in this same Warehouse - this new Projection
         // is not in the list yet, so it is naturally not counted
-        // twice here; its own "required" is added on top below.
+        // twice here; its own "required" is added on top below. This
+        // new Projection's own deadline is the cutoff: only an already
+        // -open Projection due at or before this new one's own
+        // deadline gets summed in.
 
         int alreadyOpen =
             getOpenRequiredQuantity(
                 bomItem.materialID,
-                warehouseID);
+                warehouseID,
+                deadline);
 
         int stock =
             getWarehouseStock(
@@ -722,7 +765,8 @@ bool ProjectionManager::refreshShortfallItems(
         int combinedRequired =
             getOpenRequiredQuantity(
                 bomItem.materialID,
-                warehouseID);
+                warehouseID,
+                projection->getDeadline());
 
         int stock =
             getWarehouseStock(

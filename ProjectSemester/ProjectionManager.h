@@ -48,21 +48,26 @@ private:
     // Sum of this material's TRUE requirement, computed live from each
     // Product's BOM, across every currently open Projection (not
     // completed, deadline today or later, or no deadline at all) tied
-    // to this ONE Warehouse. This is the "everyone who is competing
-    // for this material in this Warehouse" total - see
-    // getQuantityToOrder() below for why it is never split/attributed
-    // per-Projection any more.
+    // to this ONE Warehouse - but ONLY those whose OWN deadline is AT
+    // OR BEFORE asOfDeadline (a Projection accounts for every open
+    // Projection that expires no later than it does, but a Projection
+    // with a LATER delivery date must never affect one that expires
+    // sooner). No deadline at all is treated as the furthest-out,
+    // least-urgent date possible for this comparison only - see
+    // effectiveDeadlineForOrdering() in the .cpp.
     //
     // Deliberately NOT summed from each Projection's own recorded
     // items list: an item is only recorded once a Projection's OWN
     // share already crosses the shortfall line on its own, so two or
     // more Projections that are each individually fine but combined
     // exceed stock would otherwise never surface at all. Reading the
-    // live BOM instead means the true combined demand always counts,
-    // whether or not any single Projection has "caught up" to it yet.
+    // live BOM instead means the true combined demand (from every
+    // Projection due at or before asOfDeadline) always counts, whether
+    // or not any single Projection has "caught up" to it yet.
     int getOpenRequiredQuantity(
         const string& materialID,
-        int warehouseID) const;
+        int warehouseID,
+        const string& asOfDeadline) const;
 
 public:
 
@@ -73,12 +78,14 @@ public:
         const string& materialID,
         int warehouseID) const;
 
-    // Live, SHARED "Qty to Order" for one material inside one
-    // Warehouse: the combined requirement of every currently open
-    // Projection tied to that Warehouse that needs this material
-    // (this necessarily includes the Projection asking, once it
-    // exists, since it is part of "every open Projection") minus that
-    // Warehouse's actual current stock, floored at 0.
+    // "Qty to Order" for one material inside one Warehouse, AS SEEN BY
+    // A PROJECTION DUE ON asOfDeadline: the combined requirement of
+    // every currently open Projection tied to that Warehouse whose own
+    // deadline is AT OR BEFORE asOfDeadline (this necessarily includes
+    // the Projection asking, since its own deadline is asOfDeadline by
+    // definition - never a Projection due LATER, see
+    // getOpenRequiredQuantity() above) minus that Warehouse's actual
+    // current stock, floored at 0.
     //
     // This replaces the old per-Projection "Virtual Stock" model
     // (total stock minus every OTHER open Projection's reservation,
@@ -86,13 +93,15 @@ public:
     // counted a scarce material whenever two or more Projections
     // competed for it: each one excluded only itself and so each
     // concluded, on its own, that it needed to cover the full
-    // combined shortfall a second time. Because this number is now
-    // computed once from the shared totals instead of per-Projection,
-    // it comes out identical (and correct) no matter which open
-    // Projection asks for it.
+    // combined shortfall a second time. It is intentionally NOT one
+    // single number shared identically by every open Projection any
+    // more: a Projection due sooner must stay unaffected by one due
+    // later - only a Projection due later is expected to account for
+    // everything already due ahead of it.
     int getQuantityToOrder(
         const string& materialID,
-        int warehouseID) const;
+        int warehouseID,
+        const string& asOfDeadline) const;
 
     // Constructor
     ProjectionManager(
@@ -151,8 +160,10 @@ public:
     // has newly become short (live) since this Projection was created
     // or last refreshed, and adds it as a proper item if so - using
     // the exact same shortfall math as createProjection() (this
-    // Projection's own requirement plus every other open Projection's
-    // requirement for that material/Warehouse, minus actual stock).
+    // Projection's own requirement plus every other open Projection
+    // whose deadline is AT OR BEFORE its own - never one due later,
+    // see getOpenRequiredQuantity() above - for that material/
+    // Warehouse, minus actual stock).
     //
     // Without this, a material whose stock was comfortable when the
     // Projection was created but has since been consumed (by another

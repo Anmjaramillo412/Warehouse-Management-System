@@ -4686,12 +4686,12 @@ void WebServer::run()
                         projection->getCreationDate();
 
 
-                    // Status: "Fully Ordered" once every item's
-                    // shared, Warehouse-scoped "Qty to Order" has
-                    // reached zero - see ProjectionManager::
-                    // getQuantityToOrder() for why this is a single
-                    // live number per material+Warehouse rather than
-                    // something computed per-Projection.
+                    // Status: "Fully Ordered" once every item's "Qty
+                    // to Order", AS SEEN BY THIS Projection (itself
+                    // plus every open Projection due at or before its
+                    // own deadline - see ProjectionManager::
+                    // getQuantityToOrder() for the reasoning), has
+                    // reached zero.
 
                     bool fullyOrdered = true;
 
@@ -4701,7 +4701,8 @@ void WebServer::run()
                         int toOrder =
                             projectionManager.getQuantityToOrder(
                                 projItem.materialID,
-                                projection->getWarehouseID());
+                                projection->getWarehouseID(),
+                                projection->getDeadline());
 
                         if (toOrder > 0 &&
                             !projItem.orderRegistered)
@@ -4816,31 +4817,33 @@ void WebServer::run()
                 for (const auto& projItem :
                     projection->getItems())
                 {
-                    // "Qty to Order": the SHARED, live total needed
-                    // for this material across every currently open
-                    // Projection tied to this same Warehouse (this
-                    // Projection included), minus that Warehouse's
-                    // actual stock right now - see
-                    // ProjectionManager::getQuantityToOrder(). The
-                    // same value shows up identically on every open
-                    // Projection competing for this material in this
-                    // Warehouse, which is what avoids the previous
+                    // "Qty to Order": the live total needed for this
+                    // material, AS SEEN BY THIS Projection - itself
+                    // plus every other currently open Projection tied
+                    // to this same Warehouse whose OWN deadline is AT
+                    // OR BEFORE this Projection's deadline, never one
+                    // due later (see ProjectionManager::
+                    // getQuantityToOrder()) - minus that Warehouse's
+                    // actual stock right now. This avoids the earlier
                     // double-counting (each Projection independently
                     // believing it alone needed to cover the whole
-                    // shortfall).
+                    // shortfall) while also never letting a Projection
+                    // due later change one due sooner's own numbers.
 
                     int pending =
                         projectionManager.getQuantityToOrder(
                             projItem.materialID,
-                            projection->getWarehouseID());
+                            projection->getWarehouseID(),
+                            projection->getDeadline());
 
                     // Once this line has been frozen as "already
                     // ordered" (see ProjectionItem::orderRegistered),
                     // it counts as done for status purposes even if
-                    // the live shared "Qty to Order" above is still
-                    // above zero (e.g. another Projection is now
-                    // competing for the same material) - the freeze
-                    // is permanent until this Projection is completed.
+                    // the live "Qty to Order" above is still above
+                    // zero (e.g. another Projection due at or before it
+                    // is now also competing for the same material) -
+                    // the freeze is permanent until this Projection is
+                    // completed.
 
                     if (pending > 0 &&
                         !projItem.orderRegistered)
@@ -5720,21 +5723,27 @@ void WebServer::run()
                                 }
 
                                 // "Fully covered" has to compare
-                                // against the shared "Qty to Order"
-                                // shortfall (stock already subtracted),
-                                // NOT against this line's own raw
-                                // requiredQuantity - requiredQuantity
-                                // ignores stock entirely, so a line
-                                // that only ever needed the shortfall
-                                // amount (e.g. Required 30, Stock 20,
-                                // Qty to Order 10) would never read as
-                                // covered even after ordering exactly
-                                // the 10 it actually needed.
+                                // against the "Qty to Order" shortfall
+                                // AS SEEN BY THIS SOURCE PROJECTION
+                                // (stock already subtracted, itself
+                                // plus every open Projection due at or
+                                // before its own deadline - see
+                                // ProjectionManager::
+                                // getQuantityToOrder()), NOT against
+                                // this line's own raw requiredQuantity
+                                // - requiredQuantity ignores stock
+                                // entirely, so a line that only ever
+                                // needed the shortfall amount (e.g.
+                                // Required 30, Stock 20, Qty to Order
+                                // 10) would never read as covered even
+                                // after ordering exactly the 10 it
+                                // actually needed.
 
                                 int neededQuantity =
                                     projectionManager.getQuantityToOrder(
                                         line.materialID,
-                                        warehouseID);
+                                        warehouseID,
+                                        sourceProjection->getDeadline());
 
                                 int outstandingOrdered =
                                     getOutstandingOrderedQuantity(
