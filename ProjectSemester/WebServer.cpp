@@ -4896,6 +4896,19 @@ void WebServer::run()
                         material->getPhotoPath() : "";
 
 
+                    // Supplier name - used by the frontend to group
+                    // this Projection's materials by Supplier. Empty
+                    // when the Material has none assigned yet.
+
+                    Supplier* itemSupplier =
+                        (material != nullptr) ?
+                        material->getSupplier() : nullptr;
+
+                    itemJson["supplierName"] =
+                        (itemSupplier != nullptr) ?
+                        itemSupplier->getName() : "";
+
+
                     itemJson["requiredQuantity"] =
                         projItem.requiredQuantity;
 

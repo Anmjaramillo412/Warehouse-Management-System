@@ -2,7 +2,20 @@
 // MODULE NAVIGATION
 // ============================================================
 
+// Set only by openMaterialFromProjection() (see the Projection detail
+// section below), right after it switches into the Materials module -
+// so showMaterialDetail() knows to offer a "Go Back to Projection"
+// button. Reset to null at the top of every openModule() call, so any
+// ordinary navigation into Materials (sidebar, Display Materials,
+// Search Material, etc.) always starts without a stray back button;
+// openMaterialFromProjection sets it again immediately afterward.
+
+let materialsReturnProjectionID = null;
+
+
 function openModule(module) {
+
+    materialsReturnProjectionID = null;
 
     const dashboard =
         document.querySelector(".dashboard");
@@ -3320,6 +3333,16 @@ async function showMaterialDetail(id) {
             <div class="material-detail">
 
                 <div class="module-buttons material-detail-back">
+                    ${materialsReturnProjectionID ? `
+                        <button
+                            class="button-secondary"
+                            onclick="goBackToProjectionFromMaterial()">
+
+                            ← Go Back to Projection
+
+                        </button>
+                    ` : ""}
+
                     <button onclick="displayMaterials()">
                         ← Back to Materials
                     </button>
@@ -9073,7 +9096,43 @@ async function openProjectionDetail(id) {
 
         let anySelectable = false;
 
-        for (const item of (projection.items || [])) {
+        // Group rows by Supplier (so the purchasing conversation for
+        // one Supplier's materials sits together) - a Material with no
+        // Supplier assigned yet sorts into its own "No Supplier" group
+        // at the end, never mixed alphabetically with real ones.
+
+        const sortedItems =
+            [...(projection.items || [])].sort((a, b) => {
+
+                const supplierA = a.supplierName || "";
+                const supplierB = b.supplierName || "";
+
+                if (supplierA === "" && supplierB === "") return 0;
+                if (supplierA === "") return 1;
+                if (supplierB === "") return -1;
+
+                return supplierA.localeCompare(supplierB);
+            });
+
+        let lastSupplierGroup = null;
+
+        for (const item of sortedItems) {
+
+            const supplierGroup =
+                item.supplierName || "";
+
+            if (supplierGroup !== lastSupplierGroup) {
+
+                lastSupplierGroup = supplierGroup;
+
+                html += `
+                    <tr class="projection-supplier-group-row">
+                        <td colspan="12">
+                            ${escapeHtml(supplierGroup || "No Supplier")}
+                        </td>
+                    </tr>
+                `;
+            }
 
             const rowID =
                 "projdet-" + item.materialID;
@@ -9140,7 +9199,17 @@ async function openProjectionDetail(id) {
                         }
                     </td>
 
-                    <td>${escapeHtml(item.materialID)}</td>
+                    <td>
+                        <a
+                            href="#"
+                            class="material-id-link"
+                            title="View this Material"
+                            onclick="event.preventDefault(); openMaterialFromProjection('${escapeHtml(item.materialID)}', '${escapeHtml(projection.id)}');">
+
+                            ${escapeHtml(item.materialID)}
+
+                        </a>
+                    </td>
                     <td>${escapeHtml(item.materialName || "")}</td>
                     <td>${escapeHtml(item.uom || "")}</td>
                     <td>${item.currentStock}</td>
@@ -9369,6 +9438,51 @@ async function confirmProduction(id) {
 }
 
 // ============================================================
+// PROJECTIONS - JUMP TO MATERIAL
+// ============================================================
+// The Material ID column on a Projection's table links straight to
+// that Material's own detail view (its Supplier, drawing, etc.)
+// instead of making the user go hunt for it from Material Manager.
+// showMaterialDetail() renders into "#material-content", which only
+// exists once the Materials module shell itself is open - so this
+// switches modules first, the same as clicking "Materials" in the
+// sidebar would, then opens the Material directly.
+//
+// projectionID is remembered (see materialsReturnProjectionID above)
+// so showMaterialDetail() can offer a "Go Back to Projection" button -
+// set AFTER openModule(), since openModule() itself always resets it
+// to null first.
+
+function openMaterialFromProjection(materialID, projectionID) {
+
+    openModule("materials");
+
+    materialsReturnProjectionID = projectionID;
+
+    showMaterialDetail(materialID);
+}
+
+
+function goBackToProjectionFromMaterial() {
+
+    const projectionID =
+        materialsReturnProjectionID;
+
+    if (!projectionID) {
+        return;
+    }
+
+    // openModule() would reset materialsReturnProjectionID itself,
+    // which is fine here - we already captured the ID we need above
+    // before switching modules.
+
+    openModule("procurement");
+
+    openProjectionDetail(projectionID);
+}
+
+
+// ============================================================
 // PROJECTIONS - EXPORT TO EXCEL
 // ============================================================
 // Downloads a CSV (opens directly in Excel, no extra library needed)
@@ -9449,6 +9563,7 @@ async function exportProjectionToExcel(id) {
             ["Status", displayStatus],
             [],
             [
+                "Supplier",
                 "Material ID",
                 "Name",
                 "UoM",
@@ -9461,9 +9576,27 @@ async function exportProjectionToExcel(id) {
             ]
         ];
 
-        for (const item of (projection.items || [])) {
+        // Same Supplier-first sort as the on-screen table, so the
+        // exported file is already grouped for a per-Supplier purchase
+        // order instead of needing to be re-sorted in Excel.
+
+        const sortedExportItems =
+            [...(projection.items || [])].sort((a, b) => {
+
+                const supplierA = a.supplierName || "";
+                const supplierB = b.supplierName || "";
+
+                if (supplierA === "" && supplierB === "") return 0;
+                if (supplierA === "") return 1;
+                if (supplierB === "") return -1;
+
+                return supplierA.localeCompare(supplierB);
+            });
+
+        for (const item of sortedExportItems) {
 
             rows.push([
+                item.supplierName || "No Supplier",
                 item.materialID,
                 item.materialName || "",
                 item.uom || "",

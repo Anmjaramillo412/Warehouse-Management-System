@@ -276,6 +276,38 @@ body {
 }
 
 
+/* Material ID link on a Projection's table, straight through to that
+   Material's own detail view (Supplier, drawing, etc.). */
+
+.material-id-link {
+    color: #1d4ed8;
+    text-decoration: underline;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+    .material-id-link:hover {
+        color: #1e40af;
+    }
+
+
+/* Supplier group header row inserted between Suppliers on a
+   Projection's table - a little vertical breathing room plus a label,
+   rather than just blank space, so it is clear which group is which. */
+
+.projection-supplier-group-row td {
+    background: #f3f4f6;
+    color: #374151;
+    font-weight: 700;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    padding-top: 14px;
+    padding-bottom: 8px;
+    border-top: 2px solid #e5e7eb;
+}
+
+
 .button-secondary {
     padding: 10px 18px;
     border: none;
@@ -976,6 +1008,26 @@ footer {
     margin-top: 0;
     margin-bottom: 25px;
 }
+
+
+/* Outlined style for the Material detail's own button row (Go Back to
+   Projection / Back to Materials / Modify Material) - deliberately
+   NOT the solid dark fill used by module-level nav buttons elsewhere,
+   so this row reads as "local to this page" rather than "a different
+   section of the app". Two classes + element beats the plain
+   ".module-buttons button" rule's specificity regardless of source
+   order (same reasoning as the other compound-selector overrides in
+   this file). */
+
+.module-buttons.material-detail-back button {
+    background: transparent;
+    color: #1f2937;
+    border: 1.5px solid #1f2937;
+}
+
+    .module-buttons.material-detail-back button:hover {
+        background: #f3f4f6;
+    }
 
 
 .material-detail-header {
