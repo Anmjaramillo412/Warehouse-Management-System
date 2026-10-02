@@ -55,6 +55,43 @@ struct PurchaseInvoiceLine
 
 
 // ================================================================
+// PURCHASE INVOICE OTHER COST
+// ================================================================
+// A one-time charge that is neither customs nor freight - e.g. a
+// machinery setup fee paid once to a contractor - tied to a Supplier
+// rather than to any one material, and amortized as a per-unit
+// addition to that Supplier's materials' price rather than prorated
+// across this invoice's own lines "by value" the way customs/freight
+// are (see PurchaseManager::getLineOtherCostAdditionEUR() for the
+// actual amortization math).
+//
+// supplierWide = false: amountEUR is divided only by the quantity of
+// that Supplier's materials received on THIS invoice.
+//
+// supplierWide = true: amountEUR is divided by the cumulative
+// quantity of that Supplier's materials received across EVERY
+// invoice up to and including this one (oldest to newest by date) -
+// so the per-unit addition shrinks on each later invoice as more is
+// bought from that Supplier, without ever changing what an earlier
+// invoice already computed.
+//
+// amountEUR is always in EUR, regardless of the invoice's own
+// currency - this is a separate contractor charge, not a line on the
+// supplier invoice itself.
+
+struct PurchaseInvoiceOtherCost
+{
+    string supplierName;
+
+    double amountEUR;
+
+    bool supplierWide;
+
+    string comment;
+};
+
+
+// ================================================================
 // PURCHASE INVOICE
 // ================================================================
 // One landed-cost calculation: a supplier invoice (or the relevant
@@ -97,6 +134,11 @@ private:
 
     vector<PurchaseInvoiceLine> lines;
 
+    // One-time, Supplier-tied charges amortized separately from
+    // customs/freight - see PurchaseInvoiceOtherCost above. Usually
+    // empty.
+    vector<PurchaseInvoiceOtherCost> otherCosts;
+
 public:
 
     // Constructor
@@ -121,6 +163,7 @@ public:
     double getFreightCost() const;
     string getComment() const;
     const vector<PurchaseInvoiceLine>& getLines() const;
+    const vector<PurchaseInvoiceOtherCost>& getOtherCosts() const;
 
     // Setters
     void setID(const string& invoiceID);
@@ -133,6 +176,9 @@ public:
 
     void addLine(const PurchaseInvoiceLine& line);
     void setLines(const vector<PurchaseInvoiceLine>& newLines);
+
+    void addOtherCost(const PurchaseInvoiceOtherCost& otherCost);
+    void setOtherCosts(const vector<PurchaseInvoiceOtherCost>& newOtherCosts);
 
     // ------------------------------------------------------------
     // Landed cost calculation

@@ -62,6 +62,7 @@ PurchaseManager::PurchaseManager(
 {
     procurementManager = procManager;
     movementLogger = logger;
+    materialManager = nullptr;
 
     filename = file;
     configFilename = configFile;
@@ -90,6 +91,13 @@ void PurchaseManager::setMovementLogger(
 }
 
 
+void PurchaseManager::setMaterialManager(
+    MaterialManager* manager)
+{
+    materialManager = manager;
+}
+
+
 // ================================================================
 // GENERATE NEXT ID
 // ================================================================
@@ -105,6 +113,30 @@ string PurchaseManager::generateNextID()
     nextNumber++;
 
     return stream.str();
+}
+
+
+// ================================================================
+// LINE SUPPLIER NAME (for Other Costs amortization)
+// ================================================================
+
+string PurchaseManager::getLineSupplierName(
+    const PurchaseInvoiceLine& line) const
+{
+    if (materialManager == nullptr)
+    {
+        return "";
+    }
+
+    Material* material =
+        materialManager->findMaterial(line.materialID);
+
+    if (material == nullptr || material->getSupplier() == nullptr)
+    {
+        return "";
+    }
+
+    return material->getSupplier()->getName();
 }
 
 
@@ -183,6 +215,7 @@ PurchaseInvoice* PurchaseManager::createInvoice(
     double freightCost,
     const string& comment,
     const vector<PurchaseInvoiceLine>& lines,
+    const vector<PurchaseInvoiceOtherCost>& otherCosts,
     string& errorMessage)
 {
     if (lines.empty())
@@ -191,6 +224,26 @@ PurchaseInvoice* PurchaseManager::createInvoice(
             "An invoice needs at least one priced delivery.";
 
         return nullptr;
+    }
+
+    for (const auto& otherCost : otherCosts)
+    {
+        if (otherCost.supplierName.empty())
+        {
+            errorMessage =
+                "Each Other Cost needs a Supplier.";
+
+            return nullptr;
+        }
+
+        if (otherCost.amountEUR < 0.0)
+        {
+            errorMessage =
+                "Other Cost amount cannot be negative (" +
+                otherCost.supplierName + ").";
+
+            return nullptr;
+        }
     }
 
     // Validate every line against Procurement and against every
@@ -313,11 +366,19 @@ PurchaseInvoice* PurchaseManager::createInvoice(
     string id =
         generateNextID();
 
+    // A EUR invoice is always exchangeRate 1.0 - forced here rather
+    // than trusted from the caller, so a stale/mismatched rate left
+    // over from switching the Currency field away from USD and back
+    // (or any other client-side slip) can never silently deflate or
+    // inflate every price derived from this invoice.
+    double effectiveExchangeRate =
+        (currency == "EUR") ? 1.0 : exchangeRate;
+
     auto invoice = make_unique<PurchaseInvoice>(
         id,
         date,
         currency,
-        exchangeRate,
+        effectiveExchangeRate,
         customsCost,
         freightCost,
         sanitizeField(comment));
@@ -332,6 +393,18 @@ PurchaseInvoice* PurchaseManager::createInvoice(
         invoice->addLine(sanitizedLine);
     }
 
+    for (const auto& otherCost : otherCosts)
+    {
+        PurchaseInvoiceOtherCost sanitizedOtherCost = otherCost;
+
+        sanitizedOtherCost.supplierName =
+            sanitizeField(sanitizedOtherCost.supplierName);
+        sanitizedOtherCost.comment =
+            sanitizeField(sanitizedOtherCost.comment);
+
+        invoice->addOtherCost(sanitizedOtherCost);
+    }
+
     invoices.push_back(
         std::move(invoice));
 
@@ -343,6 +416,7 @@ PurchaseInvoice* PurchaseManager::createInvoice(
             "PURCHASE INVOICE CREATED",
             "ID: " + id +
             " | Lines: " + to_string(lines.size()) +
+            " | Other Costs: " + to_string(otherCosts.size()) +
             " | Currency: " + currency);
     }
 
@@ -383,6 +457,7 @@ bool PurchaseManager::updateInvoice(
     double freightCost,
     const string& comment,
     const vector<PurchaseInvoiceLine>& lines,
+    const vector<PurchaseInvoiceOtherCost>& otherCosts,
     string& errorMessage)
 {
     PurchaseInvoice* invoice =
@@ -469,13 +544,57 @@ bool PurchaseManager::updateInvoice(
         }
     }
 
+    for (const auto& otherCost : otherCosts)
+    {
+        if (otherCost.supplierName.empty())
+        {
+            errorMessage =
+                "Each Other Cost needs a Supplier.";
+
+            return false;
+        }
+
+        if (otherCost.amountEUR < 0.0)
+        {
+            errorMessage =
+                "Other Cost amount cannot be negative (" +
+                otherCost.supplierName + ").";
+
+            return false;
+        }
+    }
+
+    // Same EUR -> rate 1.0 guard as createInvoice() above - this is
+    // also how an existing invoice with a bad stored rate (e.g. one
+    // created before this guard existed) gets corrected: editing it
+    // and saving, even with no other change, now always writes 1.0
+    // for a EUR invoice regardless of what was there before.
+    double effectiveExchangeRate =
+        (currency == "EUR") ? 1.0 : exchangeRate;
+
     invoice->setDate(date);
     invoice->setCurrency(currency);
-    invoice->setExchangeRate(exchangeRate);
+    invoice->setExchangeRate(effectiveExchangeRate);
     invoice->setCustomsCost(customsCost);
     invoice->setFreightCost(freightCost);
     invoice->setComment(sanitizeField(comment));
     invoice->setLines(lines);
+
+    vector<PurchaseInvoiceOtherCost> sanitizedOtherCosts;
+
+    for (const auto& otherCost : otherCosts)
+    {
+        PurchaseInvoiceOtherCost sanitizedOtherCost = otherCost;
+
+        sanitizedOtherCost.supplierName =
+            sanitizeField(sanitizedOtherCost.supplierName);
+        sanitizedOtherCost.comment =
+            sanitizeField(sanitizedOtherCost.comment);
+
+        sanitizedOtherCosts.push_back(sanitizedOtherCost);
+    }
+
+    invoice->setOtherCosts(sanitizedOtherCosts);
 
     save();
 
@@ -528,6 +647,174 @@ PurchaseManager::getInvoices() const
 
 
 // ================================================================
+// "OTHER COSTS" AMORTIZATION
+// ================================================================
+// Orders invoices oldest-to-newest by (date, ID) - ID as the
+// tie-breaker since IDs are assigned in creation order, so two
+// invoices dated the same day still get a stable, deterministic
+// sequence.
+
+static bool invoiceIsAtOrBefore(
+    const PurchaseInvoice* a,
+    const PurchaseInvoice* b)
+{
+    if (a->getDate() != b->getDate())
+    {
+        return a->getDate() < b->getDate();
+    }
+
+    return a->getID() <= b->getID();
+}
+
+
+double PurchaseManager::getLineOtherCostAdditionEUR(
+    const PurchaseInvoice* invoice,
+    size_t lineIndex) const
+{
+    if (invoice == nullptr ||
+        lineIndex >= invoice->getLines().size())
+    {
+        return 0.0;
+    }
+
+    const PurchaseInvoiceLine& line =
+        invoice->getLines()[lineIndex];
+
+    string lineSupplierName =
+        getLineSupplierName(line);
+
+    if (lineSupplierName.empty())
+    {
+        return 0.0;
+    }
+
+    double totalAddition = 0.0;
+
+    // Every Other Cost entry, on ANY invoice, that names this line's
+    // Supplier can contribute - not just entries on THIS invoice.
+    // An invoice-only entry only ever affects the one invoice it was
+    // entered on; a Supplier-wide entry is entered once (e.g. on the
+    // invoice that actually carried the one-time charge) and from
+    // then on applies automatically to every later invoice for that
+    // Supplier too, with an ever-growing cumulative quantity shrinking
+    // its per-unit share each time - without ever being re-entered,
+    // and without ever changing what an earlier invoice already
+    // computed (see PurchaseInvoiceOtherCost's worked example: a 600
+    // EUR charge on a first 400-unit invoice adds 1.50 EUR/unit there;
+    // a second, unrelated 1000-unit invoice from the same Supplier,
+    // with no Other Cost entry of its own, still gets 600 / 1400 =
+    // 0.43 EUR/unit from that same original entry).
+
+    for (const auto& sourceInvoice : invoices)
+    {
+        for (const auto& otherCost : sourceInvoice->getOtherCosts())
+        {
+            if (otherCost.supplierName != lineSupplierName)
+            {
+                continue;
+            }
+
+            if (otherCost.supplierWide)
+            {
+                // Only applies from the invoice it was entered on
+                // forward in time - never to an invoice that predates
+                // it (nothing to "amortize into" before the charge
+                // existed).
+                if (!invoiceIsAtOrBefore(
+                        sourceInvoice.get(), invoice))
+                {
+                    continue;
+                }
+            }
+            else
+            {
+                // Invoice-only: applies to nothing but the one
+                // invoice it was entered on.
+                if (sourceInvoice.get() != invoice)
+                {
+                    continue;
+                }
+            }
+
+            double quantityBasis = 0.0;
+
+            if (otherCost.supplierWide)
+            {
+                // Cumulative quantity of this Supplier's materials
+                // across every invoice up to and including the one
+                // being PRICED (not the one the cost was entered on) -
+                // this is what makes the per-unit share keep shrinking
+                // on later invoices with no Other Cost entry of their
+                // own.
+                for (const auto& qtyInvoice : invoices)
+                {
+                    if (!invoiceIsAtOrBefore(
+                            qtyInvoice.get(), invoice))
+                    {
+                        continue;
+                    }
+
+                    const auto& qtyLines =
+                        qtyInvoice->getLines();
+
+                    for (size_t j = 0; j < qtyLines.size(); j++)
+                    {
+                        if (getLineSupplierName(qtyLines[j]) ==
+                            lineSupplierName)
+                        {
+                            quantityBasis +=
+                                qtyLines[j].receivedQuantity;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // Invoice-only: just this Supplier's quantity on the
+                // one invoice the cost was entered on (== invoice,
+                // since we only reach here when sourceInvoice ==
+                // invoice).
+                const auto& theseLines =
+                    sourceInvoice->getLines();
+
+                for (size_t j = 0; j < theseLines.size(); j++)
+                {
+                    if (getLineSupplierName(theseLines[j]) ==
+                        lineSupplierName)
+                    {
+                        quantityBasis +=
+                            theseLines[j].receivedQuantity;
+                    }
+                }
+            }
+
+            if (quantityBasis > 0.0)
+            {
+                totalAddition +=
+                    otherCost.amountEUR / quantityBasis;
+            }
+        }
+    }
+
+    return totalAddition;
+}
+
+
+double PurchaseManager::getLineLandedUnitPriceEUR(
+    const PurchaseInvoice* invoice,
+    size_t lineIndex) const
+{
+    if (invoice == nullptr)
+    {
+        return 0.0;
+    }
+
+    return invoice->getLineUnitPriceEUR(lineIndex) +
+        getLineOtherCostAdditionEUR(invoice, lineIndex);
+}
+
+
+// ================================================================
 // MATERIAL PRICE HISTORY
 // ================================================================
 
@@ -551,7 +838,8 @@ vector<MaterialPriceHistoryEntry> PurchaseManager::getPriceHistory(
             MaterialPriceHistoryEntry entry;
 
             entry.date = invoice->getDate();
-            entry.unitPriceEUR = invoice->getLineUnitPriceEUR(i);
+            entry.unitPriceEUR =
+                getLineLandedUnitPriceEUR(invoice.get(), i);
             entry.originalCurrency = invoice->getCurrency();
             entry.originalUnitPrice = invoice->getLineUnitPrice(i);
             entry.exchangeRateUsed = invoice->getExchangeRate();
@@ -687,10 +975,15 @@ bool PurchaseManager::setDefaultExchangeRate(double rate)
 // Plain text format, one line per invoice:
 //
 // id|date|currency|exchangeRate|customsCost|freightCost|comment|
-//   lines
+//   lines|otherCosts
 //
 // lines: each as "procurementOrderID,materialID,receiptIndex,
 //   receivedQuantity,unitCost", several joined by "~"
+//
+// otherCosts: each as "supplierName,amountEUR,supplierWide,comment",
+//   several joined by "~" - supplierWide is "1"/"0". Field is simply
+//   absent (nothing after the last "|") on an invoice with none, same
+//   as an empty lines field would be.
 
 bool PurchaseManager::save()
 {
@@ -723,6 +1016,25 @@ bool PurchaseManager::save()
                 to_string(lines[i].unitCost);
         }
 
+        string otherCostsField = "";
+
+        const auto& otherCosts =
+            invoice->getOtherCosts();
+
+        for (size_t i = 0; i < otherCosts.size(); i++)
+        {
+            if (i > 0)
+            {
+                otherCostsField += "~";
+            }
+
+            otherCostsField +=
+                otherCosts[i].supplierName + "," +
+                to_string(otherCosts[i].amountEUR) + "," +
+                (otherCosts[i].supplierWide ? "1" : "0") + "," +
+                otherCosts[i].comment;
+        }
+
         file << invoice->getID() << "|"
             << invoice->getDate() << "|"
             << invoice->getCurrency() << "|"
@@ -730,7 +1042,8 @@ bool PurchaseManager::save()
             << invoice->getCustomsCost() << "|"
             << invoice->getFreightCost() << "|"
             << invoice->getComment() << "|"
-            << linesField
+            << linesField << "|"
+            << otherCostsField
             << endl;
     }
 
@@ -827,6 +1140,33 @@ bool PurchaseManager::load()
                 invoiceLine.unitCost = atof(lineFields[4].c_str());
 
                 invoice->addLine(invoiceLine);
+            }
+        }
+
+        if (fields.size() > 8 && !fields[8].empty())
+        {
+            vector<string> otherCostTokens =
+                splitBy(fields[8], '~');
+
+            for (const string& token : otherCostTokens)
+            {
+                vector<string> otherCostFields =
+                    splitBy(token, ',');
+
+                if (otherCostFields.size() < 3)
+                {
+                    continue;
+                }
+
+                PurchaseInvoiceOtherCost otherCost;
+
+                otherCost.supplierName = otherCostFields[0];
+                otherCost.amountEUR = atof(otherCostFields[1].c_str());
+                otherCost.supplierWide = (otherCostFields[2] == "1");
+                otherCost.comment =
+                    otherCostFields.size() > 3 ? otherCostFields[3] : "";
+
+                invoice->addOtherCost(otherCost);
             }
         }
 

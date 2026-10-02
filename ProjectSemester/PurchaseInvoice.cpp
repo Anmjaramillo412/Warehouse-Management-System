@@ -87,6 +87,12 @@ const vector<PurchaseInvoiceLine>& PurchaseInvoice::getLines() const
 }
 
 
+const vector<PurchaseInvoiceOtherCost>& PurchaseInvoice::getOtherCosts() const
+{
+    return otherCosts;
+}
+
+
 // ================================================================
 // SETTERS
 // ================================================================
@@ -142,6 +148,19 @@ void PurchaseInvoice::addLine(const PurchaseInvoiceLine& line)
 void PurchaseInvoice::setLines(const vector<PurchaseInvoiceLine>& newLines)
 {
     lines = newLines;
+}
+
+
+void PurchaseInvoice::addOtherCost(const PurchaseInvoiceOtherCost& otherCost)
+{
+    otherCosts.push_back(otherCost);
+}
+
+
+void PurchaseInvoice::setOtherCosts(
+    const vector<PurchaseInvoiceOtherCost>& newOtherCosts)
+{
+    otherCosts = newOtherCosts;
 }
 
 
@@ -246,6 +265,7 @@ void PurchaseInvoice::display() const
     cout << "Freight Cost:     " << freightCost << endl;
     cout << "Comment:          " << comment << endl;
     cout << "Lines:            " << lines.size() << endl;
+    cout << "Other Costs:      " << otherCosts.size() << endl;
 
     cout << "----------------------------------------"
         << endl;
