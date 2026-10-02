@@ -8,6 +8,7 @@
 #include "ProcurementManager.h"
 #include "MovementLogger.h"
 #include "Product.h"
+#include "MaterialManager.h"
 
 using namespace std;
 
@@ -112,8 +113,23 @@ private:
     ProcurementManager* procurementManager;
     MovementLogger* movementLogger;
 
+    // Needed to resolve a material's Supplier for the "Other Costs"
+    // amortization below (see getLineOtherCostAdditionEUR()). May be
+    // nullptr if not wired yet, in which case Other Costs simply
+    // contribute nothing - set via setMaterialManager(), the same
+    // pattern InventoryManager uses, rather than a constructor
+    // argument, since other code already constructs PurchaseManager
+    // with its existing argument list.
+    MaterialManager* materialManager;
+
     // Generates the next consecutive ID, e.g. "INV-000001"
     string generateNextID();
+
+    // The name of the Supplier that owns this line's material, or ""
+    // if unknown (no MaterialManager wired, material not found, or
+    // the material has no Supplier).
+    string getLineSupplierName(
+        const PurchaseInvoiceLine& line) const;
 
 public:
 
@@ -129,6 +145,9 @@ public:
 
     void setMovementLogger(
         MovementLogger* logger);
+
+    void setMaterialManager(
+        MaterialManager* manager);
 
     // ------------------------------------------------------------
     // Pending receipts (not yet priced by any invoice line)
@@ -154,6 +173,7 @@ public:
         double freightCost,
         const string& comment,
         const vector<PurchaseInvoiceLine>& lines,
+        const vector<PurchaseInvoiceOtherCost>& otherCosts,
         string& errorMessage);
 
     PurchaseInvoice* findInvoice(
@@ -178,6 +198,7 @@ public:
         double freightCost,
         const string& comment,
         const vector<PurchaseInvoiceLine>& lines,
+        const vector<PurchaseInvoiceOtherCost>& otherCosts,
         string& errorMessage);
 
     // Deletes an invoice outright - its priced receipts return to
@@ -188,6 +209,30 @@ public:
 
     const vector<unique_ptr<PurchaseInvoice>>&
         getInvoices() const;
+
+    // ------------------------------------------------------------
+    // "Other Costs" amortization (see PurchaseInvoiceOtherCost)
+    // ------------------------------------------------------------
+
+    // This line's share of its invoice's Other Costs, in EUR - 0.0 if
+    // the line's material has no Supplier, no Other Cost on the
+    // invoice names that Supplier, or materialManager was never
+    // wired. For an invoice-only Other Cost, the amount is divided by
+    // that Supplier's quantity on THIS invoice alone; for a
+    // Supplier-wide one, by that Supplier's cumulative quantity
+    // across every invoice up to and including this one (oldest to
+    // newest by date, tie-broken by ID) - see the .cpp for the exact
+    // formula and the worked example that drove it.
+    double getLineOtherCostAdditionEUR(
+        const PurchaseInvoice* invoice,
+        size_t lineIndex) const;
+
+    // getLineUnitPriceEUR() plus getLineOtherCostAdditionEUR() - the
+    // actual price recorded into history/current price/product
+    // costing (see getPriceHistory() below).
+    double getLineLandedUnitPriceEUR(
+        const PurchaseInvoice* invoice,
+        size_t lineIndex) const;
 
     // ------------------------------------------------------------
     // Material price history / current price

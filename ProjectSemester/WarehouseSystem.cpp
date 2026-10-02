@@ -35,6 +35,12 @@ WarehouseSystem::WarehouseSystem()
     // (warehouseManager, movementLogger) elsewhere.
     inventoryManager.setMaterialManager(
         &materialManager);
+
+    // So "Other Costs" amortization can resolve each Purchase Invoice
+    // line's material to its Supplier (see PurchaseManager.h) - same
+    // reason/pattern as inventoryManager above.
+    purchaseManager.setMaterialManager(
+        &materialManager);
 }
 
 

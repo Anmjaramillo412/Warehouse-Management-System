@@ -2202,6 +2202,16 @@ function selectSupplierOption(prefix, name) {
     document.getElementById(
         prefix + "-supplier-options"
     ).classList.add("hidden");
+
+    // If this combobox belongs to an Other Cost row, its quantity
+    // hint depends on which Supplier is picked - refresh it now
+    // rather than leaving the earlier Supplier's (or "Select a
+    // Supplier") number showing.
+    if (typeof otherCostRowSources !== "undefined" &&
+        otherCostRowSources[prefix]) {
+
+        refreshOtherCostQuantity(prefix);
+    }
 }
 
 function hideSupplierOptionsDelayed(prefix) {
@@ -9011,7 +9021,7 @@ async function openProjectionDetail(id) {
 
             </button>
 
-            <div class="material-table-container">
+            <div class="material-table-container material-table-container-fit">
 
                 <h2>
                     ${escapeHtml(projection.id)}
@@ -9069,7 +9079,7 @@ async function openProjectionDetail(id) {
                 <div id="projection-detail-message">
                 </div>
 
-                <table class="material-table">
+                <table class="material-table material-table-sticky">
 
                     <thead>
 
@@ -11883,6 +11893,8 @@ async function showPurchasePending() {
 
         purchasePendingCache = pending;
 
+        otherCostRowCounters["purchpending"] = 0;
+
         content.innerHTML =
             renderPurchasePendingForm(pending);
     }
@@ -11996,7 +12008,7 @@ function renderPurchasePendingForm(pending) {
                 min="0.000001"
                 step="0.0001"
                 id="purchpending-rate"
-                value="${purchaseDefaultExchangeRate}"
+                value="1.0"
                 disabled
             >
 
@@ -12023,6 +12035,38 @@ function renderPurchasePendingForm(pending) {
                 id="purchpending-freight"
                 value="0"
             >
+
+            <div class="multi-line-items">
+
+                <div class="multi-line-header">
+
+                    <label>
+                        Other Costs (optional)
+                    </label>
+
+                    <button
+                        type="button"
+                        class="add-line-button"
+                        onclick="addOtherCostRow('purchpending', 'purchpending-othercosts', null, 'pending')">
+
+                        + Add Other Cost
+
+                    </button>
+
+                </div>
+
+                <small>
+                    For a one-time charge that is neither customs nor
+                    freight - e.g. a machinery setup fee paid once to a
+                    contractor. It is amortized as a per-unit addition
+                    to that Supplier's materials, not prorated across
+                    this invoice's own lines.
+                </small>
+
+                <div id="purchpending-othercosts">
+                </div>
+
+            </div>
 
             <label>
                 Comment (optional)
@@ -12120,6 +12164,12 @@ function togglePurchasePendingRow(index) {
     if (!checkbox.checked) {
         costInput.value = "";
     }
+
+    // Any Other Cost row's "Quantity (this invoice)" hint depends on
+    // which deliveries are checked - keep it in sync.
+    if (typeof refreshAllOtherCostQuantities === "function") {
+        refreshAllOtherCostQuantities("purchpending-othercosts");
+    }
 }
 
 async function submitPurchaseInvoice() {
@@ -12142,7 +12192,14 @@ async function submitPurchaseInvoice() {
             "purchpending-currency"
         ).value;
 
+    // Always 1.0 for EUR, regardless of whatever the (disabled, and
+    // possibly stale from an earlier USD selection) Exchange Rate
+    // field still holds - a EUR invoice priced at anything but its
+    // own currency's 1:1 rate would silently under/over-value every
+    // price derived from it.
     const exchangeRate =
+        currency === "EUR" ?
+        1.0 :
         Number(
             document.getElementById(
                 "purchpending-rate"
@@ -12233,6 +12290,18 @@ async function submitPurchaseInvoice() {
         return;
     }
 
+    const otherCostsResult =
+        collectOtherCostsFromForm(
+            "purchpending", "purchpending-othercosts");
+
+    if (otherCostsResult.error) {
+
+        message.textContent =
+            otherCostsResult.error;
+
+        return;
+    }
+
 
     const payload = {
         date: date,
@@ -12241,7 +12310,8 @@ async function submitPurchaseInvoice() {
         customsCost: customsCost,
         freightCost: freightCost,
         comment: comment,
-        lines: lines
+        lines: lines,
+        otherCosts: otherCostsResult.otherCosts
     };
 
     try {
@@ -12281,6 +12351,327 @@ async function submitPurchaseInvoice() {
 }
 
 // ============================================================
+// "OTHER COSTS" - REPEATABLE ROWS (one-time Supplier-tied charges,
+// e.g. a machinery setup fee paid once to a contractor, amortized as
+// a per-unit addition to that Supplier's materials rather than
+// prorated across this invoice's own lines "by value" the way
+// customs/freight are - see PurchaseInvoiceOtherCost on the backend).
+// Shared markup/logic reused by the "Price Received Deliveries" form,
+// the "Adjust Material Price" form, and the Edit Invoice card.
+// ============================================================
+
+let otherCostRowCounters = {};
+
+// Maps a rendered Other Cost row's prefix to where its quantity hint
+// (below) should read its lines from - "pending" (the "Price Received
+// Deliveries" form's checked rows), "invoice:<id>" (an existing
+// invoice being edited), or omitted/falsy for a form with no sensible
+// source (e.g. "Adjust Material Price"), which simply gets no hint.
+let otherCostRowSources = {};
+
+function otherCostRowHtml(formPrefix, rowIndex, data, source) {
+
+    data = data || {};
+
+    const rowPrefix =
+        `${formPrefix}-othercost-${rowIndex}`;
+
+    return `
+        <div class="line-item" id="${rowPrefix}-row">
+
+            <div class="line-item-field">
+
+                <label>
+                    Supplier
+                </label>
+
+                ${supplierComboboxHtml(rowPrefix, "Search supplier by name...")}
+
+            </div>
+
+            <div class="line-item-field line-item-field-qty">
+
+                <label>
+                    Amount (EUR)
+                </label>
+
+                <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    id="${rowPrefix}-amount"
+                    placeholder="e.g. Setup fee"
+                    value="${data.amountEUR != null ? data.amountEUR : ""}"
+                >
+
+            </div>
+
+            <div class="line-item-field">
+
+                <label>
+                    Amortize across
+                </label>
+
+                <select id="${rowPrefix}-scope">
+                    <option value="invoice" ${!data.supplierWide ? "selected" : ""}>
+                        Only this invoice
+                    </option>
+                    <option value="supplier" ${data.supplierWide ? "selected" : ""}>
+                        All purchases to this Supplier
+                    </option>
+                </select>
+
+            </div>
+
+            ${source ? `
+                <div class="line-item-field">
+
+                    <label>
+                        Quantity (this invoice)
+                    </label>
+
+                    <div id="${rowPrefix}-qty" class="empty-message">
+                        Select a Supplier
+                    </div>
+
+                </div>
+            ` : ""}
+
+            <div class="line-item-field">
+
+                <label>
+                    Comment (optional)
+                </label>
+
+                <input
+                    type="text"
+                    id="${rowPrefix}-comment"
+                    placeholder="e.g. Machinery setup fee"
+                    value="${escapeHtml(data.comment || "")}"
+                >
+
+            </div>
+
+            <button
+                type="button"
+                class="remove-line-button"
+                title="Remove this Other Cost"
+                onclick="document.getElementById('${rowPrefix}-row').remove()">
+
+                &times;
+
+            </button>
+        </div>
+    `;
+}
+
+function addOtherCostRow(formPrefix, containerId, data, source) {
+
+    if (otherCostRowCounters[formPrefix] === undefined) {
+        otherCostRowCounters[formPrefix] = 0;
+    }
+
+    const rowIndex =
+        otherCostRowCounters[formPrefix]++;
+
+    const container =
+        document.getElementById(containerId);
+
+    if (!container) {
+        return;
+    }
+
+    const wrapper =
+        document.createElement("div");
+
+    wrapper.innerHTML =
+        otherCostRowHtml(formPrefix, rowIndex, data, source).trim();
+
+    const rowElement =
+        wrapper.firstElementChild;
+
+    container.appendChild(rowElement);
+
+    const rowPrefix =
+        `${formPrefix}-othercost-${rowIndex}`;
+
+    if (source) {
+        otherCostRowSources[rowPrefix] = source;
+    }
+
+    initSupplierCombobox(
+        rowPrefix,
+        (data && data.supplierName) || "");
+
+    refreshOtherCostQuantity(rowPrefix);
+}
+
+// Recomputes and redisplays the "Quantity (this invoice)" hint for
+// one Other Cost row, from whatever source addOtherCostRow recorded
+// for it - the quantity of the row's chosen Supplier's materials
+// among that form's own lines right now. This is the number the
+// backend actually divides the Amount by for an invoice-only Other
+// Cost, or feeds into the running cumulative total for a
+// Supplier-wide one (see PurchaseManager::getLineOtherCostAdditionEUR).
+function refreshOtherCostQuantity(rowPrefix) {
+
+    const hint =
+        document.getElementById(`${rowPrefix}-qty`);
+
+    if (!hint) {
+        // No hint element for this row (no source was given, e.g.
+        // the Adjust Material Price form) - nothing to refresh.
+        return;
+    }
+
+    const supplierInput =
+        document.getElementById(`${rowPrefix}-supplier`);
+
+    const supplierName =
+        supplierInput ? supplierInput.value.trim() : "";
+
+    if (!supplierName) {
+        hint.textContent = "Select a Supplier";
+        return;
+    }
+
+    const source =
+        otherCostRowSources[rowPrefix];
+
+    let quantity = 0;
+
+    if (source === "pending") {
+
+        for (let i = 0; i < purchasePendingCache.length; i++) {
+
+            const checkbox =
+                document.getElementById(`purchpending-${i}-select`);
+
+            if (checkbox && checkbox.checked &&
+                purchasePendingCache[i].supplierName === supplierName) {
+
+                quantity += purchasePendingCache[i].receivedQuantity;
+            }
+        }
+    }
+    else if (source && source.startsWith("invoice:")) {
+
+        const invoiceID =
+            source.slice("invoice:".length);
+
+        const invoice =
+            purchaseInvoiceCache[invoiceID];
+
+        if (invoice) {
+
+            for (const line of invoice.lines) {
+
+                if (line.supplierName === supplierName) {
+                    quantity += line.receivedQuantity;
+                }
+            }
+        }
+    }
+
+    hint.textContent =
+        quantity > 0 ?
+        `${quantity} unit(s) of ${supplierName} on this invoice` :
+        `No ${supplierName} deliveries selected on this invoice yet`;
+}
+
+// Refreshes every Other Cost row's quantity hint under one container -
+// called whenever something that could change the matched quantity
+// changes (a delivery checkbox, a Supplier selection).
+function refreshAllOtherCostQuantities(containerId) {
+
+    const container =
+        document.getElementById(containerId);
+
+    if (!container) {
+        return;
+    }
+
+    for (const row of container.querySelectorAll(".line-item")) {
+
+        const rowPrefix =
+            row.id.endsWith("-row") ?
+            row.id.slice(0, -"-row".length) : row.id;
+
+        refreshOtherCostQuantity(rowPrefix);
+    }
+}
+
+// Reads every Other Cost row currently under containerId for the
+// given formPrefix. Returns { otherCosts } on success, or { error }
+// with a user-facing message on the first invalid row.
+function collectOtherCostsFromForm(formPrefix, containerId) {
+
+    const container =
+        document.getElementById(containerId);
+
+    if (!container) {
+        return { otherCosts: [] };
+    }
+
+    const rows =
+        container.querySelectorAll(".line-item");
+
+    const otherCosts = [];
+
+    for (const row of rows) {
+
+        const rowPrefix =
+            row.id.endsWith("-row") ?
+            row.id.slice(0, -"-row".length) : row.id;
+
+        const supplierInput =
+            document.getElementById(`${rowPrefix}-supplier`);
+
+        const supplierName =
+            supplierInput ? supplierInput.value.trim() : "";
+
+        if (!supplierName) {
+
+            return {
+                error:
+                    "Select a Supplier for every Other Cost row, " +
+                    "or remove the row."
+            };
+        }
+
+        const amountInput =
+            document.getElementById(`${rowPrefix}-amount`);
+
+        const amountEUR =
+            Number(amountInput.value);
+
+        if (!amountInput.value || amountEUR < 0) {
+
+            return {
+                error:
+                    `Enter a valid Amount (EUR) for the Other Cost ` +
+                    `on ${supplierName}.`
+            };
+        }
+
+        const scope =
+            document.getElementById(`${rowPrefix}-scope`).value;
+
+        const comment =
+            document.getElementById(`${rowPrefix}-comment`).value.trim();
+
+        otherCosts.push({
+            supplierName: supplierName,
+            amountEUR: amountEUR,
+            supplierWide: scope === "supplier",
+            comment: comment
+        });
+    }
+
+    return { otherCosts: otherCosts };
+}
+
+// ============================================================
 // ADJUST MATERIAL PRICE (no Procurement delivery involved)
 // ============================================================
 // For a Material that needs its price set or corrected directly -
@@ -12307,6 +12698,7 @@ async function showPurchaseAdjust() {
     await loadPurchaseDefaultExchangeRate();
 
     purchAdjustRowCounter = 0;
+    otherCostRowCounters["purchadjust"] = 0;
 
     content.innerHTML = `
 
@@ -12352,7 +12744,7 @@ async function showPurchaseAdjust() {
                 min="0.000001"
                 step="0.0001"
                 id="purchadjust-rate"
-                value="${purchaseDefaultExchangeRate}"
+                value="1.0"
                 disabled
             >
 
@@ -12379,6 +12771,38 @@ async function showPurchaseAdjust() {
                 id="purchadjust-freight"
                 value="0"
             >
+
+            <div class="multi-line-items">
+
+                <div class="multi-line-header">
+
+                    <label>
+                        Other Costs (optional)
+                    </label>
+
+                    <button
+                        type="button"
+                        class="add-line-button"
+                        onclick="addOtherCostRow('purchadjust', 'purchadjust-othercosts')">
+
+                        + Add Other Cost
+
+                    </button>
+
+                </div>
+
+                <small>
+                    For a one-time charge that is neither customs nor
+                    freight - e.g. a machinery setup fee paid once to a
+                    contractor. It is amortized as a per-unit addition
+                    to that Supplier's materials, not prorated across
+                    this invoice's own lines.
+                </small>
+
+                <div id="purchadjust-othercosts">
+                </div>
+
+            </div>
 
             <label>
                 Comment (optional)
@@ -12565,7 +12989,11 @@ async function submitPurchaseAdjust() {
             "purchadjust-currency"
         ).value;
 
+    // Always 1.0 for EUR - see the same guard in submitPurchaseInvoice()
+    // for why the field itself cannot be trusted here.
     const exchangeRate =
+        currency === "EUR" ?
+        1.0 :
         Number(
             document.getElementById(
                 "purchadjust-rate"
@@ -12706,6 +13134,18 @@ async function submitPurchaseAdjust() {
         });
     }
 
+    const otherCostsResult =
+        collectOtherCostsFromForm(
+            "purchadjust", "purchadjust-othercosts");
+
+    if (otherCostsResult.error) {
+
+        message.textContent =
+            otherCostsResult.error;
+
+        return;
+    }
+
 
     const payload = {
         date: date,
@@ -12714,7 +13154,8 @@ async function submitPurchaseAdjust() {
         customsCost: customsCost,
         freightCost: freightCost,
         comment: comment,
-        lines: lines
+        lines: lines,
+        otherCosts: otherCostsResult.otherCosts
     };
 
     try {
@@ -12851,6 +13292,8 @@ function renderPurchaseInvoiceCard(invoice, editing, previousPrices) {
 
     let lineRows = "";
 
+    let otherCostGrandTotalEUR = 0;
+
     for (let i = 0; i < invoice.lines.length; i++) {
 
         const line =
@@ -12894,7 +13337,36 @@ function renderPurchaseInvoiceCard(invoice, editing, previousPrices) {
                 <td>${formatMoney(line.allocatedCost)}</td>
                 <td>${formatMoney(line.unitPrice)}</td>
                 <td>${formatMoney(line.unitPriceEUR)}</td>
+                <td>${formatMoney(line.otherCostAdditionEUR || 0)}</td>
+                <td>${formatMoney(line.otherCostTotalEUR || 0)}</td>
+                <td>${formatMoney(line.landedUnitPriceEUR != null ?
+                        line.landedUnitPriceEUR : line.unitPriceEUR)}</td>
             </tr>
+        `;
+
+        otherCostGrandTotalEUR += (line.otherCostTotalEUR || 0);
+    }
+
+    let otherCostsSummary = "";
+
+    for (const otherCost of (invoice.otherCosts || [])) {
+
+        otherCostsSummary += `
+            <br>Other Cost (${escapeHtml(otherCost.supplierName)}):
+            ${formatMoney(otherCost.amountEUR)} EUR -
+            ${otherCost.supplierWide ?
+                "amortized across all purchases to this Supplier" :
+                "amortized on this invoice only"}
+            ${otherCost.comment ?
+                " (" + escapeHtml(otherCost.comment) + ")" : ""}
+        `;
+    }
+
+    if (otherCostGrandTotalEUR > 0) {
+
+        otherCostsSummary += `
+            <br>Total Other Costs applied to this invoice:
+            ${formatMoney(otherCostGrandTotalEUR)} EUR
         `;
     }
 
@@ -12921,7 +13393,7 @@ function renderPurchaseInvoiceCard(invoice, editing, previousPrices) {
                     Exchange Rate
                     <input type="number" min="0.000001" step="0.0001"
                            id="purchinv-${escapedID}-rate"
-                           value="${invoice.exchangeRate}"
+                           value="${invoice.currency === "EUR" ? 1.0 : invoice.exchangeRate}"
                            ${invoice.currency === "EUR" ? "disabled" : ""}>
                 </label>
 
@@ -12946,6 +13418,37 @@ function renderPurchaseInvoiceCard(invoice, editing, previousPrices) {
                 </label>
 
             </div>
+
+            <div class="multi-line-items">
+
+                <div class="multi-line-header">
+
+                    <label>
+                        Other Costs (optional)
+                    </label>
+
+                    <button
+                        type="button"
+                        class="add-line-button"
+                        onclick="addOtherCostRow('invedit-${escapedID}', 'purchinv-${escapedID}-othercosts', null, 'invoice:${escapedID}')">
+
+                        + Add Other Cost
+
+                    </button>
+
+                </div>
+
+                <small>
+                    For a one-time charge that is neither customs nor
+                    freight - amortized as a per-unit addition to that
+                    Supplier's materials, not prorated across this
+                    invoice's own lines.
+                </small>
+
+                <div id="purchinv-${escapedID}-othercosts">
+                </div>
+
+            </div>
         `
         : `
             <p>
@@ -12959,6 +13462,7 @@ function renderPurchaseInvoiceCard(invoice, editing, previousPrices) {
                 ${invoice.comment
                     ? `<br>Comment: ${escapeHtml(invoice.comment)}`
                     : ""}
+                ${otherCostsSummary}
             </p>
         `;
 
@@ -13023,6 +13527,9 @@ function renderPurchaseInvoiceCard(invoice, editing, previousPrices) {
                             <th>Allocated Customs/Freight</th>
                             <th>Unit Price</th>
                             <th>Unit Price (EUR)</th>
+                            <th>Other Cost /unit (EUR)</th>
+                            <th>Other Cost Total (EUR)</th>
+                            <th>Landed Price (EUR)</th>
                         </tr>
                     </thead>
 
@@ -13142,6 +13649,17 @@ async function toggleEditPurchaseInvoice(id) {
         renderPurchaseInvoiceCard(invoice, true, previousPrices).trim();
 
     stillThere.replaceWith(wrapper.firstElementChild);
+
+    otherCostRowCounters[`invedit-${id}`] = 0;
+
+    for (const otherCost of (invoice.otherCosts || [])) {
+
+        addOtherCostRow(
+            `invedit-${id}`,
+            `purchinv-${id}-othercosts`,
+            otherCost,
+            `invoice:${id}`);
+    }
 }
 
 function cancelEditPurchaseInvoice(id) {
@@ -13191,7 +13709,13 @@ async function savePurchaseInvoiceEdit(id) {
             `purchinv-${id}-currency`
         ).value;
 
+    // Always 1.0 for EUR - see the same guard in submitPurchaseInvoice()
+    // for why the field itself cannot be trusted here. This is also
+    // what lets re-saving an existing invoice correct a bad rate that
+    // was stored before this guard existed.
     const exchangeRate =
+        currency === "EUR" ?
+        1.0 :
         Number(
             document.getElementById(
                 `purchinv-${id}-rate`
@@ -13262,6 +13786,18 @@ async function savePurchaseInvoiceEdit(id) {
         });
     }
 
+    const otherCostsResult =
+        collectOtherCostsFromForm(
+            `invedit-${id}`, `purchinv-${id}-othercosts`);
+
+    if (otherCostsResult.error) {
+
+        message.textContent =
+            otherCostsResult.error;
+
+        return;
+    }
+
     const payload = {
         id: id,
         date: date,
@@ -13270,7 +13806,8 @@ async function savePurchaseInvoiceEdit(id) {
         customsCost: customsCost,
         freightCost: freightCost,
         comment: comment,
-        lines: lines
+        lines: lines,
+        otherCosts: otherCostsResult.otherCosts
     };
 
     try {

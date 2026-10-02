@@ -6795,6 +6795,9 @@ void WebServer::run()
                 PurchaseManager& purchaseManager =
                     warehouseSystem->getPurchaseManager();
 
+                MaterialManager& materialManager =
+                    warehouseSystem->getMaterialManager();
+
 
                 for (const auto& invoice :
                     purchaseManager.getInvoices())
@@ -6847,6 +6850,18 @@ void WebServer::run()
                         lineItem["receivedQuantity"] =
                             lines[i].receivedQuantity;
 
+                        Material* lineMaterial =
+                            materialManager.findMaterial(
+                                lines[i].materialID);
+
+                        Supplier* lineSupplier =
+                            (lineMaterial != nullptr) ?
+                            lineMaterial->getSupplier() : nullptr;
+
+                        lineItem["supplierName"] =
+                            (lineSupplier != nullptr) ?
+                            lineSupplier->getName() : "";
+
                         lineItem["unitCost"] =
                             lines[i].unitCost;
 
@@ -6862,12 +6877,60 @@ void WebServer::run()
                         lineItem["unitPriceEUR"] =
                             invoice->getLineUnitPriceEUR(i);
 
+                        double otherCostAdditionEUR =
+                            purchaseManager.getLineOtherCostAdditionEUR(
+                                invoice.get(), i);
+
+                        lineItem["otherCostAdditionEUR"] =
+                            otherCostAdditionEUR;
+
+                        // The total EUR value of the Other Cost
+                        // addition on this line - per-unit addition
+                        // times this delivery's own quantity, i.e.
+                        // "how many euros of the one-time charge this
+                        // invoice's line is carrying" (not the
+                        // one-time charge's full original amount).
+                        lineItem["otherCostTotalEUR"] =
+                            otherCostAdditionEUR *
+                            lines[i].receivedQuantity;
+
+                        lineItem["landedUnitPriceEUR"] =
+                            purchaseManager.getLineLandedUnitPriceEUR(
+                                invoice.get(), i);
+
                         lineList.push_back(
                             std::move(lineItem));
                     }
 
                     item["lines"] =
                         std::move(lineList);
+
+
+                    crow::json::wvalue::list otherCostList;
+
+                    for (const auto& otherCost :
+                        invoice->getOtherCosts())
+                    {
+                        crow::json::wvalue otherCostItem;
+
+                        otherCostItem["supplierName"] =
+                            otherCost.supplierName;
+
+                        otherCostItem["amountEUR"] =
+                            otherCost.amountEUR;
+
+                        otherCostItem["supplierWide"] =
+                            otherCost.supplierWide;
+
+                        otherCostItem["comment"] =
+                            otherCost.comment;
+
+                        otherCostList.push_back(
+                            std::move(otherCostItem));
+                    }
+
+                    item["otherCosts"] =
+                        std::move(otherCostList);
 
 
                     invoiceList.push_back(
@@ -6979,6 +7042,34 @@ void WebServer::run()
                     }
 
 
+                    vector<PurchaseInvoiceOtherCost> otherCosts;
+
+                    if (body.has("otherCosts"))
+                    {
+                        for (const auto& otherCostJson :
+                            body["otherCosts"])
+                        {
+                            PurchaseInvoiceOtherCost otherCost;
+
+                            otherCost.supplierName =
+                                otherCostJson["supplierName"].s();
+
+                            otherCost.amountEUR =
+                                otherCostJson["amountEUR"].d();
+
+                            otherCost.supplierWide =
+                                otherCostJson.has("supplierWide") &&
+                                otherCostJson["supplierWide"].b();
+
+                            otherCost.comment =
+                                otherCostJson.has("comment") ?
+                                string(otherCostJson["comment"].s()) : "";
+
+                            otherCosts.push_back(otherCost);
+                        }
+                    }
+
+
                     // A Manual Price Adjustment line (procurementOrderID
                     // "MANUAL") has no Procurement receipt to validate it
                     // against, so - unlike a real delivery line, which
@@ -7016,6 +7107,7 @@ void WebServer::run()
                             freightCost,
                             comment,
                             lines,
+                            otherCosts,
                             errorMessage);
 
                     if (invoice == nullptr)
@@ -7168,6 +7260,7 @@ void WebServer::run()
                             comment.empty() ?
                                 "Manual price adjustment" : comment,
                             lines,
+                            vector<PurchaseInvoiceOtherCost>(),
                             errorMessage);
 
                     if (invoice == nullptr)
@@ -7347,6 +7440,33 @@ void WebServer::run()
                         lines.push_back(line);
                     }
 
+                    vector<PurchaseInvoiceOtherCost> otherCosts;
+
+                    if (body.has("otherCosts"))
+                    {
+                        for (const auto& otherCostJson :
+                            body["otherCosts"])
+                        {
+                            PurchaseInvoiceOtherCost otherCost;
+
+                            otherCost.supplierName =
+                                otherCostJson["supplierName"].s();
+
+                            otherCost.amountEUR =
+                                otherCostJson["amountEUR"].d();
+
+                            otherCost.supplierWide =
+                                otherCostJson.has("supplierWide") &&
+                                otherCostJson["supplierWide"].b();
+
+                            otherCost.comment =
+                                otherCostJson.has("comment") ?
+                                string(otherCostJson["comment"].s()) : "";
+
+                            otherCosts.push_back(otherCost);
+                        }
+                    }
+
                     PurchaseManager& purchaseManager =
                         warehouseSystem->getPurchaseManager();
 
@@ -7362,6 +7482,7 @@ void WebServer::run()
                             freightCost,
                             comment,
                             lines,
+                            otherCosts,
                             errorMessage);
 
                     if (!success)
