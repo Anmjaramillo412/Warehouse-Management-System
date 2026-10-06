@@ -1489,15 +1489,17 @@ footer {
    lists one small quantity field per material. */
 
 .procurement-line {
-    margin-top: 18px;
-    padding-top: 15px;
-    border-top: 1px solid #e5e7eb;
+    margin-top: 16px;
+    padding: 14px 16px;
+    background: #f9fafb;
+    border: 1px solid #cbd5e1;
+    border-left: 5px solid #3b82f6;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
-    .procurement-line:first-of-type {
+    .procurement-line:first-child {
         margin-top: 0;
-        padding-top: 0;
-        border-top: none;
     }
 
     .procurement-line-header {
