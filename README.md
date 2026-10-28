@@ -60,7 +60,7 @@ The `data/` folder is created automatically on first run - see Data Persistence 
 - Search materials
 - Modify materials
 - Delete materials (only allowed while not in use anywhere in the system)
-- Display active material master data, with a separate Archived Materials view for materials marked inactive
+- Display active material master data, with a separate Archived Materials view for materials marked inactive; materials are always listed in Material ID order (also in every Material search dropdown), not in the order they were created
 - Material Detail dashboard for a single material, reachable from any materials table, with a "Modify Material" shortcut straight into the edit form for that same material
 - Display Materials / Archived Materials table: fixed-width columns sized to fit the page without a horizontal scroll bar, a two-line "Drawing Version" header to keep that column narrow, and a header row that stays visible ("sticky") while scrolling down a long list
 - Material ID validation using the format `###-######` or `######-00`
@@ -127,6 +127,7 @@ The `data/` folder is created automatically on first run - see Data Persistence 
 - Cancel an order that was never confirmed and never will be
 - Optional Estimated Receipt date, one per Procurement Order (Open and Confirmed Orders, saved as soon as the date is picked; clearing the field removes it): shown inside the card (in the material's row for a single-material order, once above the materials otherwise) and as "ETA" in the collapsed card header. It applies to every line still waiting for goods. Informational only; cannot be before the Order Date
 - Confirmed orders cannot be deleted, to keep the PRC numbering a reliable record
+- Movement history (`data/movement_history.txt`, one line per event, always on - independent of the "Log data operations" setting): every order line created (with its Source: the Projection's "PRJ-######", or "Manual"), every confirmation, every receipt (date, quantity, total received / ordered, pending, status and comment) and every Close (Incomplete) with the quantity that never arrived, each with material, supplier and warehouse. The stock movement of a receipt is still logged separately as a GOODS RECEIPT. Cancellations are deliberately not recorded
 - Each order remembers the ordered material's name at the time it was placed, so the record stays readable even if the material is later renamed or removed
 - Document attachments per whole "PRC-######" order (shared across every material line of that order):
   - **Order Confirmation**: a single PDF; uploading again replaces the previous one

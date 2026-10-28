@@ -2428,6 +2428,22 @@ let materialCache = null;
 
 let materialCacheLoading = null;
 
+// Materials always read in Material ID order (e.g. every 008-...
+// before the 017-... ones), not in the order they were created.
+// IDs are fixed-format "NNN-NNNNNN", so a numeric-aware text
+// comparison sorts them correctly. Returns a new, sorted array.
+
+function sortMaterialsByID(materials) {
+
+    return [...materials].sort((a, b) =>
+        String(a.id).localeCompare(
+            String(b.id),
+            undefined,
+            { numeric: true }
+        )
+    );
+}
+
 async function loadMaterialCache(forceRefresh) {
 
     if (materialCache && !forceRefresh) {
@@ -2463,7 +2479,7 @@ async function fetchMaterialCache() {
             await response.json();
 
         materialCache =
-            data.materials || [];
+            sortMaterialsByID(data.materials || []);
     }
     catch (error) {
 
@@ -2491,6 +2507,16 @@ async function initMaterialCombobox(prefix, selectedID) {
         document.getElementById(prefix + "-material-id-search");
 
     if (!hiddenInput || !searchInput) {
+        return;
+    }
+
+    // A row added empty ("+ Add Component") must not be wiped if the
+    // user already started typing / picked a Material while the list
+    // above was still loading.
+
+    if (!selectedID &&
+        (searchInput.value || hiddenInput.value)) {
+
         return;
     }
 
@@ -3149,7 +3175,8 @@ async function renderMaterialsList(filterFn, headingText, emptyText) {
             await response.json();
 
         const materials =
-            (data.materials || []).filter(filterFn);
+            sortMaterialsByID(
+                (data.materials || []).filter(filterFn));
 
 
         if (materials.length === 0) {
@@ -6701,8 +6728,15 @@ async function createProduct() {
 
         if (!/^([0-9]{3}-[0-9]{6}|[0-9]{6}-00)$/.test(materialID))
         {
+            const typedText =
+                (row.querySelector('input[type="text"]') || {}).value || "";
+
             message.textContent =
-                "Invalid Material ID in BOM.";
+                typedText.trim()
+                ? `"${typedText.trim()}" is not a selected Material - ` +
+                  "please pick it from the dropdown list."
+                : "A BOM row has no Material selected - pick one " +
+                  "from the list or remove the row.";
 
             return;
         }
@@ -7131,8 +7165,15 @@ async function modifyProductSubmit() {
 
         if (!/^([0-9]{3}-[0-9]{6}|[0-9]{6}-00)$/.test(materialID)) {
 
+            const typedText =
+                (row.querySelector('input[type="text"]') || {}).value || "";
+
             message.textContent =
-                "Invalid Material ID in BOM.";
+                typedText.trim()
+                ? `"${typedText.trim()}" is not a selected Material - ` +
+                  "please pick it from the dropdown list."
+                : "A BOM row has no Material selected - pick one " +
+                  "from the list or remove the row.";
 
             return;
         }

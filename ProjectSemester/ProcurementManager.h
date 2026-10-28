@@ -59,6 +59,13 @@ private:
     // Generates the next consecutive ID, e.g. "PRC-000001"
     string generateNextID();
 
+    // "Source: PRJ-000006 | Material: 008-200023 (Name) | Supplier: X |
+    // WH: 1" - the part every movement-history line about one
+    // order line shares (Source is "Manual" for an order that was not
+    // registered from a Projection). See data/movement_history.txt.
+    string describeLineForHistory(
+        const ProcurementOrder& order) const;
+
 public:
 
     // Constructor
