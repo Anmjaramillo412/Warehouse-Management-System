@@ -164,6 +164,15 @@ public:
     bool cancelOrder(
         const string& id);
 
+    // Sets (or, with an empty date, clears) the optional estimated
+    // receipt date of a whole Procurement Order: one date per
+    // "PRC-######", stored on each of its lines that is still
+    // waiting for goods (Completed, Closed or Cancelled lines keep
+    // theirs untouched). Returns false if no line could be updated.
+    bool setEstimatedReceiptDate(
+        const string& id,
+        const string& date);
+
     // Access
     const vector<unique_ptr<ProcurementOrder>>&
         getOrders() const;

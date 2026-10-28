@@ -125,6 +125,7 @@ The `data/` folder is created automatically on first run - see Data Persistence 
 - Receive materials against a confirmed order, partially or in full, with a one-click "Receipt Today"
 - Close an order that will never fully arrive - whatever was received stays in inventory, the rest stops counting as pending
 - Cancel an order that was never confirmed and never will be
+- Optional Estimated Receipt date, one per Procurement Order (Open and Confirmed Orders, saved as soon as the date is picked; clearing the field removes it): shown inside the card (in the material's row for a single-material order, once above the materials otherwise) and as "ETA" in the collapsed card header. It applies to every line still waiting for goods. Informational only; cannot be before the Order Date
 - Confirmed orders cannot be deleted, to keep the PRC numbering a reliable record
 - Each order remembers the ordered material's name at the time it was placed, so the record stays readable even if the material is later renamed or removed
 - Document attachments per whole "PRC-######" order (shared across every material line of that order):

@@ -80,6 +80,11 @@ private:
     // order into Archived Orders labeled "Cancelled".
     bool cancelled;
 
+    // Optional "YYYY-MM-DD" date the supplier is expected to deliver
+    // this line (empty = not set). Purely informational - it does not
+    // affect status, quantities or any calculation.
+    string estimatedReceiptDate;
+
 public:
 
     // Constructor
@@ -110,6 +115,7 @@ public:
     string getProjectionID() const;
     bool isClosed() const;
     bool isCancelled() const;
+    string getEstimatedReceiptDate() const;
 
     // Setters
     void setID(const string& orderID);
@@ -125,6 +131,7 @@ public:
     void setProjectionID(const string& projID);
     void setClosed(bool value);
     void setCancelled(bool value);
+    void setEstimatedReceiptDate(const string& date);
 
     // Receipts
     void addReceipt(

@@ -4223,6 +4223,9 @@ void WebServer::run()
                     item["confirmedQuantity"] =
                         order->getConfirmedQuantity();
 
+                    item["estimatedReceiptDate"] =
+                        order->getEstimatedReceiptDate();
+
                     item["totalReceivedQuantity"] =
                         order->getTotalReceivedQuantity();
 
@@ -7887,6 +7890,130 @@ void WebServer::run()
 
                 return response;
             });
+
+// ============================================================
+// PROCUREMENT - ESTIMATED RECEIPT DATE (optional, one per order)
+// ============================================================
+// Body: { id, estimatedReceiptDate }
+// One date for the whole "PRC-######" (applied to every line still
+// waiting for goods). An empty date clears it. Informational only.
+
+    CROW_ROUTE(app, "/api/procurement/estimated-date")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body ||
+                        !body.has("id") ||
+                        !body.has("estimatedReceiptDate"))
+                    {
+                        return crow::response(
+                            400,
+                            "Order ID and date are required.");
+                    }
+
+                    string id =
+                        body["id"].s();
+
+                    string date =
+                        body["estimatedReceiptDate"].s();
+
+
+                    // Empty = clear. Otherwise a plain YYYY-MM-DD.
+
+                    if (!date.empty())
+                    {
+                        bool validFormat =
+                            date.size() == 10 &&
+                            date[4] == '-' &&
+                            date[7] == '-';
+
+                        for (size_t i = 0;
+                            validFormat && i < date.size();
+                            i++)
+                        {
+                            if (i == 4 || i == 7)
+                            {
+                                continue;
+                            }
+
+                            if (!isdigit(
+                                static_cast<unsigned char>(date[i])))
+                            {
+                                validFormat = false;
+                            }
+                        }
+
+                        if (!validFormat)
+                        {
+                            return crow::response(
+                                400,
+                                "Estimated Delivery must be a date "
+                                "(YYYY-MM-DD).");
+                        }
+                    }
+
+
+                    ProcurementManager& procurementManager =
+                        warehouseSystem->getProcurementManager();
+
+                    vector<ProcurementOrder*> orderLines =
+                        procurementManager.findOrderLines(id);
+
+                    if (orderLines.empty())
+                    {
+                        return crow::response(
+                            404,
+                            "Procurement Order not found.");
+                    }
+
+                    // ISO dates compare correctly as plain strings.
+
+                    if (!date.empty())
+                    {
+                        for (ProcurementOrder* line : orderLines)
+                        {
+                            if (date < line->getOrderDate())
+                            {
+                                return crow::response(
+                                    400,
+                                    "Estimated Delivery cannot be before "
+                                    "the Order Date ("
+                                    + line->getOrderDate() + ").");
+                            }
+                        }
+                    }
+
+                    if (!procurementManager.setEstimatedReceiptDate(
+                        id,
+                        date))
+                    {
+                        return crow::response(
+                            400,
+                            "This order is already completed, closed or "
+                            "cancelled - its Estimated Delivery can no "
+                            "longer be changed.");
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
 
 // ============================================================
 // LOGIN / USERS (see AuthManager.h)

@@ -10352,6 +10352,101 @@ async function submitNewProcurementOrder() {
 }
 
 // ============================================================
+// PROCUREMENT ORDERS - ESTIMATED RECEIPT DATE
+// ============================================================
+// Saves the optional Estimated Receipt of a whole order (one date
+// per "PRC-######") the moment the date field changes (empty =
+// remove it), then updates the "ETA" shown in the card's header
+// without re-drawing the list (so open cards stay open).
+
+async function saveEstimatedReceipt(orderID) {
+
+    const input =
+        document.getElementById(`${orderID}-eta`);
+
+    const message =
+        document.getElementById(`${orderID}-eta-message`);
+
+    if (!input || !message) {
+        return;
+    }
+
+    message.classList.remove("procurement-eta-error");
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/procurement/estimated-date",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        id: orderID,
+                        estimatedReceiptDate: input.value
+                    })
+                }
+            );
+
+        if (!response.ok) {
+
+            // Put back the last saved value so the screen never
+            // shows a date that was not actually stored.
+
+            input.value =
+                input.dataset.saved || "";
+
+            message.textContent =
+                await response.text();
+
+            message.classList.add("procurement-eta-error");
+
+            return;
+        }
+
+        input.dataset.saved = input.value;
+
+        message.textContent =
+            input.value ? "Saved" : "Removed";
+
+        const summary =
+            document.getElementById(`order-${orderID}-eta-summary`);
+
+        if (summary) {
+
+            summary.hidden = !input.value;
+
+            summary.textContent =
+                input.value ? "ETA " + input.value : "";
+        }
+
+        setTimeout(() => {
+
+            if (message.textContent === "Saved" ||
+                message.textContent === "Removed") {
+
+                message.textContent = "";
+            }
+
+        }, 2000);
+    }
+    catch (error) {
+
+        console.error(error);
+
+        input.value =
+            input.dataset.saved || "";
+
+        message.textContent =
+            "Could not connect to the server.";
+
+        message.classList.add("procurement-eta-error");
+    }
+}
+
+// ============================================================
 // PROCUREMENT ORDERS - ARCHIVE (Completed orders only)
 // ============================================================
 
@@ -10667,6 +10762,63 @@ function renderProcurementCard(group, cardMode = "open") {
     const warehouseID =
         lines[0].warehouseID;
 
+    // Optional "Estimated Receipt": ONE date for the whole order
+    // (when the supplier is expected to deliver), applied by the
+    // server to every line still waiting for goods. Saved on its own
+    // as soon as it changes (clearing the field removes it). A
+    // single-material order shows it in the material's row; an order
+    // with several materials shows it once above them. It is also
+    // shown as "ETA" in the collapsed header.
+
+    const waitingLines =
+        lines.filter(line => line.pendingQuantity > 0);
+
+    const etaEditable =
+        (cardMode === "open" || cardMode === "confirmed") &&
+        waitingLines.length > 0;
+
+    const earliestEta =
+        etaEditable
+        ? (waitingLines.find(line => line.estimatedReceiptDate) || {})
+            .estimatedReceiptDate || ""
+        : "";
+
+    const latestOrderDate =
+        lines.map(line => line.orderDate || "").sort().pop() || "";
+
+    const etaReadOnly =
+        currentUser && currentUser.role === "viewer";
+
+    const estimatedReceiptFieldHtml =
+        etaEditable
+        ? `
+            <div class="detail-field procurement-eta-field">
+                <div class="procurement-eta-inline">
+                    <span class="detail-label">Estimated Delivery</span>
+                    <input
+                        type="date"
+                        class="procurement-eta-input"
+                        id="${id}-eta"
+                        data-saved="${escapeHtml(earliestEta)}"
+                        value="${escapeHtml(earliestEta)}"
+                        min="${escapeHtml(latestOrderDate)}"
+                        ${etaReadOnly ? "disabled" : ""}
+                        onchange="saveEstimatedReceipt('${id}')"
+                    >
+                    <span
+                        class="procurement-eta-message"
+                        id="${id}-eta-message">
+                    </span>
+                </div>
+            </div>
+        `
+        : "";
+
+    const sharedEtaRowHtml =
+        lines.length > 1 && etaEditable
+        ? `<div class="procurement-eta-row">${estimatedReceiptFieldHtml}</div>`
+        : "";
+
     // One shared Confirmation Date for the whole order, but each
     // material line keeps its own Confirmed Quantity - use whichever
     // line already has a date saved (they're kept in sync by
@@ -10821,6 +10973,8 @@ function renderProcurementCard(group, cardMode = "open") {
                     ${receivedPendingFieldHtml}
 
                     ${confirmQtyFieldHtml}
+
+                    ${lines.length === 1 ? estimatedReceiptFieldHtml : ""}
 
                 </div>
 
@@ -11056,6 +11210,13 @@ function renderProcurementCard(group, cardMode = "open") {
                     ${totalReceived} / ${totalOrdered}
                 </span>
 
+                <span
+                    class="procurement-summary-eta"
+                    id="order-${id}-eta-summary"
+                    ${earliestEta ? "" : "hidden"}>
+                    ${earliestEta ? "ETA " + escapeHtml(earliestEta) : ""}
+                </span>
+
                 <span class="status-badge ${procurementStatusClass(combinedStatus)}">
                     ${escapeHtml(combinedStatus)}
                 </span>
@@ -11067,6 +11228,8 @@ function renderProcurementCard(group, cardMode = "open") {
             </div>
 
             <div class="procurement-body" id="order-${id}-body" hidden>
+
+                ${sharedEtaRowHtml}
 
                 ${materialRowsHtml}
 
