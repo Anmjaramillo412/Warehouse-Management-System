@@ -82,6 +82,46 @@ static bool isAllDigits(const string& value)
 
 
 // ================================================================
+// MOVEMENT HISTORY - SHARED LINE DESCRIPTION
+// ================================================================
+
+string ProcurementManager::describeLineForHistory(
+    const ProcurementOrder& order) const
+{
+    string materialName = order.getMaterialName();
+
+    string supplierName = "No Supplier";
+
+    if (materialManager != nullptr)
+    {
+        Material* material =
+            materialManager->findMaterial(
+                order.getMaterialID());
+
+        if (material != nullptr)
+        {
+            materialName = material->getName();
+
+            if (material->getSupplier() != nullptr)
+            {
+                supplierName =
+                    material->getSupplier()->getName();
+            }
+        }
+    }
+
+    return
+        "Source: " +
+        (order.getProjectionID().empty() ?
+            string("Manual") : order.getProjectionID()) +
+        " | Material: " + order.getMaterialID() +
+        " (" + materialName + ")" +
+        " | Supplier: " + supplierName +
+        " | WH: " + to_string(order.getWarehouseID());
+}
+
+
+// ================================================================
 // CONSTRUCTOR
 // ================================================================
 
@@ -234,14 +274,20 @@ ProcurementOrder* ProcurementManager::createOrder(
 
     save();
 
+    // Procurement milestones always go into the movement history
+    // (unlike Save/Load events, they do not depend on the "Log data
+    // operations" setting) - see data/movement_history.txt.
+
     if (movementLogger != nullptr)
     {
-        movementLogger->logSystemEvent(
+        movementLogger->log(
             "PROCUREMENT ORDER CREATED",
             "ID: " + id +
-            " | Product: " + productID +
-            " | Material: " + materialID +
-            " | Qty: " + to_string(orderedQuantity));
+            " | " + describeLineForHistory(*orders.back()) +
+            " | Product: " +
+            (productID.empty() ? string("-") : productID) +
+            " | Qty: " + to_string(orderedQuantity) +
+            " | Order Date: " + orderDate);
     }
 
     return orders.back().get();
@@ -334,11 +380,13 @@ bool ProcurementManager::confirmOrder(
 
     if (movementLogger != nullptr)
     {
-        movementLogger->logSystemEvent(
+        movementLogger->log(
             "PROCUREMENT ORDER CONFIRMED",
             "ID: " + id +
-            " | Material: " + materialID +
-            " | Confirmed Qty: " + to_string(confirmedQuantity));
+            " | " + describeLineForHistory(*order) +
+            " | Ordered Qty: " + to_string(order->getOrderedQuantity()) +
+            " | Confirmed Qty: " + to_string(confirmedQuantity) +
+            " | Confirmation Date: " + confirmationDate);
     }
 
     return true;
@@ -406,6 +454,26 @@ bool ProcurementManager::receiveOrder(
         sanitizeField(comment));
 
     save();
+
+    // Order-level record of this delivery (the stock movement itself
+    // is logged separately by the Goods Receipt above): who it came
+    // from, how much of the order is in by now and what is still open.
+
+    if (movementLogger != nullptr)
+    {
+        movementLogger->log(
+            "PROCUREMENT RECEIPT",
+            "ID: " + id +
+            " | " + describeLineForHistory(*order) +
+            " | Received Qty: " + to_string(receivedQuantity) +
+            " | Receipt Date: " + receiptDate +
+            " | Total Received: " +
+            to_string(order->getTotalReceivedQuantity()) +
+            " / " + to_string(order->getTargetQuantity()) +
+            " | Pending: " + to_string(order->getPendingQuantity()) +
+            " | Status: " + order->getStatus(),
+            comment);
+    }
 
     return true;
 }
@@ -477,6 +545,22 @@ bool ProcurementManager::closeOrder(
             continue;
         }
 
+        // Recorded per line, with what never arrived (computed
+        // before closing, while the line still counts as pending).
+
+        if (movementLogger != nullptr)
+        {
+            movementLogger->log(
+                "PROCUREMENT ORDER CLOSED (INCOMPLETE)",
+                "ID: " + id +
+                " | " + describeLineForHistory(*order) +
+                " | Received: " +
+                to_string(order->getTotalReceivedQuantity()) +
+                " / " + to_string(order->getTargetQuantity()) +
+                " | Not delivered: " +
+                to_string(order->getPendingQuantity()));
+        }
+
         order->setClosed(true);
 
         closedAny = true;
@@ -488,13 +572,6 @@ bool ProcurementManager::closeOrder(
     }
 
     save();
-
-    if (movementLogger != nullptr)
-    {
-        movementLogger->logSystemEvent(
-            "PROCUREMENT ORDER CLOSED (INCOMPLETE)",
-            "ID: " + id);
-    }
 
     return true;
 }
@@ -533,14 +610,10 @@ bool ProcurementManager::cancelOrder(
         return false;
     }
 
-    save();
+    // Cancellations are deliberately not written to the movement
+    // history - see data/movement_history.txt.
 
-    if (movementLogger != nullptr)
-    {
-        movementLogger->logSystemEvent(
-            "PROCUREMENT ORDER CANCELLED",
-            "ID: " + id);
-    }
+    save();
 
     return true;
 }
