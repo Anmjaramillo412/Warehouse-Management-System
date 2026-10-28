@@ -2426,11 +2426,33 @@ function collectAdditionalSuppliers(formPrefix) {
 
 let materialCache = null;
 
+let materialCacheLoading = null;
+
 async function loadMaterialCache(forceRefresh) {
 
     if (materialCache && !forceRefresh) {
         return materialCache;
     }
+
+    // Several comboboxes can be initialised at the same moment (e.g.
+    // a form with many rows) - share one request instead of firing
+    // one per box.
+
+    if (materialCacheLoading) {
+        return materialCacheLoading;
+    }
+
+    materialCacheLoading = fetchMaterialCache();
+
+    try {
+        return await materialCacheLoading;
+    }
+    finally {
+        materialCacheLoading = null;
+    }
+}
+
+async function fetchMaterialCache() {
 
     try {
 
@@ -2455,7 +2477,12 @@ async function loadMaterialCache(forceRefresh) {
 
 async function initMaterialCombobox(prefix, selectedID) {
 
-    await loadMaterialCache();
+    // Always re-read the Material list when a combobox is opened:
+    // a Material created (or renamed/deleted) after the page was
+    // loaded would otherwise never show up in the search until a
+    // manual page reload.
+
+    await loadMaterialCache(true);
 
     const hiddenInput =
         document.getElementById(prefix + "-material-id");
@@ -14618,3 +14645,821 @@ async function submitPurchaseExchangeRate() {
             "Could not connect to the server.";
     }
 }
+
+
+// ============================================================
+// LOGIN, ROLES AND USER MANAGEMENT
+// ============================================================
+// Three roles (enforced by the server - see AuthManager.h):
+//   viewer - read only
+//   editor - day-to-day work (create / modify / delete / receive ...)
+//   admin  - everything, plus user management and system actions
+//
+// This block only handles the login screen, the user bar in the
+// header and hiding the buttons a role may not use. Hiding is just
+// convenience: the server rejects forbidden requests (403) anyway.
+
+let currentUser = null;
+
+// Every request goes through this wrapper, so an expired or missing
+// session (401) always brings up the login screen, whichever part of
+// the app made the request.
+
+const nativeFetch = window.fetch.bind(window);
+
+window.fetch = async function (...args) {
+
+    const response = await nativeFetch(...args);
+
+    if (response.status === 401) {
+
+        const target =
+            typeof args[0] === "string" ?
+            args[0] : ((args[0] && args[0].url) || "");
+
+        if (!target.includes("/api/auth/login")) {
+
+            showLoginScreen(
+                "Your session has ended. Please log in again.",
+                false);
+        }
+    }
+
+    return response;
+};
+
+
+function roleLabel(role) {
+
+    if (role === "admin") return "Admin";
+    if (role === "editor") return "Editor";
+
+    return "Viewer";
+}
+
+
+// ---------------- Login screen ----------------
+
+function showLoginScreen(message, isInfo) {
+
+    currentUser = null;
+
+    document.body.dataset.role = "";
+
+    let overlay =
+        document.getElementById("login-overlay");
+
+    if (!overlay) {
+
+        overlay =
+            document.createElement("div");
+
+        overlay.id = "login-overlay";
+
+        overlay.className = "login-overlay";
+
+        overlay.innerHTML = `
+            <div class="login-box">
+
+                <h2>Warehouse Management System</h2>
+
+                <p class="login-subtitle">Please log in</p>
+
+                <label for="login-username">Username</label>
+
+                <input
+                    type="text"
+                    id="login-username"
+                    autocomplete="username">
+
+                <label for="login-password">Password</label>
+
+                <input
+                    type="password"
+                    id="login-password"
+                    autocomplete="current-password">
+
+                <button type="button" id="login-submit">
+                    Log in
+                </button>
+
+                <div id="login-message" class="login-message">
+                </div>
+
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        document.getElementById("login-submit")
+            .addEventListener("click", submitLogin);
+
+        overlay.addEventListener("keydown", (event) => {
+
+            if (event.key === "Enter") {
+                submitLogin();
+            }
+        });
+    }
+
+    const messageBox =
+        document.getElementById("login-message");
+
+    messageBox.textContent = message || "";
+
+    messageBox.classList.toggle("login-message-info", !!isInfo);
+
+    document.getElementById("login-password").value = "";
+
+    overlay.classList.remove("hidden");
+
+    document.getElementById("login-username").focus();
+
+    updateUserBar();
+}
+
+
+async function submitLogin() {
+
+    const username =
+        document.getElementById("login-username").value.trim();
+
+    const password =
+        document.getElementById("login-password").value;
+
+    const messageBox =
+        document.getElementById("login-message");
+
+    messageBox.classList.remove("login-message-info");
+
+    if (!username || !password) {
+
+        messageBox.textContent =
+            "Please enter username and password.";
+
+        return;
+    }
+
+    try {
+
+        const response =
+            await nativeFetch(
+                "/api/auth/login",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ username, password })
+                }
+            );
+
+        if (!response.ok) {
+
+            messageBox.textContent =
+                await response.text();
+
+            document.getElementById("login-password").value = "";
+
+            return;
+        }
+
+        currentUser =
+            await response.json();
+
+        document.getElementById("login-username").value = "";
+
+        document.getElementById("login-password").value = "";
+
+        document.getElementById("login-overlay")
+            .classList.add("hidden");
+
+        onLoggedIn();
+    }
+    catch (error) {
+
+        console.error(error);
+
+        messageBox.textContent =
+            "Could not connect to the server.";
+    }
+}
+
+
+function onLoggedIn() {
+
+    document.body.dataset.role = currentUser.role;
+
+    // Back to the dashboard: whatever was open before a re-login may
+    // belong to another role.
+
+    closeModule();
+
+    updateUserBar();
+
+    startRoleObserver();
+
+    applyRoleRestrictions();
+}
+
+
+async function logoutUser() {
+
+    try {
+
+        await nativeFetch(
+            "/api/auth/logout",
+            { method: "POST" }
+        );
+    }
+    catch (error) {
+
+        console.error(error);
+    }
+
+    showLoginScreen("You have been logged out.", true);
+}
+
+
+async function initAuth() {
+
+    try {
+
+        const response =
+            await nativeFetch("/api/auth/me");
+
+        if (response.ok) {
+
+            currentUser =
+                await response.json();
+
+            onLoggedIn();
+
+            return;
+        }
+    }
+    catch (error) {
+
+        console.error(error);
+    }
+
+    showLoginScreen("", false);
+}
+
+
+// ---------------- User bar (header) ----------------
+
+function updateUserBar() {
+
+    const statusBox =
+        document.querySelector(".header .status");
+
+    if (!statusBox) {
+        return;
+    }
+
+    let bar =
+        document.getElementById("user-bar");
+
+    if (!bar) {
+
+        bar =
+            document.createElement("span");
+
+        bar.id = "user-bar";
+
+        bar.className = "user-bar";
+
+        statusBox.appendChild(bar);
+    }
+
+    if (!currentUser) {
+
+        bar.innerHTML = "";
+
+        return;
+    }
+
+    bar.innerHTML = `
+        <span class="user-bar-name">
+            ${escapeHtml(currentUser.username)}
+            <small>${roleLabel(currentUser.role)}</small>
+        </span>
+
+        ${currentUser.role === "admin" ? `
+            <button type="button" onclick="showUserManagement()">
+                Users
+            </button>` : ""}
+
+        <button type="button" onclick="showChangePasswordDialog()">
+            Password
+        </button>
+
+        <button type="button" onclick="logoutUser()">
+            Log out
+        </button>
+    `;
+}
+
+
+// ---------------- Role restrictions (cosmetic) ----------------
+
+// Buttons that change data: hidden for Viewer.
+
+const EDIT_ACTION_PATTERN = new RegExp(
+    "^(" + [
+        "create\\w*", "modify\\w*", "delete\\w*", "add\\w*",
+        "remove\\w*", "save\\w*", "submit\\w*", "confirm\\w*",
+        "register\\w*", "quick\\w*", "cancel\\w*", "closeOrderGroup",
+        "toggleEdit\\w*", "sell\\w*", "transfer\\w*", "goods\\w*",
+        "resetNumbering", "loadData", "exitApplication",
+        "loadMaterialFor\\w*", "loadProductForModify",
+        "loadSupplierForModify",
+        "showCreate\\w*", "showModify\\w*", "showDelete\\w*",
+        "showGoods\\w*", "showTransferMaterial",
+        "showNewProcurementOrder", "showNewProjection",
+        "showSellProduct", "showPurchaseAdjust",
+        "showProductSettings", "showPurchaseSettings"
+    ].join("|") + ")\\b"
+);
+
+// System-level actions: Admin only (also hidden for Editor).
+
+const ADMIN_ACTION_PATTERN =
+    /^(loadData|exitApplication|resetNumbering|saveDocumentsFolder)\b/;
+
+// Inputs whose change saves something (settings switches, uploads).
+
+const EDIT_CHANGE_PATTERN =
+    /^(toggleAutoSaveAndLoad|setDataLogging|uploadProcurementDocument)\b/;
+
+const ADMIN_CHANGE_PATTERN =
+    /^(toggleAutoSaveAndLoad|setDataLogging)\b/;
+
+
+function applyRoleRestrictions() {
+
+    if (!currentUser) {
+        return;
+    }
+
+    const role = currentUser.role;
+
+    if (role === "admin") {
+        return;
+    }
+
+    for (const element of document.querySelectorAll("[onclick]")) {
+
+        const handler =
+            (element.getAttribute("onclick") || "").trim();
+
+        const hide =
+            ADMIN_ACTION_PATTERN.test(handler) ||
+            (role === "viewer" && EDIT_ACTION_PATTERN.test(handler));
+
+        if (hide) {
+            element.style.display = "none";
+        }
+    }
+
+    for (const element of document.querySelectorAll("[onchange]")) {
+
+        const handler =
+            (element.getAttribute("onchange") || "").trim();
+
+        const hide =
+            ADMIN_CHANGE_PATTERN.test(handler) ||
+            (role === "viewer" && EDIT_CHANGE_PATTERN.test(handler));
+
+        if (hide) {
+
+            const target =
+                element.closest("label") || element;
+
+            target.style.display = "none";
+        }
+    }
+}
+
+
+let roleObserver = null;
+
+let roleObserverScheduled = false;
+
+function startRoleObserver() {
+
+    if (roleObserver) {
+        return;
+    }
+
+    // The pages build their buttons dynamically, so restrictions are
+    // re-applied (debounced) whenever the page content changes.
+
+    roleObserver = new MutationObserver(() => {
+
+        if (roleObserverScheduled) {
+            return;
+        }
+
+        roleObserverScheduled = true;
+
+        requestAnimationFrame(() => {
+
+            roleObserverScheduled = false;
+
+            applyRoleRestrictions();
+        });
+    });
+
+    roleObserver.observe(
+        document.body,
+        { childList: true, subtree: true }
+    );
+}
+
+
+// ---------------- Small dialog (password forms) ----------------
+
+function showAuthDialog(title, fields, submitText, onSubmit) {
+
+    const overlay =
+        document.createElement("div");
+
+    overlay.className = "app-modal-overlay";
+
+    overlay.style.zIndex = "1500";
+
+    overlay.innerHTML = `
+        <div class="app-modal-box auth-dialog">
+
+            <h3>${escapeHtml(title)}</h3>
+
+            ${fields.map((field, index) => `
+                <label for="auth-dialog-${index}">
+                    ${escapeHtml(field.label)}
+                </label>
+                <input
+                    type="password"
+                    id="auth-dialog-${index}"
+                    autocomplete="new-password">
+            `).join("")}
+
+            <div class="auth-dialog-message"></div>
+
+            <div class="app-modal-actions">
+                <button type="button" class="app-modal-button-secondary">
+                    Cancel
+                </button>
+                <button type="button" class="app-modal-button-primary">
+                    ${escapeHtml(submitText)}
+                </button>
+            </div>
+
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const buttons =
+        overlay.querySelectorAll(".app-modal-actions button");
+
+    const messageBox =
+        overlay.querySelector(".auth-dialog-message");
+
+    const close = () => overlay.remove();
+
+    buttons[0].onclick = close;
+
+    const submit = async () => {
+
+        const values =
+            fields.map((field, index) =>
+                document.getElementById(`auth-dialog-${index}`).value);
+
+        const problem = await onSubmit(values);
+
+        if (problem) {
+
+            messageBox.textContent = problem;
+
+            return;
+        }
+
+        close();
+    };
+
+    buttons[1].onclick = submit;
+
+    overlay.addEventListener("keydown", (event) => {
+
+        if (event.key === "Enter") {
+            submit();
+        }
+
+        if (event.key === "Escape") {
+            close();
+        }
+    });
+
+    document.getElementById("auth-dialog-0").focus();
+}
+
+
+async function postJson(url, payload) {
+
+    const response =
+        await fetch(
+            url,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            }
+        );
+
+    return {
+        ok: response.ok,
+        text: await response.text()
+    };
+}
+
+
+function showChangePasswordDialog() {
+
+    showAuthDialog(
+        "Change password",
+        [
+            { label: "Current password" },
+            { label: "New password (min. 8 characters)" },
+            { label: "Repeat new password" }
+        ],
+        "Change password",
+        async ([current, next, repeat]) => {
+
+            if (next !== repeat) {
+                return "The new passwords do not match.";
+            }
+
+            const result =
+                await postJson(
+                    "/api/auth/change-password",
+                    { currentPassword: current, newPassword: next });
+
+            if (!result.ok) {
+                return result.text;
+            }
+
+            showLoginScreen(
+                "Password changed. Please log in again.", true);
+
+            return "";
+        }
+    );
+}
+
+
+// ---------------- User management (Admin) ----------------
+
+async function showUserManagement() {
+
+    const dashboard =
+        document.querySelector(".dashboard");
+
+    dashboard.style.display = "none";
+
+    document.getElementById("module-view")
+        .classList.remove("hidden");
+
+    document.getElementById("module-content").innerHTML = `
+        <h1>User Management</h1>
+
+        <p>
+            Admin: full access and user management.
+            Editor: can create, modify, delete and receive.
+            Viewer: read only.
+        </p>
+
+        <div id="user-management-body">
+            Loading users...
+        </div>
+    `;
+
+    await refreshUserManagement();
+}
+
+
+async function refreshUserManagement() {
+
+    const body =
+        document.getElementById("user-management-body");
+
+    if (!body) {
+        return;
+    }
+
+    const response =
+        await fetch("/api/users");
+
+    if (!response.ok) {
+
+        body.textContent =
+            "Error: " + await response.text();
+
+        return;
+    }
+
+    const data =
+        await response.json();
+
+    const roleSelect = (selected, extra) => `
+        <select ${extra}>
+            ${["viewer", "editor", "admin"].map(role => `
+                <option value="${role}"
+                    ${role === selected ? "selected" : ""}>
+                    ${roleLabel(role)}
+                </option>`).join("")}
+        </select>
+    `;
+
+    body.innerHTML = `
+        <div class="material-table-container">
+
+            <table class="material-table">
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Role</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${data.users.map(user => `
+                        <tr>
+                            <td>${escapeHtml(user.username)}</td>
+                            <td>
+                                ${roleSelect(
+                                    user.role,
+                                    `data-user="${escapeHtml(user.username)}"
+                                     onchange="changeUserRole(this.dataset.user, this.value)"`)}
+                            </td>
+                            <td>
+                                <button type="button"
+                                    class="user-row-button"
+                                    data-user="${escapeHtml(user.username)}"
+                                    onclick="resetUserPasswordDialog(this.dataset.user)">
+                                    Reset password
+                                </button>
+                                <button type="button"
+                                    class="user-row-button user-row-button-danger"
+                                    data-user="${escapeHtml(user.username)}"
+                                    onclick="removeUser(this.dataset.user)">
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                    `).join("")}
+                </tbody>
+            </table>
+
+        </div>
+
+        <div class="form-container">
+
+            <h2>Add user</h2>
+
+            <label>Username</label>
+            <input type="text" id="new-user-name"
+                placeholder="letters, digits, . _ -">
+
+            <label>Password</label>
+            <input type="password" id="new-user-password"
+                autocomplete="new-password"
+                placeholder="at least 8 characters">
+
+            <label>Role</label>
+            ${roleSelect("viewer", `id="new-user-role"`)}
+
+            <div class="form-actions">
+                <button type="button" onclick="addUserFromForm()">
+                    Add user
+                </button>
+            </div>
+
+            <div id="user-management-message"></div>
+
+        </div>
+    `;
+}
+
+
+function setUserManagementMessage(text) {
+
+    const box =
+        document.getElementById("user-management-message");
+
+    if (box) {
+        box.textContent = text;
+    }
+}
+
+
+async function addUserFromForm() {
+
+    const result =
+        await postJson(
+            "/api/users/create",
+            {
+                username:
+                    document.getElementById("new-user-name").value.trim(),
+                password:
+                    document.getElementById("new-user-password").value,
+                role:
+                    document.getElementById("new-user-role").value
+            });
+
+    if (!result.ok) {
+
+        setUserManagementMessage(result.text);
+
+        return;
+    }
+
+    await refreshUserManagement();
+
+    setUserManagementMessage("User added.");
+}
+
+
+async function changeUserRole(username, role) {
+
+    const result =
+        await postJson(
+            "/api/users/role",
+            { username, role });
+
+    await refreshUserManagement();
+
+    setUserManagementMessage(
+        result.ok ? "Role updated." : result.text);
+
+    // Changing your own role takes effect on your next request.
+
+    if (result.ok && currentUser &&
+        username.toLowerCase() === currentUser.username) {
+
+        initAuth();
+    }
+}
+
+
+function resetUserPasswordDialog(username) {
+
+    showAuthDialog(
+        `Reset password for ${username}`,
+        [{ label: "New password (min. 8 characters)" }],
+        "Reset password",
+        async ([password]) => {
+
+            const result =
+                await postJson(
+                    "/api/users/reset-password",
+                    { username, newPassword: password });
+
+            if (!result.ok) {
+                return result.text;
+            }
+
+            setUserManagementMessage(
+                `Password for ${username} was reset. ` +
+                "Their open sessions were closed.");
+
+            return "";
+        }
+    );
+}
+
+
+async function removeUser(username) {
+
+    const confirmed =
+        await showConfirmDialog(
+            `Delete user "${username}"? This cannot be undone.`);
+
+    if (!confirmed) {
+        return;
+    }
+
+    const result =
+        await postJson(
+            "/api/users/delete",
+            { username });
+
+    await refreshUserManagement();
+
+    setUserManagementMessage(
+        result.ok ? "User deleted." : result.text);
+}
+
+
+initAuth();
