@@ -5593,6 +5593,7 @@ void WebServer::run()
                     {
                         string materialID;
                         int orderedQuantity;
+                        string supplierName;
                     };
 
                     vector<BatchLine> lines;
@@ -5652,7 +5653,10 @@ void WebServer::run()
                                 "zero for material " + materialID);
                         }
 
-                        lines.push_back({materialID, orderedQuantity});
+                        lines.push_back({
+                            materialID,
+                            orderedQuantity,
+                            lineMaterial->getSupplier()->getName()});
                     }
 
 
@@ -5671,20 +5675,54 @@ void WebServer::run()
                     ProcurementManager& procurementManager =
                         warehouseSystem->getProcurementManager();
 
-                    string batchID =
-                        procurementManager.reserveNextID();
+                    // One Procurement Order belongs to exactly one
+                    // Supplier (the Supplier heading, Order
+                    // Confirmation and Lieferschein are all per
+                    // Supplier - see also the add-material route). So
+                    // lines of different Suppliers are split into one
+                    // "PRC-######" per Supplier, in the order the
+                    // Suppliers first appear. Each ID is reserved only
+                    // after the previous group was created, because
+                    // reserveNextID() derives it from existing orders.
+
+                    vector<string> supplierNames;
 
                     for (const auto& line : lines)
                     {
-                        procurementManager.createOrder(
-                            productID,
-                            line.materialID,
-                            warehouseID,
-                            orderDate,
-                            line.orderedQuantity,
-                            comment,
-                            projectionID,
-                            batchID);
+                        if (find(supplierNames.begin(),
+                            supplierNames.end(),
+                            line.supplierName) == supplierNames.end())
+                        {
+                            supplierNames.push_back(line.supplierName);
+                        }
+                    }
+
+                    vector<string> createdIDs;
+
+                    for (const auto& supplierName : supplierNames)
+                    {
+                        string batchID =
+                            procurementManager.reserveNextID();
+
+                        for (const auto& line : lines)
+                        {
+                            if (line.supplierName != supplierName)
+                            {
+                                continue;
+                            }
+
+                            procurementManager.createOrder(
+                                productID,
+                                line.materialID,
+                                warehouseID,
+                                orderDate,
+                                line.orderedQuantity,
+                                comment,
+                                projectionID,
+                                batchID);
+                        }
+
+                        createdIDs.push_back(batchID);
                     }
 
 
@@ -5782,9 +5820,26 @@ void WebServer::run()
 
                     response["success"] = true;
 
-                    response["id"] = batchID;
+                    response["id"] = createdIDs.front();
+
+                    string createdList;
+
+                    for (size_t i = 0; i < createdIDs.size(); i++)
+                    {
+                        if (i > 0)
+                        {
+                            createdList += ", ";
+                        }
+
+                        createdList += createdIDs[i];
+                    }
+
+                    response["ids"] = createdList;
 
                     response["message"] =
+                        createdIDs.size() > 1 ?
+                        "Procurement Orders created (one per Supplier): "
+                        + createdList + "." :
                         "Procurement Order created successfully.";
 
                     return crow::response(response);
