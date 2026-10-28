@@ -1240,6 +1240,16 @@ footer {
         white-space: nowrap;
     }
 
+    .procurement-summary-eta {
+        color: #1d4ed8;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+
+    .procurement-summary-eta[hidden] {
+        display: none;
+    }
+
     .procurement-summary-caret {
         color: #9ca3af;
         transition: transform 0.15s ease;
@@ -1248,6 +1258,49 @@ footer {
 
     .procurement-card.collapsed .procurement-summary-caret {
         transform: rotate(0deg);
+    }
+
+
+.procurement-eta-input {
+    padding: 4px 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+.procurement-eta-row {
+    margin-bottom: 14px;
+}
+
+/* Label and date picker on ONE line; the status text ("Saved" or an
+   error) floats just below so it never pushes the line to two rows. */
+
+.procurement-eta-inline {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    white-space: nowrap;
+}
+
+    .procurement-eta-inline .detail-label {
+        margin: 0;
+    }
+
+.procurement-eta-message {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 2px;
+    width: max-content;
+    max-width: 320px;
+    white-space: normal;
+    font-size: 12px;
+    color: #15803d;
+}
+
+    .procurement-eta-message.procurement-eta-error {
+        color: #b91c1c;
     }
 
 

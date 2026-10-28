@@ -31,6 +31,7 @@ ProcurementOrder::ProcurementOrder(
     projectionID = "";
     closed = false;
     cancelled = false;
+    estimatedReceiptDate = "";
 }
 
 
@@ -131,6 +132,12 @@ bool ProcurementOrder::isCancelled() const
 }
 
 
+string ProcurementOrder::getEstimatedReceiptDate() const
+{
+    return estimatedReceiptDate;
+}
+
+
 // ================================================================
 // SETTERS
 // ================================================================
@@ -210,6 +217,12 @@ void ProcurementOrder::setClosed(bool value)
 void ProcurementOrder::setCancelled(bool value)
 {
     cancelled = value;
+}
+
+
+void ProcurementOrder::setEstimatedReceiptDate(const string& date)
+{
+    estimatedReceiptDate = date;
 }
 
 

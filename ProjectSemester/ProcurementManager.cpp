@@ -547,6 +547,47 @@ bool ProcurementManager::cancelOrder(
 
 
 // ================================================================
+// SET ESTIMATED RECEIPT DATE (one date for the whole order)
+// ================================================================
+
+bool ProcurementManager::setEstimatedReceiptDate(
+    const string& id,
+    const string& date)
+{
+    bool updatedAny = false;
+
+    for (const auto& order : orders)
+    {
+        if (order->getID() != id)
+        {
+            continue;
+        }
+
+        if (order->isClosed() ||
+            order->isCancelled() ||
+            order->getPendingQuantity() <= 0)
+        {
+            continue;
+        }
+
+        order->setEstimatedReceiptDate(
+            sanitizeField(date));
+
+        updatedAny = true;
+    }
+
+    if (!updatedAny)
+    {
+        return false;
+    }
+
+    save();
+
+    return true;
+}
+
+
+// ================================================================
 // GET ORDERS
 // ================================================================
 
@@ -564,7 +605,7 @@ ProcurementManager::getOrders() const
 //
 // id|productID|materialID|materialName|warehouseID|orderDate|
 //   orderedQuantity|comment|confirmationDate|confirmedQuantity|
-//   receipts|projectionID|closed|cancelled
+//   receipts|projectionID|closed|cancelled|estimatedReceiptDate
 //
 // materialName: snapshot of the Material's name at order time, kept
 //   alongside materialID so the file reads on its own even if the
@@ -579,6 +620,8 @@ ProcurementManager::getOrders() const
 // receipts: each as "date,quantity,comment", several joined by "~"
 // closed: "1" if closeOrder() was used on this line, else "0"
 // cancelled: "1" if cancelOrder() was used on this line, else "0"
+// estimatedReceiptDate: optional "YYYY-MM-DD", empty if not set;
+//   rows saved before this field existed simply have no such column
 
 bool ProcurementManager::save()
 {
@@ -647,7 +690,8 @@ bool ProcurementManager::save()
             << receiptsField << "|"
             << order->getProjectionID() << "|"
             << (order->isClosed() ? "1" : "0") << "|"
-            << (order->isCancelled() ? "1" : "0")
+            << (order->isCancelled() ? "1" : "0") << "|"
+            << order->getEstimatedReceiptDate()
             << endl;
     }
 
@@ -769,6 +813,12 @@ bool ProcurementManager::load()
         {
             order->setCancelled(
                 fields[12 + base] == "1");
+        }
+
+        if (fields.size() > (size_t)(13 + base))
+        {
+            order->setEstimatedReceiptDate(
+                fields[13 + base]);
         }
 
         // Backfill the name for a pre-materialName row from the
