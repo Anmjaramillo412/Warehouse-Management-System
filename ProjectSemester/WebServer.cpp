@@ -1,6 +1,7 @@
 #include "WebServer.h"
 
 #include <crow.h>
+#include "AuthManager.h"
 
 #include <iostream>
 #include <fstream>
@@ -366,7 +367,12 @@ bool resolveAdditionalSuppliers(
 
 void WebServer::run()
 {
-    crow::SimpleApp app;
+    // AuthMiddleware (AuthManager.h) checks login and role before
+    // every route - see the permission rules in AuthManager::decide().
+
+    crow::App<AuthMiddleware> app;
+
+    auth::AuthManager::instance().load();
 
     WarehouseSystem* warehouseSystem = system;
 
@@ -7881,6 +7887,395 @@ void WebServer::run()
 
                 return response;
             });
+
+// ============================================================
+// LOGIN / USERS (see AuthManager.h)
+// ============================================================
+// Who may call what is decided before any route runs, by
+// AuthMiddleware -> AuthManager::decide(). The routes below only
+// do the account work itself.
+
+    CROW_ROUTE(app, "/api/auth/login")
+        .methods(crow::HTTPMethod::POST)
+        ([](const crow::request& req)
+            {
+                auto body =
+                    crow::json::load(req.body);
+
+                if (!body ||
+                    !body.has("username") ||
+                    !body.has("password"))
+                {
+                    return crow::response(
+                        400,
+                        "Username and password are required.");
+                }
+
+                string username =
+                    body["username"].s();
+
+                string password =
+                    body["password"].s();
+
+                string token;
+
+                auth::CurrentUser user;
+
+                string problem =
+                    auth::AuthManager::instance().login(
+                        username,
+                        password,
+                        token,
+                        user);
+
+                if (!problem.empty())
+                {
+                    return crow::response(
+                        401,
+                        problem);
+                }
+
+                crow::json::wvalue result;
+
+                result["username"] = user.username;
+
+                result["role"] =
+                    auth::roleToString(user.role);
+
+                crow::response response(result);
+
+                response.set_header(
+                    "Set-Cookie",
+                    "wms_session=" + token +
+                    "; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200");
+
+                return response;
+            });
+
+
+    CROW_ROUTE(app, "/api/auth/logout")
+        .methods(crow::HTTPMethod::POST)
+        ([](const crow::request& req)
+            {
+                string token =
+                    auth::AuthManager::cookieValue(
+                        req.get_header_value("Cookie"),
+                        "wms_session");
+
+                auth::AuthManager::instance().logout(token);
+
+                crow::json::wvalue result;
+
+                result["success"] = true;
+
+                crow::response response(result);
+
+                response.set_header(
+                    "Set-Cookie",
+                    "wms_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
+
+                return response;
+            });
+
+
+    CROW_ROUTE(app, "/api/auth/me")
+        ([](const crow::request& req)
+            {
+                string token =
+                    auth::AuthManager::cookieValue(
+                        req.get_header_value("Cookie"),
+                        "wms_session");
+
+                auth::CurrentUser user;
+
+                if (!auth::AuthManager::instance()
+                    .userForToken(token, user))
+                {
+                    return crow::response(
+                        401,
+                        "Please log in.");
+                }
+
+                crow::json::wvalue result;
+
+                result["username"] = user.username;
+
+                result["role"] =
+                    auth::roleToString(user.role);
+
+                return crow::response(result);
+            });
+
+
+    CROW_ROUTE(app, "/api/auth/change-password")
+        .methods(crow::HTTPMethod::POST)
+        ([](const crow::request& req)
+            {
+                auto body =
+                    crow::json::load(req.body);
+
+                if (!body ||
+                    !body.has("currentPassword") ||
+                    !body.has("newPassword"))
+                {
+                    return crow::response(
+                        400,
+                        "Current and new password are required.");
+                }
+
+                string token =
+                    auth::AuthManager::cookieValue(
+                        req.get_header_value("Cookie"),
+                        "wms_session");
+
+                auth::CurrentUser user;
+
+                if (!auth::AuthManager::instance()
+                    .userForToken(token, user))
+                {
+                    return crow::response(
+                        401,
+                        "Please log in.");
+                }
+
+                string currentPassword =
+                    body["currentPassword"].s();
+
+                string newPassword =
+                    body["newPassword"].s();
+
+                string problem =
+                    auth::AuthManager::instance()
+                    .changeOwnPassword(
+                        user.username,
+                        currentPassword,
+                        newPassword);
+
+                if (!problem.empty())
+                {
+                    return crow::response(
+                        400,
+                        problem);
+                }
+
+                // Changing a password closes every session of this
+                // user (including this one) - log in again.
+
+                crow::json::wvalue result;
+
+                result["success"] = true;
+
+                result["message"] =
+                    "Password changed. Please log in again.";
+
+                crow::response response(result);
+
+                response.set_header(
+                    "Set-Cookie",
+                    "wms_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
+
+                return response;
+            });
+
+
+    CROW_ROUTE(app, "/api/users")
+        ([]()
+            {
+                crow::json::wvalue result;
+
+                crow::json::wvalue::list userList;
+
+                for (const auto& user :
+                    auth::AuthManager::instance().listUsers())
+                {
+                    crow::json::wvalue item;
+
+                    item["username"] = user.username;
+
+                    item["role"] =
+                        auth::roleToString(user.role);
+
+                    userList.push_back(std::move(item));
+                }
+
+                result["users"] = std::move(userList);
+
+                return crow::response(result);
+            });
+
+
+    CROW_ROUTE(app, "/api/users/create")
+        .methods(crow::HTTPMethod::POST)
+        ([](const crow::request& req)
+            {
+                auto body =
+                    crow::json::load(req.body);
+
+                if (!body ||
+                    !body.has("username") ||
+                    !body.has("password") ||
+                    !body.has("role"))
+                {
+                    return crow::response(
+                        400,
+                        "Username, password and role are required.");
+                }
+
+                string username =
+                    body["username"].s();
+
+                string password =
+                    body["password"].s();
+
+                string role =
+                    body["role"].s();
+
+                string problem =
+                    auth::AuthManager::instance()
+                    .createUser(username, password, role);
+
+                if (!problem.empty())
+                {
+                    return crow::response(
+                        400,
+                        problem);
+                }
+
+                crow::json::wvalue result;
+
+                result["success"] = true;
+
+                return crow::response(result);
+            });
+
+
+    CROW_ROUTE(app, "/api/users/role")
+        .methods(crow::HTTPMethod::POST)
+        ([](const crow::request& req)
+            {
+                auto body =
+                    crow::json::load(req.body);
+
+                if (!body ||
+                    !body.has("username") ||
+                    !body.has("role"))
+                {
+                    return crow::response(
+                        400,
+                        "Username and role are required.");
+                }
+
+                string username =
+                    body["username"].s();
+
+                string role =
+                    body["role"].s();
+
+                string problem =
+                    auth::AuthManager::instance()
+                    .setRole(username, role);
+
+                if (!problem.empty())
+                {
+                    return crow::response(
+                        400,
+                        problem);
+                }
+
+                crow::json::wvalue result;
+
+                result["success"] = true;
+
+                return crow::response(result);
+            });
+
+
+    CROW_ROUTE(app, "/api/users/reset-password")
+        .methods(crow::HTTPMethod::POST)
+        ([](const crow::request& req)
+            {
+                auto body =
+                    crow::json::load(req.body);
+
+                if (!body ||
+                    !body.has("username") ||
+                    !body.has("newPassword"))
+                {
+                    return crow::response(
+                        400,
+                        "Username and new password are required.");
+                }
+
+                string username =
+                    body["username"].s();
+
+                string newPassword =
+                    body["newPassword"].s();
+
+                string problem =
+                    auth::AuthManager::instance()
+                    .setPassword(username, newPassword);
+
+                if (!problem.empty())
+                {
+                    return crow::response(
+                        400,
+                        problem);
+                }
+
+                crow::json::wvalue result;
+
+                result["success"] = true;
+
+                return crow::response(result);
+            });
+
+
+    CROW_ROUTE(app, "/api/users/delete")
+        .methods(crow::HTTPMethod::POST)
+        ([](const crow::request& req)
+            {
+                auto body =
+                    crow::json::load(req.body);
+
+                if (!body || !body.has("username"))
+                {
+                    return crow::response(
+                        400,
+                        "Username is required.");
+                }
+
+                string token =
+                    auth::AuthManager::cookieValue(
+                        req.get_header_value("Cookie"),
+                        "wms_session");
+
+                auth::CurrentUser actingUser;
+
+                auth::AuthManager::instance()
+                    .userForToken(token, actingUser);
+
+                string username =
+                    body["username"].s();
+
+                string problem =
+                    auth::AuthManager::instance()
+                    .deleteUser(username, actingUser.username);
+
+                if (!problem.empty())
+                {
+                    return crow::response(
+                        400,
+                        problem);
+                }
+
+                crow::json::wvalue result;
+
+                result["success"] = true;
+
+                return crow::response(result);
+            });
+
 
     // ============================================================
     // START SERVER

@@ -1574,3 +1574,171 @@ footer {
         grid-template-columns: 1fr;
     }
 }
+
+
+/* ============================================================
+   LOGIN SCREEN, USER BAR, USER MANAGEMENT
+   ============================================================ */
+
+.login-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+    .login-overlay.hidden {
+        display: none;
+    }
+
+.login-box {
+    background: white;
+    width: 100%;
+    max-width: 380px;
+    padding: 34px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+}
+
+    .login-box h2 {
+        margin: 0 0 4px 0;
+        font-size: 22px;
+        color: #1f2937;
+    }
+
+    .login-box label {
+        display: block;
+        margin: 16px 0 6px 0;
+        font-weight: bold;
+        font-size: 14px;
+        color: #1f2937;
+    }
+
+    .login-box input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 11px 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 15px;
+    }
+
+    .login-box button {
+        width: 100%;
+        margin-top: 22px;
+        padding: 12px;
+        border: none;
+        border-radius: 8px;
+        background: #1f2937;
+        color: white;
+        font-size: 15px;
+        cursor: pointer;
+    }
+
+        .login-box button:hover {
+            background: #111827;
+        }
+
+.login-subtitle {
+    margin: 0;
+    color: #6b7280;
+}
+
+.login-message {
+    min-height: 20px;
+    margin-top: 14px;
+    font-size: 14px;
+    color: #b91c1c;
+}
+
+    .login-message.login-message-info {
+        color: #15803d;
+    }
+
+
+.user-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 18px;
+    padding-left: 18px;
+    border-left: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.user-bar-name small {
+    margin-left: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.18);
+    font-size: 12px;
+}
+
+.user-bar button {
+    padding: 5px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    border-radius: 6px;
+    background: transparent;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+    .user-bar button:hover {
+        background: rgba(255, 255, 255, 0.15);
+    }
+
+
+.auth-dialog label {
+    display: block;
+    margin: 12px 0 5px 0;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.auth-dialog input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 15px;
+}
+
+.auth-dialog h3 {
+    margin-top: 0;
+}
+
+.auth-dialog-message {
+    min-height: 18px;
+    margin-top: 12px;
+    font-size: 14px;
+    color: #b91c1c;
+}
+
+
+.user-row-button {
+    margin-right: 6px;
+    padding: 5px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: white;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+    .user-row-button:hover {
+        background: #f3f4f6;
+    }
+
+.user-row-button-danger {
+    color: #b91c1c;
+    border-color: #fca5a5;
+}
+
+    .user-row-button-danger:hover {
+        background: #fee2e2;
+    }

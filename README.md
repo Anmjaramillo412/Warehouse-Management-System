@@ -21,6 +21,7 @@ The application combines an object-oriented C++ backend with a web-based user in
   - [Projection Management](#projection-management)
   - [Procurement Management](#procurement-management)
   - [Purchase Management](#purchase-management)
+  - [User Accounts and Roles](#user-accounts-and-roles)
   - [Data Management](#data-management)
   - [Data Persistence](#data-persistence)
 - [Architecture](#architecture)
@@ -141,6 +142,19 @@ Procurement Management (above) places and receives orders; Purchase Management r
 - **Other Costs**: an invoice can also carry one or more one-time, Supplier-tied charges that are neither customs nor freight - e.g. a machinery setup fee paid once to a contractor. Unlike customs/freight, an Other Cost is not prorated across this invoice's own lines "by value" - it is amortized as a flat per-unit addition to that Supplier's materials' price, with a per-entry choice of scope: amortized only on this invoice (its fixed amount divided by that Supplier's quantity on this invoice alone), or amortized across all purchases to that Supplier (its fixed amount divided by that Supplier's *cumulative* quantity received across every invoice up to and including this one, oldest to newest). In the Supplier-wide case the per-unit addition shrinks on each later invoice as more is bought from that Supplier, without ever changing what an earlier invoice already computed, and without needing to be re-entered on each later invoice - it was entered once, on the invoice that actually carried the one-time charge, and from then on keeps applying automatically to every later invoice for that Supplier too (e.g. a 600 EUR Other Cost on a first 400-unit invoice adds 1.50 EUR/unit there; a second, unrelated 1000-unit invoice from the same Supplier, with no Other Cost entry of its own, still gets 600 / 1400 = 0.43 EUR/unit from that same original entry). The Invoices view shows, per line, the Other Cost addition per unit and its total EUR value on that line, and the Price Received Deliveries / Edit Invoice forms show the matched quantity for each Other Cost row (computed from that Supplier's lines actually on the invoice) so it is never a hidden number
 - Material Price History, and the "current price" hints shown elsewhere in the app, are derived on demand from every Purchase Invoice line recorded for that material - editing an invoice's unit cost later (for when the supplier invoice and the customs bill arrive separately) updates history immediately, with nothing to migrate. The recorded price already includes any Other Cost addition on top of the customs/freight landed price
 - Product cost (heater cost evaluation) is computed from the current (latest by date) purchase price of every BOM material, multiplied by its BOM quantity
+
+### User Accounts and Roles
+
+The web interface requires a login. Every request is checked on the server (not only hidden in the page), according to the role of the logged-in user:
+
+- **Viewer**: read only - can open every list, detail view, history and report, but cannot create, modify, delete, receive, sell, transfer or upload anything (the server answers 403 and the buttons are hidden)
+- **Editor**: day-to-day work - everything a Viewer can do, plus creating, modifying, deleting, receiving, ordering, pricing invoices, etc., and manual "Save Data"
+- **Admin**: everything an Editor can do, plus user management (Users button in the header: add users, change roles, reset passwords, delete users) and system-level actions (Load Data, Exit, Reset PRC / Invoice Numbering, Auto Save/Logging settings, Documents Folder)
+- First start: if `data/users.txt` does not exist yet, an `admin` account is created and its random password is printed once on the server console - log in and change it with the "Password" button. Forgot the Admin password? Stop the server, delete `data/users.txt` and start again to get a new one (this removes all accounts)
+- Passwords are never stored: only a salted, iterated SHA-256 hash in `data/users.txt` (git-ignored). Minimum 8 characters; 5 wrong logins lock that username for one minute
+- Sessions last 12 hours of inactivity, live in server memory (restarting the server logs everybody out) and use an HttpOnly cookie
+- There must always be at least one Admin; an Admin cannot delete their own account
+- Implemented in the header-only `AuthManager.h` (accounts, hashing, sessions and the permission rules in `AuthManager::decide()`) plus an `AuthMiddleware` that runs before every route
 
 ### Data Management
 
