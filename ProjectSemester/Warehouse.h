@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Material.h"
+#include "Quantity.h"
 
 using namespace std;
 
@@ -13,7 +14,7 @@ struct WarehouseNode
 {
     Material* material;
 
-    int quantity;
+    double quantity;
 
     WarehouseNode* previous;
 
@@ -60,11 +61,11 @@ public:
     // Material operations
     bool addMaterial(
         Material* material,
-        int quantity);
+        double quantity);
 
     bool removeMaterial(
         const string& materialID,
-        int quantity);
+        double quantity);
 
     // Search
     WarehouseNode* findMaterial(

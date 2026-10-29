@@ -525,7 +525,7 @@ bool DataManager::save(
 
                 bomSheet.cell(
                     "C" + to_string(bomRow))
-                    .value(item.quantity);
+                    .value(roundQty(item.quantity));
 
                 bomRow++;
             }
@@ -571,7 +571,7 @@ bool DataManager::save(
 
                 inventorySheet.cell(
                     "C" + to_string(inventoryRow))
-                    .value(node->quantity);
+                    .value(roundQty(node->quantity));
 
 
                 inventoryRow++;
@@ -1034,8 +1034,8 @@ bool DataManager::load(
                     row[1].value<string>();
 
 
-                int quantity =
-                    row[2].value<int>();
+                double quantity =
+                    roundQty(row[2].value<double>());
 
 
                 Warehouse* warehouse =
@@ -1204,8 +1204,8 @@ bool DataManager::load(
                     row[1].value<string>();
 
 
-                int quantity =
-                    row[2].value<int>();
+                double quantity =
+                    roundQty(row[2].value<double>());
 
 
                 Product* product =

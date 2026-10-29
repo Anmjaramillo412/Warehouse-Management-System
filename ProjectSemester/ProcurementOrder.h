@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include "Quantity.h"
+
 using namespace std;
 
 
@@ -17,7 +19,7 @@ struct ProcurementReceipt
 {
     string receiptDate;
 
-    int receivedQuantity;
+    double receivedQuantity;
 
     string comment;
 };
@@ -49,12 +51,12 @@ private:
     int warehouseID;
 
     string orderDate;
-    int orderedQuantity;
+    double orderedQuantity;
 
     string comment;
 
     string confirmationDate;
-    int confirmedQuantity;
+    double confirmedQuantity;
 
     vector<ProcurementReceipt> receipts;
 
@@ -94,7 +96,7 @@ public:
         string matID = "",
         int whID = 0,
         string oDate = "",
-        int oQuantity = 0,
+        double oQuantity = 0,
         string cmt = "");
 
     // Destructor
@@ -107,10 +109,10 @@ public:
     string getMaterialName() const;
     int getWarehouseID() const;
     string getOrderDate() const;
-    int getOrderedQuantity() const;
+    double getOrderedQuantity() const;
     string getComment() const;
     string getConfirmationDate() const;
-    int getConfirmedQuantity() const;
+    double getConfirmedQuantity() const;
     const vector<ProcurementReceipt>& getReceipts() const;
     string getProjectionID() const;
     bool isClosed() const;
@@ -124,10 +126,10 @@ public:
     void setMaterialName(const string& matName);
     void setWarehouseID(int whID);
     void setOrderDate(const string& oDate);
-    void setOrderedQuantity(int oQuantity);
+    void setOrderedQuantity(double oQuantity);
     void setComment(const string& cmt);
     void setConfirmationDate(const string& cDate);
-    void setConfirmedQuantity(int cQuantity);
+    void setConfirmedQuantity(double cQuantity);
     void setProjectionID(const string& projID);
     void setClosed(bool value);
     void setCancelled(bool value);
@@ -136,20 +138,20 @@ public:
     // Receipts
     void addReceipt(
         const string& receiptDate,
-        int receivedQuantity,
+        double receivedQuantity,
         const string& cmt = "");
 
     void setReceipts(
         const vector<ProcurementReceipt>& newReceipts);
 
     // Computed
-    int getTotalReceivedQuantity() const;
+    double getTotalReceivedQuantity() const;
 
     // confirmedQuantity once set (> 0), otherwise orderedQuantity
-    int getTargetQuantity() const;
+    double getTargetQuantity() const;
 
     // max(0, target - received)
-    int getPendingQuantity() const;
+    double getPendingQuantity() const;
 
     // "Ordered" | "Confirmed" | "Partially Received" | "Completed" |
     // "Closed (Incomplete)" | "Cancelled"

@@ -107,12 +107,14 @@ WarehouseNode* Warehouse::findMaterial(
 
 bool Warehouse::addMaterial(
     Material* material,
-    int quantity)
+    double quantity)
 {
     if (material == nullptr)
     {
         return false;
     }
+
+    quantity = roundQty(quantity);
 
     if (quantity <= 0)
     {
@@ -128,7 +130,8 @@ bool Warehouse::addMaterial(
 
     if (existing != nullptr)
     {
-        existing->quantity += quantity;
+        existing->quantity =
+            roundQty(existing->quantity + quantity);
 
         return true;
     }
@@ -175,8 +178,10 @@ bool Warehouse::addMaterial(
 
 bool Warehouse::removeMaterial(
     const string& materialID,
-    int quantity)
+    double quantity)
 {
+    quantity = roundQty(quantity);
+
     if (quantity <= 0)
     {
         return false;
@@ -195,19 +200,20 @@ bool Warehouse::removeMaterial(
 
     // Not enough stock
 
-    if (node->quantity < quantity)
+    if (qtyLess(node->quantity, quantity))
     {
         return false;
     }
 
 
-    node->quantity -= quantity;
+    node->quantity =
+        roundQty(node->quantity - quantity);
 
 
     // If quantity becomes zero,
     // remove the node from the list
 
-    if (node->quantity == 0)
+    if (isZeroQty(node->quantity))
     {
         if (node->previous != nullptr)
         {
@@ -302,7 +308,7 @@ void Warehouse::display() const
             << endl;
 
         cout << "Quantity: "
-            << current->quantity
+            << formatQty(current->quantity)
             << " "
             << current->material->getUoM()
             << endl;

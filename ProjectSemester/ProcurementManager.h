@@ -103,7 +103,7 @@ public:
         const string& materialID,
         int warehouseID,
         const string& orderDate,
-        int orderedQuantity,
+        double orderedQuantity,
         const string& comment,
         const string& projectionID = "",
         const string& explicitID = "");
@@ -129,7 +129,7 @@ public:
         const string& id,
         const string& materialID,
         const string& confirmationDate,
-        int confirmedQuantity);
+        double confirmedQuantity);
 
     // Adds a (possibly partial) receipt and performs the matching
     // Goods Receipt into the order's Warehouse (one specific
@@ -138,7 +138,7 @@ public:
         const string& id,
         const string& materialID,
         const string& receiptDate,
-        int receivedQuantity,
+        double receivedQuantity,
         const string& comment);
 
     // Deletes one material line outright (used when the confirmed

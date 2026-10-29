@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include "Quantity.h"
+
 using namespace std;
 
 
@@ -42,7 +44,7 @@ struct PurchaseInvoiceLine
     // Cached from the receipt at the time this line was created, so
     // the cost calculation below does not depend on Procurement data
     // still existing/matching later.
-    int receivedQuantity;
+    double receivedQuantity;
 
     // This line's own per-unit cost as stated on the supplier's
     // invoice, in the invoice's currency (see PurchaseInvoice) - the

@@ -129,14 +129,14 @@ void Projection::setCreationDate(const string& cDate)
 
 void Projection::addItem(
     const string& materialID,
-    int requiredQuantity,
-    int stockAtCreation)
+    double requiredQuantity,
+    double stockAtCreation)
 {
     ProjectionItem item;
 
     item.materialID = materialID;
-    item.requiredQuantity = requiredQuantity;
-    item.stockAtCreation = stockAtCreation;
+    item.requiredQuantity = roundQty(requiredQuantity);
+    item.stockAtCreation = roundQty(stockAtCreation);
 
     items.push_back(item);
 }

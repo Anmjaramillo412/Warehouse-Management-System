@@ -1842,7 +1842,7 @@ void ConsoleUI::goodsReceipt()
 {
     int warehouseID;
     string materialID;
-    int quantity;
+    double quantity;
 
 
     cout << endl;
@@ -1924,7 +1924,7 @@ void ConsoleUI::goodsIssue()
 {
     int warehouseID;
     string materialID;
-    int quantity;
+    double quantity;
 
 
     cout << endl;
@@ -1970,7 +1970,7 @@ void ConsoleUI::goodsIssue()
 
 
     cout << "Available quantity: "
-        << node->quantity
+        << formatQty(node->quantity)
         << " "
         << node->material->getUoM()
         << endl;
@@ -2023,7 +2023,7 @@ void ConsoleUI::transferMaterial()
     int sourceWarehouseID;
     int destinationWarehouseID;
     string materialID;
-    int quantity;
+    double quantity;
 
 
     cout << endl;
@@ -2099,7 +2099,7 @@ void ConsoleUI::transferMaterial()
 
 
     cout << "Available quantity: "
-        << node->quantity
+        << formatQty(node->quantity)
         << " "
         << node->material->getUoM()
         << endl;

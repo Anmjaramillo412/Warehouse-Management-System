@@ -107,13 +107,15 @@ void Product::setMainWarehouseID(
 
 bool Product::addBOMItem(
     const string& materialID,
-    int quantity)
+    double quantity)
 {
     if (materialID.empty())
     {
         return false;
     }
 
+
+    quantity = roundQty(quantity);
 
     if (quantity <= 0)
     {
@@ -129,7 +131,8 @@ bool Product::addBOMItem(
 
     if (existing != nullptr)
     {
-        existing->quantity += quantity;
+        existing->quantity =
+            roundQty(existing->quantity + quantity);
 
         return true;
     }
@@ -243,7 +246,7 @@ void Product::display() const
             cout << "  Material: "
                 << item.materialID
                 << " | Quantity: "
-                << item.quantity
+                << formatQty(item.quantity)
                 << endl;
         }
     }

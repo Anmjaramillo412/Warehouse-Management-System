@@ -317,7 +317,8 @@ PurchaseInvoice* PurchaseManager::createInvoice(
                 pendingReceipt.materialID == line.materialID &&
                 pendingReceipt.receiptIndex == line.receiptIndex)
             {
-                if (pendingReceipt.receivedQuantity != line.receivedQuantity)
+                if (roundQty(pendingReceipt.receivedQuantity) !=
+                    roundQty(line.receivedQuantity))
                 {
                     errorMessage =
                         "Received quantity does not match Procurement "
@@ -525,7 +526,8 @@ bool PurchaseManager::updateInvoice(
         if (lines[i].procurementOrderID != existingLines[i].procurementOrderID ||
             lines[i].materialID != existingLines[i].materialID ||
             lines[i].receiptIndex != existingLines[i].receiptIndex ||
-            lines[i].receivedQuantity != existingLines[i].receivedQuantity)
+            roundQty(lines[i].receivedQuantity) !=
+                roundQty(existingLines[i].receivedQuantity))
         {
             errorMessage =
                 "Cannot change the deliveries on an existing invoice - "
@@ -1012,7 +1014,7 @@ bool PurchaseManager::save()
                 lines[i].procurementOrderID + "," +
                 lines[i].materialID + "," +
                 to_string(lines[i].receiptIndex) + "," +
-                to_string(lines[i].receivedQuantity) + "," +
+                formatQty(lines[i].receivedQuantity) + "," +
                 to_string(lines[i].unitCost);
         }
 
@@ -1136,7 +1138,7 @@ bool PurchaseManager::load()
                 invoiceLine.procurementOrderID = lineFields[0];
                 invoiceLine.materialID = lineFields[1];
                 invoiceLine.receiptIndex = atoi(lineFields[2].c_str());
-                invoiceLine.receivedQuantity = atoi(lineFields[3].c_str());
+                invoiceLine.receivedQuantity = parseQty(lineFields[3]);
                 invoiceLine.unitCost = atof(lineFields[4].c_str());
 
                 invoice->addLine(invoiceLine);

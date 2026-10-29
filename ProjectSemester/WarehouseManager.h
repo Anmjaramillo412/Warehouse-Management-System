@@ -37,12 +37,12 @@ public:
     bool addMaterialToWarehouse(
         int warehouseID,
         Material* material,
-        int quantity);
+        double quantity);
 
     bool removeMaterialFromWarehouse(
         int warehouseID,
         const string& materialID,
-        int quantity);
+        double quantity);
 
     bool isMaterialInUse(
         const string& materialID) const;
