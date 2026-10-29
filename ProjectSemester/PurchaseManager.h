@@ -28,7 +28,7 @@ struct PendingPurchaseReceipt
     int receiptIndex;
 
     string receiptDate;
-    int receivedQuantity;
+    double receivedQuantity;
     string comment;
 };
 
@@ -66,7 +66,7 @@ struct MaterialPriceHistoryEntry
 struct ProductCostLine
 {
     string materialID;
-    int quantity;
+    double quantity;
 
     bool hasPrice;
     double unitPriceEUR;

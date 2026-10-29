@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include "Quantity.h"
+
 using namespace std;
 
 
@@ -14,7 +16,7 @@ struct BOMItem
 {
     string materialID;
 
-    int quantity;
+    double quantity;
 };
 
 
@@ -79,7 +81,7 @@ public:
     // BOM operations
     bool addBOMItem(
         const string& materialID,
-        int quantity);
+        double quantity);
 
     bool removeBOMItem(
         const string& materialID);

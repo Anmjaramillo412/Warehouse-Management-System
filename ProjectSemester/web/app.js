@@ -4480,6 +4480,32 @@ async function loadMaterialForModify() {
 // HTML ESCAPE
 // ============================================================
 
+// ================================================================
+// QUANTITY HELPERS (material quantities allow up to 3 decimals)
+// ================================================================
+
+// Round to 3 decimals (avoids 0.1 + 0.2 = 0.30000000000000004)
+function roundQty3(value) {
+    const number = Number(value);
+
+    if (!Number.isFinite(number)) {
+        return 0;
+    }
+
+    return Math.round(number * 1000) / 1000;
+}
+
+// True when the number has no more than 3 decimals
+function hasMaxThreeDecimals(value) {
+    const number = Number(value);
+
+    if (!Number.isFinite(number)) {
+        return false;
+    }
+
+    return Math.abs(number * 1000 - Math.round(number * 1000)) < 1e-6;
+}
+
 function escapeHtml(value) {
 
     return String(value)
@@ -5614,7 +5640,8 @@ function goodsLineRowHtml(type, rowIndex) {
                 <input
                     type="number"
                     id="${prefix}-quantity"
-                    min="1"
+                    min="0.001"
+                    step="any"
                     placeholder="Qty"
                 >
 
@@ -5902,7 +5929,8 @@ function showTransferMaterial() {
             <input
                 type="number"
                 id="transfer-quantity"
-                min="1"
+                min="0.001"
+                step="any"
                 placeholder="Enter Quantity"
             >
 
@@ -6586,7 +6614,8 @@ function bomItemRowHtml(prefix) {
             <input
                 type="number"
                 class="bom-quantity"
-                min="1"
+                min="0.001"
+                step="any"
                 placeholder="Quantity"
             >
 
@@ -6751,6 +6780,15 @@ async function createProduct() {
         }
 
 
+        if (!hasMaxThreeDecimals(quantity))
+        {
+            message.textContent =
+                "BOM quantity can have at most 3 decimals.";
+
+            return;
+        }
+
+
         bom.push({
 
             materialID:
@@ -6899,7 +6937,8 @@ function modifyBomItemRowHtml(prefix, quantity) {
             <input
                 type="number"
                 class="modify-bom-quantity"
-                min="1"
+                min="0.001"
+                step="any"
                 placeholder="Quantity"
                 value="${quantity || ""}"
             >
@@ -7182,6 +7221,14 @@ async function modifyProductSubmit() {
 
             message.textContent =
                 "BOM quantity must be greater than zero.";
+
+            return;
+        }
+
+        if (!hasMaxThreeDecimals(quantity)) {
+
+            message.textContent =
+                "BOM quantity can have at most 3 decimals.";
 
             return;
         }
@@ -9308,7 +9355,8 @@ async function openProjectionDetail(id) {
                             ? "-"
                             : `<input
                                     type="number"
-                                    min="1"
+                                    min="0.001"
+                                    step="any"
                                     class="procurement-qty-input"
                                     id="${rowID}-qty"
                                     value="${item.pendingQuantity}"
@@ -10180,7 +10228,8 @@ function neworderRowHtml(rowIndex) {
             <input
                 type="number"
                 class="neworder-quantity"
-                min="1"
+                min="0.001"
+                step="any"
                 placeholder="Quantity"
             >
 
@@ -10790,10 +10839,10 @@ function renderProcurementCard(group, cardMode = "open") {
         combineProcurementStatus(lines);
 
     const totalOrdered =
-        lines.reduce((sum, line) => sum + line.orderedQuantity, 0);
+        roundQty3(lines.reduce((sum, line) => sum + line.orderedQuantity, 0));
 
     const totalReceived =
-        lines.reduce((sum, line) => sum + line.totalReceivedQuantity, 0);
+        roundQty3(lines.reduce((sum, line) => sum + line.totalReceivedQuantity, 0));
 
     const materialsLabel =
         lines.length === 1
@@ -10901,6 +10950,7 @@ function renderProcurementCard(group, cardMode = "open") {
                     <input
                         type="number"
                         min="0"
+                        step="any"
                         class="procurement-qty-input"
                         id="${id}-${line.materialID}-confirm-qty"
                         placeholder="Qty (0 = delete)"
@@ -10932,7 +10982,8 @@ function renderProcurementCard(group, cardMode = "open") {
 
                         <input
                             type="number"
-                            min="1"
+                            min="0.001"
+                            step="any"
                             max="${line.pendingQuantity}"
                             class="procurement-qty-input"
                             id="${id}-${line.materialID}-receipt-qty"
@@ -11058,7 +11109,8 @@ function renderProcurementCard(group, cardMode = "open") {
 
                     <input
                         type="number"
-                        min="1"
+                        min="0.001"
+                        step="any"
                         class="procurement-qty-input"
                         id="${addMaterialPrefix}-qty"
                         placeholder="Qty"
@@ -13138,8 +13190,8 @@ function addPurchaseAdjustMaterialRow() {
 
             <input
                 type="number"
-                min="1"
-                step="1"
+                min="0.001"
+                step="any"
                 id="${prefix}-quantity"
                 placeholder="Qty"
                 value="1"
@@ -13332,10 +13384,10 @@ async function submitPurchaseAdjust() {
             Number(quantityInput.value);
 
         if (!quantityInput.value || quantity <= 0 ||
-            !Number.isInteger(quantity)) {
+            !hasMaxThreeDecimals(quantity)) {
 
             message.textContent =
-                `Enter a valid whole Quantity for ${materialID}.`;
+                `Enter a valid Quantity (max. 3 decimals) for ${materialID}.`;
 
             return;
         }

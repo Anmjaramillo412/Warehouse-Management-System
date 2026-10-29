@@ -229,11 +229,13 @@ ProcurementOrder* ProcurementManager::createOrder(
     const string& materialID,
     int warehouseID,
     const string& orderDate,
-    int orderedQuantity,
+    double orderedQuantity,
     const string& comment,
     const string& projectionID,
     const string& explicitID)
 {
+    orderedQuantity = roundQty(orderedQuantity);
+
     if (materialID.empty() ||
         orderedQuantity <= 0)
     {
@@ -286,7 +288,7 @@ ProcurementOrder* ProcurementManager::createOrder(
             " | " + describeLineForHistory(*orders.back()) +
             " | Product: " +
             (productID.empty() ? string("-") : productID) +
-            " | Qty: " + to_string(orderedQuantity) +
+            " | Qty: " + formatQty(orderedQuantity) +
             " | Order Date: " + orderDate);
     }
 
@@ -355,7 +357,7 @@ bool ProcurementManager::confirmOrder(
     const string& id,
     const string& materialID,
     const string& confirmationDate,
-    int confirmedQuantity)
+    double confirmedQuantity)
 {
     ProcurementOrder* order =
         findOrder(id, materialID);
@@ -364,6 +366,8 @@ bool ProcurementManager::confirmOrder(
     {
         return false;
     }
+
+    confirmedQuantity = roundQty(confirmedQuantity);
 
     if (confirmedQuantity <= 0)
     {
@@ -384,8 +388,8 @@ bool ProcurementManager::confirmOrder(
             "PROCUREMENT ORDER CONFIRMED",
             "ID: " + id +
             " | " + describeLineForHistory(*order) +
-            " | Ordered Qty: " + to_string(order->getOrderedQuantity()) +
-            " | Confirmed Qty: " + to_string(confirmedQuantity) +
+            " | Ordered Qty: " + formatQty(order->getOrderedQuantity()) +
+            " | Confirmed Qty: " + formatQty(confirmedQuantity) +
             " | Confirmation Date: " + confirmationDate);
     }
 
@@ -404,7 +408,7 @@ bool ProcurementManager::receiveOrder(
     const string& id,
     const string& materialID,
     const string& receiptDate,
-    int receivedQuantity,
+    double receivedQuantity,
     const string& comment)
 {
     ProcurementOrder* order =
@@ -414,6 +418,8 @@ bool ProcurementManager::receiveOrder(
     {
         return false;
     }
+
+    receivedQuantity = roundQty(receivedQuantity);
 
     if (receivedQuantity <= 0)
     {
@@ -465,12 +471,12 @@ bool ProcurementManager::receiveOrder(
             "PROCUREMENT RECEIPT",
             "ID: " + id +
             " | " + describeLineForHistory(*order) +
-            " | Received Qty: " + to_string(receivedQuantity) +
+            " | Received Qty: " + formatQty(receivedQuantity) +
             " | Receipt Date: " + receiptDate +
             " | Total Received: " +
-            to_string(order->getTotalReceivedQuantity()) +
-            " / " + to_string(order->getTargetQuantity()) +
-            " | Pending: " + to_string(order->getPendingQuantity()) +
+            formatQty(order->getTotalReceivedQuantity()) +
+            " / " + formatQty(order->getTargetQuantity()) +
+            " | Pending: " + formatQty(order->getPendingQuantity()) +
             " | Status: " + order->getStatus(),
             comment);
     }
@@ -555,10 +561,10 @@ bool ProcurementManager::closeOrder(
                 "ID: " + id +
                 " | " + describeLineForHistory(*order) +
                 " | Received: " +
-                to_string(order->getTotalReceivedQuantity()) +
-                " / " + to_string(order->getTargetQuantity()) +
+                formatQty(order->getTotalReceivedQuantity()) +
+                " / " + formatQty(order->getTargetQuantity()) +
                 " | Not delivered: " +
-                to_string(order->getPendingQuantity()));
+                formatQty(order->getPendingQuantity()));
         }
 
         order->setClosed(true);
@@ -746,7 +752,7 @@ bool ProcurementManager::save()
 
             receiptsField +=
                 receipts[i].receiptDate + "," +
-                to_string(receipts[i].receivedQuantity) + "," +
+                formatQty(receipts[i].receivedQuantity) + "," +
                 receipts[i].comment;
         }
 
@@ -756,10 +762,10 @@ bool ProcurementManager::save()
             << order->getMaterialName() << "|"
             << order->getWarehouseID() << "|"
             << order->getOrderDate() << "|"
-            << order->getOrderedQuantity() << "|"
+            << formatQty(order->getOrderedQuantity()) << "|"
             << order->getComment() << "|"
             << order->getConfirmationDate() << "|"
-            << order->getConfirmedQuantity() << "|"
+            << formatQty(order->getConfirmedQuantity()) << "|"
             << receiptsField << "|"
             << order->getProjectionID() << "|"
             << (order->isClosed() ? "1" : "0") << "|"
@@ -831,7 +837,7 @@ bool ProcurementManager::load()
             fields[2],
             atoi(fields[3 + base].c_str()),
             fields[4 + base],
-            atoi(fields[5 + base].c_str()),
+            parseQty(fields[5 + base]),
             fields[6 + base]);
 
         order->setMaterialName(
@@ -841,7 +847,7 @@ bool ProcurementManager::load()
             fields[7 + base]);
 
         order->setConfirmedQuantity(
-            atoi(fields[8 + base].c_str()));
+            parseQty(fields[8 + base]));
 
         if (fields.size() > (size_t)(9 + base) &&
             !fields[9 + base].empty())
@@ -865,7 +871,7 @@ bool ProcurementManager::load()
 
                 order->addReceipt(
                     receiptFields[0],
-                    atoi(receiptFields[1].c_str()),
+                    parseQty(receiptFields[1]),
                     receiptComment);
             }
         }

@@ -41,14 +41,14 @@ public:
     bool goodsReceipt(
         int warehouseID,
         Material* material,
-        int quantity,
+        double quantity,
         const string& comment = "");
 
     // Goods Issue
     bool goodsIssue(
         int warehouseID,
         const string& materialID,
-        int quantity,
+        double quantity,
         const string& comment = "");
 
     // Transfer
@@ -56,7 +56,7 @@ public:
         int sourceWarehouseID,
         int destinationWarehouseID,
         const string& materialID,
-        int quantity,
+        double quantity,
         const string& comment = "");
 
     // Sell Product

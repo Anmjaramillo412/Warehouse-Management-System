@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include "Quantity.h"
+
 using namespace std;
 
 
@@ -19,9 +21,9 @@ struct ProjectionItem
 {
     string materialID;
 
-    int requiredQuantity;
+    double requiredQuantity;
 
-    int stockAtCreation;
+    double stockAtCreation;
 
     // How many times a Procurement Order has been registered against
     // this line FROM this Projection (see Projection::
@@ -115,8 +117,8 @@ public:
     // Items
     void addItem(
         const string& materialID,
-        int requiredQuantity,
-        int stockAtCreation);
+        double requiredQuantity,
+        double stockAtCreation);
 
     void setItems(
         const vector<ProjectionItem>& newItems);

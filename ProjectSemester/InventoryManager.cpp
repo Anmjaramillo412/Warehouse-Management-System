@@ -52,7 +52,7 @@ void InventoryManager::setMaterialManager(
 bool InventoryManager::goodsReceipt(
     int warehouseID,
     Material* material,
-    int quantity,
+    double quantity,
     const string& comment)
 {
     if (warehouseManager == nullptr)
@@ -65,6 +65,8 @@ bool InventoryManager::goodsReceipt(
         return false;
     }
 
+
+    quantity = roundQty(quantity);
 
     if (quantity <= 0)
     {
@@ -100,7 +102,7 @@ bool InventoryManager::goodsReceipt(
             + " | Material: "
             + material->getID()
             + " | Qty: "
-            + to_string(quantity);
+            + formatQty(quantity);
 
 
         movementLogger->log(
@@ -119,13 +121,15 @@ bool InventoryManager::goodsReceipt(
 bool InventoryManager::goodsIssue(
     int warehouseID,
     const string& materialID,
-    int quantity,
+    double quantity,
     const string& comment)
 {
     if (warehouseManager == nullptr)
     {
         return false;
     }
+
+    quantity = roundQty(quantity);
 
     if (quantity <= 0)
     {
@@ -167,7 +171,7 @@ bool InventoryManager::goodsIssue(
     // Check available quantity
     // ------------------------------------------------------------
 
-    if (node->quantity < quantity)
+    if (qtyLess(node->quantity, quantity))
     {
         return false;
     }
@@ -202,7 +206,7 @@ bool InventoryManager::goodsIssue(
             + " | Material: "
             + materialID
             + " | Qty: "
-            + to_string(quantity);
+            + formatQty(quantity);
 
 
         movementLogger->log(
@@ -223,7 +227,7 @@ bool InventoryManager::transferMaterial(
     int sourceWarehouseID,
     int destinationWarehouseID,
     const string& materialID,
-    int quantity,
+    double quantity,
     const string& comment)
 {
     if (warehouseManager == nullptr)
@@ -231,6 +235,13 @@ bool InventoryManager::transferMaterial(
         return false;
     }
 
+
+    quantity = roundQty(quantity);
+
+    if (quantity <= 0)
+    {
+        return false;
+    }
 
     // Source and destination must be different
 
@@ -281,7 +292,7 @@ bool InventoryManager::transferMaterial(
 
     // Check available quantity
 
-    if (sourceNode->quantity < quantity)
+    if (qtyLess(sourceNode->quantity, quantity))
     {
         return false;
     }
@@ -342,7 +353,7 @@ bool InventoryManager::transferMaterial(
             + " | Material: "
             + materialID
             + " | Qty: "
-            + to_string(quantity);
+            + formatQty(quantity);
 
         movementLogger->log(
             "TRANSFER",
@@ -453,11 +464,11 @@ bool InventoryManager::sellProduct(
         }
 
 
-        int requiredQuantity =
-            item.quantity * quantity;
+        double requiredQuantity =
+            roundQty(item.quantity * quantity);
 
 
-        if (node->quantity < requiredQuantity)
+        if (qtyLess(node->quantity, requiredQuantity))
         {
             return false;
         }
@@ -484,8 +495,8 @@ bool InventoryManager::sellProduct(
         }
 
 
-        int requiredQuantity =
-            item.quantity * quantity;
+        double requiredQuantity =
+            roundQty(item.quantity * quantity);
 
 
         bool success =

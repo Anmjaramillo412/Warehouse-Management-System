@@ -14,7 +14,7 @@ ProcurementOrder::ProcurementOrder(
     string matID,
     int whID,
     string oDate,
-    int oQuantity,
+    double oQuantity,
     string cmt)
 {
     id = orderID;
@@ -23,7 +23,7 @@ ProcurementOrder::ProcurementOrder(
     materialName = "";
     warehouseID = whID;
     orderDate = oDate;
-    orderedQuantity = oQuantity;
+    orderedQuantity = roundQty(oQuantity);
     comment = cmt;
 
     confirmationDate = "";
@@ -84,7 +84,7 @@ string ProcurementOrder::getOrderDate() const
 }
 
 
-int ProcurementOrder::getOrderedQuantity() const
+double ProcurementOrder::getOrderedQuantity() const
 {
     return orderedQuantity;
 }
@@ -102,7 +102,7 @@ string ProcurementOrder::getConfirmationDate() const
 }
 
 
-int ProcurementOrder::getConfirmedQuantity() const
+double ProcurementOrder::getConfirmedQuantity() const
 {
     return confirmedQuantity;
 }
@@ -178,9 +178,9 @@ void ProcurementOrder::setOrderDate(const string& oDate)
 }
 
 
-void ProcurementOrder::setOrderedQuantity(int oQuantity)
+void ProcurementOrder::setOrderedQuantity(double oQuantity)
 {
-    orderedQuantity = oQuantity;
+    orderedQuantity = roundQty(oQuantity);
 }
 
 
@@ -196,9 +196,9 @@ void ProcurementOrder::setConfirmationDate(const string& cDate)
 }
 
 
-void ProcurementOrder::setConfirmedQuantity(int cQuantity)
+void ProcurementOrder::setConfirmedQuantity(double cQuantity)
 {
-    confirmedQuantity = cQuantity;
+    confirmedQuantity = roundQty(cQuantity);
 }
 
 
@@ -232,13 +232,13 @@ void ProcurementOrder::setEstimatedReceiptDate(const string& date)
 
 void ProcurementOrder::addReceipt(
     const string& receiptDate,
-    int receivedQuantity,
+    double receivedQuantity,
     const string& cmt)
 {
     ProcurementReceipt receipt;
 
     receipt.receiptDate = receiptDate;
-    receipt.receivedQuantity = receivedQuantity;
+    receipt.receivedQuantity = roundQty(receivedQuantity);
     receipt.comment = cmt;
 
     receipts.push_back(receipt);
@@ -256,13 +256,13 @@ void ProcurementOrder::setReceipts(
 // COMPUTED - TOTAL RECEIVED QUANTITY
 // ================================================================
 
-int ProcurementOrder::getTotalReceivedQuantity() const
+double ProcurementOrder::getTotalReceivedQuantity() const
 {
-    int total = 0;
+    double total = 0.0;
 
     for (const auto& receipt : receipts)
     {
-        total += receipt.receivedQuantity;
+        total = roundQty(total + receipt.receivedQuantity);
     }
 
     return total;
@@ -273,7 +273,7 @@ int ProcurementOrder::getTotalReceivedQuantity() const
 // COMPUTED - TARGET QUANTITY
 // ================================================================
 
-int ProcurementOrder::getTargetQuantity() const
+double ProcurementOrder::getTargetQuantity() const
 {
     if (confirmedQuantity > 0)
     {
@@ -288,12 +288,12 @@ int ProcurementOrder::getTargetQuantity() const
 // COMPUTED - PENDING QUANTITY
 // ================================================================
 
-int ProcurementOrder::getPendingQuantity() const
+double ProcurementOrder::getPendingQuantity() const
 {
-    int pending =
-        getTargetQuantity() - getTotalReceivedQuantity();
+    double pending =
+        roundQty(getTargetQuantity() - getTotalReceivedQuantity());
 
-    return max(0, pending);
+    return (pending > 0) ? pending : 0.0;
 }
 
 
@@ -349,10 +349,10 @@ void ProcurementOrder::display() const
     cout << "Material:         " << materialID << endl;
     cout << "Warehouse:        " << warehouseID << endl;
     cout << "Order Date:       " << orderDate << endl;
-    cout << "Ordered Qty:      " << orderedQuantity << endl;
+    cout << "Ordered Qty:      " << formatQty(orderedQuantity) << endl;
     cout << "Confirmation:     " << confirmationDate << endl;
-    cout << "Confirmed Qty:    " << confirmedQuantity << endl;
-    cout << "Received Qty:     " << getTotalReceivedQuantity() << endl;
+    cout << "Confirmed Qty:    " << formatQty(confirmedQuantity) << endl;
+    cout << "Received Qty:     " << formatQty(getTotalReceivedQuantity()) << endl;
     cout << "Status:           " << getStatus() << endl;
     cout << "Comment:          " << comment << endl;
 

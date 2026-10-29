@@ -161,7 +161,7 @@ WarehouseManager::getWarehouses()
 bool WarehouseManager::addMaterialToWarehouse(
     int warehouseID,
     Material* material,
-    int quantity)
+    double quantity)
 {
     // Check material pointer
     if (material == nullptr)
@@ -212,7 +212,7 @@ bool WarehouseManager::isMaterialInUse(
 bool WarehouseManager::removeMaterialFromWarehouse(
     int warehouseID,
     const string& materialID,
-    int quantity)
+    double quantity)
 {
     // Quantity must be positive
     if (quantity <= 0)

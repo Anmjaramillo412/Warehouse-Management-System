@@ -97,6 +97,7 @@ The `data/` folder is created automatically on first run - see Data Persistence 
 
 ### Product Management
 
+- BOM quantities accept up to 3 decimals (e.g. 0.25)
 - Create products, searching for each BOM component by ID or name instead of typing it in by hand
 - Define Bills of Materials
 - Modify products, with the Product ID itself also picked from a searchable list instead of typed in
@@ -228,6 +229,8 @@ A Material's additional Suppliers are stored as a list embedded directly in the 
 ### Product and BOM Concept
 
 A Product contains a Bill of Materials consisting of Material IDs and required quantities.
+
+Material quantities (stock, inventory movements, BOM, Projection requirements, Procurement ordered/confirmed/received quantities and Purchase Invoice line quantities) accept up to 3 decimals (e.g. 0.125 kg, 2.5 m). Values are rounded to 3 decimals after every calculation and shown without trailing zeros. Product-level counts (Quantity to Manufacture, Produced Quantity, Quantity Sold, Safety Stock units) remain whole numbers.
 
 When a product is sold, the system automatically calculates the required quantities of all BOM components and performs the corresponding inventory issues.
 

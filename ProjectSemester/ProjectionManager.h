@@ -64,7 +64,7 @@ private:
     // live BOM instead means the true combined demand (from every
     // Projection due at or before asOfDeadline) always counts, whether
     // or not any single Projection has "caught up" to it yet.
-    int getOpenRequiredQuantity(
+    double getOpenRequiredQuantity(
         const string& materialID,
         int warehouseID,
         const string& asOfDeadline) const;
@@ -74,7 +74,7 @@ public:
     // Actual current stock of one material inside one Warehouse right
     // now - no Projection reservations subtracted (see
     // getQuantityToOrder() for that).
-    int getWarehouseStock(
+    double getWarehouseStock(
         const string& materialID,
         int warehouseID) const;
 
@@ -98,7 +98,7 @@ public:
     // more: a Projection due sooner must stay unaffected by one due
     // later - only a Projection due later is expected to account for
     // everything already due ahead of it.
-    int getQuantityToOrder(
+    double getQuantityToOrder(
         const string& materialID,
         int warehouseID,
         const string& asOfDeadline) const;

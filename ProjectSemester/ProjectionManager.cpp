@@ -193,7 +193,7 @@ string ProjectionManager::generateNextID()
 // GET WAREHOUSE STOCK (one material, one Warehouse)
 // ================================================================
 
-int ProjectionManager::getWarehouseStock(
+double ProjectionManager::getWarehouseStock(
     const string& materialID,
     int warehouseID) const
 {
@@ -213,7 +213,7 @@ int ProjectionManager::getWarehouseStock(
     WarehouseNode* node =
         warehouse->findMaterial(materialID);
 
-    return (node != nullptr) ? node->quantity : 0;
+    return (node != nullptr) ? node->quantity : 0.0;
 }
 
 
@@ -245,12 +245,12 @@ int ProjectionManager::getWarehouseStock(
 // combined demand always shows up, regardless of which Projection's
 // item list has or hasn't caught up yet.
 
-int ProjectionManager::getOpenRequiredQuantity(
+double ProjectionManager::getOpenRequiredQuantity(
     const string& materialID,
     int warehouseID,
     const string& asOfDeadline) const
 {
-    int total = 0;
+    double total = 0.0;
 
     string today =
         todayISO();
@@ -329,9 +329,10 @@ int ProjectionManager::getOpenRequiredQuantity(
                 }
             }
 
-            total +=
+            total = roundQty(
+                total +
                 bomItem.quantity *
-                projection->getManufactureQuantity();
+                projection->getManufactureQuantity());
 
             break;
         }
@@ -349,24 +350,24 @@ int ProjectionManager::getOpenRequiredQuantity(
 // sooner is never affected by one due later) instead of being one
 // number shared identically by every open Projection.
 
-int ProjectionManager::getQuantityToOrder(
+double ProjectionManager::getQuantityToOrder(
     const string& materialID,
     int warehouseID,
     const string& asOfDeadline) const
 {
-    int required =
+    double required =
         getOpenRequiredQuantity(
             materialID,
             warehouseID,
             asOfDeadline);
 
-    int stock =
+    double stock =
         getWarehouseStock(materialID, warehouseID);
 
-    int toOrder =
-        required - stock;
+    double toOrder =
+        roundQty(required - stock);
 
-    return (toOrder > 0) ? toOrder : 0;
+    return (toOrder > 0) ? toOrder : 0.0;
 }
 
 
@@ -465,8 +466,8 @@ Projection* ProjectionManager::createProjection(
             }
         }
 
-        int required =
-            bomItem.quantity * manufactureQuantity;
+        double required =
+            roundQty(bomItem.quantity * manufactureQuantity);
 
         // Every OTHER currently open Projection already competing for
         // this material in this same Warehouse - this new Projection
@@ -476,19 +477,19 @@ Projection* ProjectionManager::createProjection(
         // -open Projection due at or before this new one's own
         // deadline gets summed in.
 
-        int alreadyOpen =
+        double alreadyOpen =
             getOpenRequiredQuantity(
                 bomItem.materialID,
                 warehouseID,
                 deadline);
 
-        int stock =
+        double stock =
             getWarehouseStock(
                 bomItem.materialID,
                 warehouseID);
 
-        int shortfall =
-            (alreadyOpen + required) - stock;
+        double shortfall =
+            roundQty((alreadyOpen + required) - stock);
 
         if (shortfall > 0)
         {
@@ -594,16 +595,16 @@ bool ProjectionManager::completeProjection(
 
     for (const auto& bomItem : product->getBOM())
     {
-        int needed =
-            bomItem.quantity * producedQuantity;
+        double needed =
+            roundQty(bomItem.quantity * producedQuantity);
 
         WarehouseNode* node =
             warehouse->findMaterial(bomItem.materialID);
 
-        int available =
-            (node != nullptr) ? node->quantity : 0;
+        double available =
+            (node != nullptr) ? node->quantity : 0.0;
 
-        if (available < needed)
+        if (qtyLess(available, needed))
         {
             return false;
         }
@@ -611,8 +612,8 @@ bool ProjectionManager::completeProjection(
 
     for (const auto& bomItem : product->getBOM())
     {
-        int needed =
-            bomItem.quantity * producedQuantity;
+        double needed =
+            roundQty(bomItem.quantity * producedQuantity);
 
         inventoryManager->goodsIssue(
             projection->getWarehouseID(),
@@ -758,23 +759,23 @@ bool ProjectionManager::refreshShortfallItems(
         // straight from its Product's live BOM. Adding it again here
         // would double-count it.
 
-        int required =
-            bomItem.quantity *
-            projection->getManufactureQuantity();
+        double required =
+            roundQty(bomItem.quantity *
+            projection->getManufactureQuantity());
 
-        int combinedRequired =
+        double combinedRequired =
             getOpenRequiredQuantity(
                 bomItem.materialID,
                 warehouseID,
                 projection->getDeadline());
 
-        int stock =
+        double stock =
             getWarehouseStock(
                 bomItem.materialID,
                 warehouseID);
 
-        int shortfall =
-            combinedRequired - stock;
+        double shortfall =
+            roundQty(combinedRequired - stock);
 
         if (shortfall > 0)
         {
@@ -904,8 +905,8 @@ bool ProjectionManager::save()
 
             itemsField +=
                 items[i].materialID + "," +
-                to_string(items[i].requiredQuantity) + "," +
-                to_string(items[i].stockAtCreation) + "," +
+                formatQty(items[i].requiredQuantity) + "," +
+                formatQty(items[i].stockAtCreation) + "," +
                 (items[i].orderRegistered ? "1" : "0") + "," +
                 to_string(items[i].orderRegistrationCount);
         }
@@ -990,8 +991,8 @@ bool ProjectionManager::load()
 
                 projection->addItem(
                     itemFields[0],
-                    atoi(itemFields[1].c_str()),
-                    atoi(itemFields[2].c_str()));
+                    parseQty(itemFields[1]),
+                    parseQty(itemFields[2]));
 
                 if (itemFields.size() > 3)
                 {

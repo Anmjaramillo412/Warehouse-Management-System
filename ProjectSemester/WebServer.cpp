@@ -2,6 +2,7 @@
 
 #include <crow.h>
 #include "AuthManager.h"
+#include "Quantity.h"
 
 #include <iostream>
 #include <fstream>
@@ -15,6 +16,43 @@
 
 using namespace std;
 namespace fs = std::filesystem;
+
+// ================================================================
+// QUANTITY HELPERS (decimal quantities, max. 3 decimals)
+// ================================================================
+// Reads a quantity from a JSON value. Returns -1 when the value is
+// missing or not a number, so the existing "must be greater than
+// zero" validations reject it.
+
+static double jsonQuantity(const crow::json::rvalue& value)
+{
+    if (value.t() != crow::json::type::Number)
+    {
+        return -1.0;
+    }
+
+    double v = value.d();
+
+    if (!std::isfinite(v))
+    {
+        return -1.0;
+    }
+
+    return v;
+}
+
+// Empty string when OK, otherwise the error text for the response.
+static string quantityDecimalsError(
+    double value,
+    const string& label)
+{
+    if (value > 0 && !hasValidQtyDecimals(value))
+    {
+        return label + " can have at most 3 decimals.";
+    }
+
+    return "";
+}
 
 // ================================================================
 // READ FILE
@@ -154,12 +192,12 @@ static void computeOrderTiming(
 // viewed, so the app shows both numbers and leaves that judgment call
 // to the user instead of guessing at an attribution.
 
-static int getOutstandingOrderedQuantity(
+static double getOutstandingOrderedQuantity(
     const string& materialID,
     int warehouseID,
     ProcurementManager& procurementManager)
 {
-    int total = 0;
+    double total = 0.0;
 
     for (const auto& order : procurementManager.getOrders())
     {
@@ -179,7 +217,7 @@ static int getOutstandingOrderedQuantity(
             continue;
         }
 
-        total += order->getPendingQuantity();
+        total = roundQty(total + order->getPendingQuantity());
     }
 
     return total;
@@ -2696,8 +2734,20 @@ void WebServer::run()
                     string materialID =
                         body["materialID"].s();
 
-                    int quantity =
-                        body["quantity"].i();
+                    double quantity =
+                        jsonQuantity(body["quantity"]);
+
+                    {
+                        string decimalsError =
+                            quantityDecimalsError(quantity, "Quantity");
+
+                        if (!decimalsError.empty())
+                        {
+                            return crow::response(
+                                400,
+                                decimalsError);
+                        }
+                    }
 
                     string comment = "";
 
@@ -2830,8 +2880,20 @@ void WebServer::run()
                     string materialID =
                         body["materialID"].s();
 
-                    int quantity =
-                        body["quantity"].i();
+                    double quantity =
+                        jsonQuantity(body["quantity"]);
+
+                    {
+                        string decimalsError =
+                            quantityDecimalsError(quantity, "Quantity");
+
+                        if (!decimalsError.empty())
+                        {
+                            return crow::response(
+                                400,
+                                decimalsError);
+                        }
+                    }
 
                     string comment = "";
 
@@ -2904,7 +2966,7 @@ void WebServer::run()
                     // Check available quantity
                     // ------------------------------------------------
 
-                    if (node->quantity < quantity)
+                    if (qtyLess(node->quantity, quantity))
                     {
                         return crow::response(
                             409,
@@ -2997,8 +3059,20 @@ void WebServer::run()
                     string materialID =
                         body["materialID"].s();
 
-                    int quantity =
-                        body["quantity"].i();
+                    double quantity =
+                        jsonQuantity(body["quantity"]);
+
+                    {
+                        string decimalsError =
+                            quantityDecimalsError(quantity, "Quantity");
+
+                        if (!decimalsError.empty())
+                        {
+                            return crow::response(
+                                400,
+                                decimalsError);
+                        }
+                    }
 
                     string comment = "";
 
@@ -3401,8 +3475,20 @@ void WebServer::run()
                             string materialID =
                                 item["materialID"].s();
 
-                            int quantity =
-                                item["quantity"].i();
+                            double quantity =
+                                jsonQuantity(item["quantity"]);
+
+                            {
+                                string decimalsError =
+                                    quantityDecimalsError(quantity, "BOM quantity");
+
+                                if (!decimalsError.empty())
+                                {
+                                    return crow::response(
+                                        400,
+                                        decimalsError);
+                                }
+                            }
 
 
                             if (!Material::isValidID(
@@ -3618,8 +3704,20 @@ void WebServer::run()
                             string materialID =
                                 item["materialID"].s();
 
-                            int quantity =
-                                item["quantity"].i();
+                            double quantity =
+                                jsonQuantity(item["quantity"]);
+
+                            {
+                                string decimalsError =
+                                    quantityDecimalsError(quantity, "BOM quantity");
+
+                                if (!decimalsError.empty())
+                                {
+                                    return crow::response(
+                                        400,
+                                        decimalsError);
+                                }
+                            }
 
 
                             if (!Material::isValidID(
@@ -3651,7 +3749,7 @@ void WebServer::run()
                             BOMItem bomItem;
 
                             bomItem.materialID = materialID;
-                            bomItem.quantity = quantity;
+                            bomItem.quantity = roundQty(quantity);
 
                             bom.push_back(bomItem);
                         }
@@ -3835,15 +3933,15 @@ void WebServer::run()
                                 warehouse->findMaterial(
                                     bomItem.materialID);
 
-                            int quantity =
+                            double quantity =
                                 (node != nullptr) ?
-                                node->quantity : 0;
+                                node->quantity : 0.0;
 
                             stockItem["quantity"] =
                                 quantity;
 
                             stockItem["sufficientForSafetyStock"] =
-                                quantity >= (bomItem.quantity *
+                                !qtyLess(quantity, bomItem.quantity *
                                     productManager.getSafetyStockUnits());
 
 
@@ -4071,6 +4169,7 @@ void WebServer::run()
                     string productID =
                         body["productID"].s();
 
+                    // Product-level count (units sold): whole numbers only
                     int quantity =
                         body["quantity"].i();
 
@@ -4707,7 +4806,7 @@ void WebServer::run()
                     for (const auto& projItem :
                         projection->getItems())
                     {
-                        int toOrder =
+                        double toOrder =
                             projectionManager.getQuantityToOrder(
                                 projItem.materialID,
                                 projection->getWarehouseID(),
@@ -4839,7 +4938,7 @@ void WebServer::run()
                     // shortfall) while also never letting a Projection
                     // due later change one due sooner's own numbers.
 
-                    int pending =
+                    double pending =
                         projectionManager.getQuantityToOrder(
                             projItem.materialID,
                             projection->getWarehouseID(),
@@ -4865,7 +4964,7 @@ void WebServer::run()
                     // but never subtracted from it - see
                     // getOutstandingOrderedQuantity() above.
 
-                    int ordered =
+                    double ordered =
                         getOutstandingOrderedQuantity(
                             projItem.materialID,
                             projection->getWarehouseID(),
@@ -4876,7 +4975,7 @@ void WebServer::run()
                     // Projections - that is what "Qty to Order" above
                     // already accounts for).
 
-                    int stockForPending =
+                    double stockForPending =
                         projectionManager.getWarehouseStock(
                             projItem.materialID,
                             projection->getWarehouseID());
@@ -5345,8 +5444,20 @@ void WebServer::run()
                     string orderDate =
                         body["orderDate"].s();
 
-                    int orderedQuantity =
-                        body["orderedQuantity"].i();
+                    double orderedQuantity =
+                        jsonQuantity(body["orderedQuantity"]);
+
+                    {
+                        string decimalsError =
+                            quantityDecimalsError(orderedQuantity, "Ordered Quantity");
+
+                        if (!decimalsError.empty())
+                        {
+                            return crow::response(
+                                400,
+                                decimalsError);
+                        }
+                    }
 
                     string comment = "";
 
@@ -5601,7 +5712,7 @@ void WebServer::run()
                     struct BatchLine
                     {
                         string materialID;
-                        int orderedQuantity;
+                        double orderedQuantity;
                         string supplierName;
                     };
 
@@ -5612,8 +5723,20 @@ void WebServer::run()
                         string materialID =
                             lineJson["materialID"].s();
 
-                        int orderedQuantity =
-                            lineJson["orderedQuantity"].i();
+                        double orderedQuantity =
+                            jsonQuantity(lineJson["orderedQuantity"]);
+
+                        {
+                            string decimalsError =
+                                quantityDecimalsError(orderedQuantity, "Ordered Quantity");
+
+                            if (!decimalsError.empty())
+                            {
+                                return crow::response(
+                                    400,
+                                    decimalsError);
+                            }
+                        }
 
                         if (!Material::isValidID(materialID))
                         {
@@ -5799,21 +5922,22 @@ void WebServer::run()
                                 // after ordering exactly the 10 it
                                 // actually needed.
 
-                                int neededQuantity =
+                                double neededQuantity =
                                     projectionManager.getQuantityToOrder(
                                         line.materialID,
                                         warehouseID,
                                         sourceProjection->getDeadline());
 
-                                int outstandingOrdered =
+                                double outstandingOrdered =
                                     getOutstandingOrderedQuantity(
                                         line.materialID,
                                         warehouseID,
                                         procurementManager);
 
                                 bool fullyCovered =
-                                    outstandingOrdered >=
-                                    neededQuantity;
+                                    !qtyLess(
+                                        outstandingOrdered,
+                                        neededQuantity);
 
                                 projectionManager
                                     .registerItemOrderAttempt(
@@ -5895,8 +6019,20 @@ void WebServer::run()
                     string materialID =
                         body["materialID"].s();
 
-                    int orderedQuantity =
-                        body["orderedQuantity"].i();
+                    double orderedQuantity =
+                        jsonQuantity(body["orderedQuantity"]);
+
+                    {
+                        string decimalsError =
+                            quantityDecimalsError(orderedQuantity, "Ordered Quantity");
+
+                        if (!decimalsError.empty())
+                        {
+                            return crow::response(
+                                400,
+                                decimalsError);
+                        }
+                    }
 
                     string comment = "";
 
@@ -6111,8 +6247,20 @@ void WebServer::run()
                     string confirmationDate =
                         body["confirmationDate"].s();
 
-                    int confirmedQuantity =
-                        body["confirmedQuantity"].i();
+                    double confirmedQuantity =
+                        jsonQuantity(body["confirmedQuantity"]);
+
+                    {
+                        string decimalsError =
+                            quantityDecimalsError(confirmedQuantity, "Confirmed Quantity");
+
+                        if (!decimalsError.empty())
+                        {
+                            return crow::response(
+                                400,
+                                decimalsError);
+                        }
+                    }
 
 
                     if (id.empty())
@@ -6352,8 +6500,20 @@ void WebServer::run()
                     string receiptDate =
                         body["receiptDate"].s();
 
-                    int receivedQuantity =
-                        body["receivedQuantity"].i();
+                    double receivedQuantity =
+                        jsonQuantity(body["receivedQuantity"]);
+
+                    {
+                        string decimalsError =
+                            quantityDecimalsError(receivedQuantity, "Received Quantity");
+
+                        if (!decimalsError.empty())
+                        {
+                            return crow::response(
+                                400,
+                                decimalsError);
+                        }
+                    }
 
                     string comment = "";
 
@@ -7097,7 +7257,7 @@ void WebServer::run()
                             lineJson["receiptIndex"].i();
 
                         line.receivedQuantity =
-                            lineJson["receivedQuantity"].i();
+                            roundQty(jsonQuantity(lineJson["receivedQuantity"]));
 
                         line.unitCost =
                             lineJson["unitCost"].d();
@@ -7496,7 +7656,7 @@ void WebServer::run()
                             lineJson["receiptIndex"].i();
 
                         line.receivedQuantity =
-                            lineJson["receivedQuantity"].i();
+                            roundQty(jsonQuantity(lineJson["receivedQuantity"]));
 
                         line.unitCost =
                             lineJson["unitCost"].d();
