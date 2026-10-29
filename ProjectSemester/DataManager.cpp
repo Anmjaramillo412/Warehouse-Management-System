@@ -6,6 +6,10 @@
 #include <sstream>
 #include <fstream>
 #include <limits>
+#include <ctime>
+#include <chrono>
+#include <iomanip>
+#include <vector>
 using namespace std;
 
 
@@ -162,6 +166,16 @@ void DataManager::loadConfig()
 }
 
 // ================================================================
+// LAST SAVE ERROR
+// ================================================================
+
+string DataManager::getLastSaveError() const
+{
+    return lastSaveError;
+}
+
+
+// ================================================================
 // SAVE
 // ================================================================
 
@@ -185,6 +199,133 @@ bool DataManager::save(
             std::filesystem::create_directories(
                 targetPath.parent_path());
         }
+
+        lastSaveError = "";
+
+
+        // ------------------------------------------------
+        // SAFETY NET 1: back up the existing file
+        // ------------------------------------------------
+        // One backup on the first save of every program run, then at
+        // most one every 30 minutes (auto save would otherwise create
+        // one per click and push the useful ones out). The newest 50
+        // are kept in "backups/" next to the data file.
+
+        bool fileHasData =
+            std::filesystem::exists(targetPath) &&
+            std::filesystem::file_size(targetPath) > 0;
+
+        if (fileHasData)
+        {
+            try
+            {
+                static bool firstSaveOfRun = true;
+
+                std::filesystem::path backupDir =
+                    targetPath.parent_path() / "backups";
+
+                std::filesystem::create_directories(backupDir);
+
+                std::vector<std::filesystem::path> backups;
+
+                for (const auto& entry :
+                    std::filesystem::directory_iterator(backupDir))
+                {
+                    if (entry.is_regular_file() &&
+                        entry.path().extension() ==
+                        targetPath.extension())
+                    {
+                        backups.push_back(entry.path());
+                    }
+                }
+
+                sort(backups.begin(), backups.end());
+
+                bool backupDue = firstSaveOfRun || backups.empty();
+
+                if (!backupDue)
+                {
+                    auto age =
+                        std::filesystem::file_time_type::clock::now() -
+                        std::filesystem::last_write_time(backups.back());
+
+                    backupDue =
+                        age > std::chrono::minutes(30);
+                }
+
+                if (backupDue)
+                {
+                    time_t now = time(nullptr);
+                    tm localTime{};
+
+#ifdef _WIN32
+                    localtime_s(&localTime, &now);
+#else
+                    localtime_r(&now, &localTime);
+#endif
+
+                    ostringstream stamp;
+                    stamp << put_time(&localTime, "%Y%m%d_%H%M%S");
+
+                    std::filesystem::path backupFile =
+                        backupDir /
+                        (targetPath.stem().string() + "_" +
+                            stamp.str() +
+                            targetPath.extension().string());
+
+                    std::filesystem::copy_file(
+                        targetPath,
+                        backupFile,
+                        std::filesystem::copy_options::overwrite_existing);
+
+                    backups.push_back(backupFile);
+
+                    sort(backups.begin(), backups.end());
+
+                    while (backups.size() > 50)
+                    {
+                        std::filesystem::remove(backups.front());
+                        backups.erase(backups.begin());
+                    }
+
+                    firstSaveOfRun = false;
+                }
+            }
+            catch (const exception& backupError)
+            {
+                cout << "Warning: could not create backup: "
+                    << backupError.what() << endl;
+            }
+        }
+
+
+        // ------------------------------------------------
+        // SAFETY NET 2: never replace a file that has data with
+        // an empty one
+        // ------------------------------------------------
+        // Happens when nothing was loaded at startup (e.g. Auto Save
+        // and Load Data is off) and Save Data / Exit is pressed:
+        // the empty memory would wipe the whole Excel file.
+
+        bool memoryIsEmpty =
+            materialManager.getMaterials().empty() &&
+            supplierManager.getSuppliers().empty() &&
+            warehouseManager.getWarehouses().empty() &&
+            productManager.getProducts().empty();
+
+        if (fileHasData && memoryIsEmpty)
+        {
+            lastSaveError =
+                "Save blocked: the program has no data in memory "
+                "(nothing was loaded), but the data file already "
+                "contains data. Use Load Data first, so the file is "
+                "not overwritten with an empty one.";
+
+            cout << endl << lastSaveError << endl;
+
+            return false;
+        }
+
 
         xlnt::workbook workbook;
 

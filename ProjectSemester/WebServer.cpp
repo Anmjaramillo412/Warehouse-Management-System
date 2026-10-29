@@ -2175,9 +2175,14 @@ void WebServer::run()
 
                 if (!success)
                 {
+                    string reason =
+                        warehouseSystem->getDataManager()
+                        .getLastSaveError();
+
                     return crow::response(
-                        500,
-                        "Error saving data.");
+                        reason.empty() ? 500 : 409,
+                        reason.empty() ?
+                        "Error saving data." : reason);
                 }
 
 
