@@ -41,6 +41,9 @@ private:
     // refused until it is set.
     string documentsFolder;
 
+    // Why the last save() was refused/failed (empty when it worked)
+    string lastSaveError;
+
     void loadConfig();
 
     void saveConfig();
@@ -54,6 +57,8 @@ public:
 
     void setMovementLogger(
         MovementLogger* logger);
+
+    string getLastSaveError() const;
 
     // Save
     bool save(
