@@ -9,7 +9,7 @@
 //   Viewer - read only (every GET; no changes of any kind)
 //   Editor - day-to-day work (create / modify / delete / receive ...)
 //   Admin  - everything an Editor can do, plus user management and
-//            system-level actions (load data, exit server, reset
+//            system-level actions (load data, reset
 //            numbering, data / document-folder settings)
 //
 // Users live in "data/users.txt" (one line per user:
@@ -698,7 +698,6 @@ public:
 
         bool adminOnly =
             startsWith(path, "/api/users") ||
-            path == "/api/data/exit" ||
             path == "/api/data/load" ||
             path == "/api/data/reset-numbering" ||
             (!isRead && path == "/api/data/config") ||
@@ -718,6 +717,12 @@ public:
         if (role == Role::Viewer && !isRead)
         {
             if (path == "/api/suppliers/lookup")
+            {
+                return 0;
+            }
+
+            // Safe shutdown (saves first) is open to every role.
+            if (path == "/api/data/exit")
             {
                 return 0;
             }

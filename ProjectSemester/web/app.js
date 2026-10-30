@@ -15378,7 +15378,7 @@ const EDIT_ACTION_PATTERN = new RegExp(
         "remove\\w*", "save\\w*", "submit\\w*", "confirm\\w*",
         "register\\w*", "quick\\w*", "cancel\\w*", "closeOrderGroup",
         "toggleEdit\\w*", "sell\\w*", "transfer\\w*", "goods\\w*",
-        "resetNumbering", "loadData", "exitApplication",
+        "resetNumbering", "loadData",
         "loadMaterialFor\\w*", "loadProductForModify",
         "loadSupplierForModify",
         "showCreate\\w*", "showModify\\w*", "showDelete\\w*",
@@ -15392,7 +15392,7 @@ const EDIT_ACTION_PATTERN = new RegExp(
 // System-level actions: Admin only (also hidden for Editor).
 
 const ADMIN_ACTION_PATTERN =
-    /^(loadData|exitApplication|resetNumbering|saveDocumentsFolder)\b/;
+    /^(loadData|resetNumbering|saveDocumentsFolder)\b/;
 
 // Inputs whose change saves something (settings switches, uploads).
 
@@ -15411,6 +15411,17 @@ function applyRoleRestrictions() {
 
     const role = currentUser.role;
 
+    // Undo anything hidden for a previously logged-in user (logging
+    // out and in again does not reload the page), so e.g. Exit and
+    // Load Data come back when an Admin logs in after an Editor.
+
+    for (const element of document.querySelectorAll("[data-role-hidden]")) {
+
+        element.style.display = "";
+
+        element.removeAttribute("data-role-hidden");
+    }
+
     if (role === "admin") {
         return;
     }
@@ -15426,6 +15437,7 @@ function applyRoleRestrictions() {
 
         if (hide) {
             element.style.display = "none";
+            element.setAttribute("data-role-hidden", "1");
         }
     }
 
@@ -15444,6 +15456,7 @@ function applyRoleRestrictions() {
                 element.closest("label") || element;
 
             target.style.display = "none";
+            target.setAttribute("data-role-hidden", "1");
         }
     }
 }
