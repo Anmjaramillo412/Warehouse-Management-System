@@ -152,7 +152,7 @@ The web interface requires a login. Every request is checked on the server (not 
 
 - **Viewer**: read only - can open every list, detail view, history and report, but cannot create, modify, delete, receive, sell, transfer or upload anything (the server answers 403 and the buttons are hidden)
 - **Editor**: day-to-day work - everything a Viewer can do, plus creating, modifying, deleting, receiving, ordering, pricing invoices, etc., and manual "Save Data"
-- **Admin**: everything an Editor can do, plus user management (Users button in the header: add users, change roles, reset passwords, delete users) and system-level actions (Load Data, Exit, Reset PRC / Invoice Numbering, Auto Save/Logging settings, Documents Folder)
+- **Admin**: everything an Editor can do, plus user management (Users button in the header: add users, change roles, reset passwords, delete users) and system-level actions (Load Data, Reset PRC / Invoice Numbering, Auto Save/Logging settings, Documents Folder)
 - First start: if `data/users.txt` does not exist yet, an `admin` account is created and its random password is printed once on the server console - log in and change it with the "Password" button. Forgot the Admin password? Stop the server, delete `data/users.txt` and start again to get a new one (this removes all accounts)
 - Passwords are never stored: only a salted, iterated SHA-256 hash in `data/users.txt` (git-ignored). Minimum 8 characters; 5 wrong logins lock that username for one minute
 - Sessions last 12 hours of inactivity, live in server memory (restarting the server logs everybody out) and use an HttpOnly cookie
@@ -165,7 +165,7 @@ The web interface requires a login. Every request is checked on the server (not 
 - Manual Save Data / Load Data
 - Documents Folder setting: the root folder (anywhere on disk) that Procurement's Order Confirmation and Lieferschein PDFs are saved under
 - Reset PRC / Invoice Numbering (type `RESET` to confirm): deletes every Procurement Order and every Purchase Invoice outright and restarts both the "PRC-######" and "INV-######" counters at 1 - no undo, meant for clearing test data before real use begins
-- Exit: saves all data and shuts the web server down from the dashboard itself, so the application does not need to be stopped from Visual Studio or the console window
+- Exit (available to every role): saves all data and shuts the web server down from the dashboard itself, so the application does not need to be stopped from Visual Studio or the console window
 
 ### Data Persistence
 
