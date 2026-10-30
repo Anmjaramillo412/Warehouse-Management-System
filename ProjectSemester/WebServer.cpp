@@ -3888,6 +3888,10 @@ void WebServer::run()
                             (material != nullptr) ?
                             material->getDrawingNumber() : "";
 
+                        bom["photo"] =
+                            (material != nullptr) ?
+                            material->getPhotoPath() : "";
+
                         bom["quantity"] =
                             bomItem.quantity;
 

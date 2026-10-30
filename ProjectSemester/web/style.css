@@ -991,9 +991,7 @@ footer {
    CLICKABLE MATERIAL ROWS
 ============================================================ */
 
-.material-table-clickable tbody tr {
-    cursor: pointer;
-}
+/* Only the Material ID link is clickable now, not the whole row */
 
 /* ============================================================
    MATERIAL DETAIL DASHBOARD
