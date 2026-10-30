@@ -12,10 +12,33 @@
 
 let materialsReturnProjectionID = null;
 
+// Same idea for Display Products: set only by openMaterialFromProduct()
+// so the Material detail offers a "Go Back to Products" button.
+let materialsReturnToProducts = false;
+
+// Display Materials / Archived Materials: remembers which list was
+// open (and how far it was scrolled) when a Material row was clicked,
+// so the single "Back" button on the Material detail returns exactly
+// there.
+let materialsReturnToList = false;
+
+// Set by modifyMaterialFromDetail(): the Material whose detail view the
+// "Back" button on the Modify Material form returns to. Cleared when
+// Modify Material is opened from the menu or the module changes.
+let materialModifyBackID = null;
+let lastMaterialsList = null;
+let materialsListScroll = 0;
+
 
 function openModule(module) {
 
     materialsReturnProjectionID = null;
+
+    materialsReturnToProducts = false;
+
+    materialsReturnToList = false;
+
+    materialModifyBackID = null;
 
     const dashboard =
         document.querySelector(".dashboard");
@@ -55,7 +78,7 @@ function openModule(module) {
                     Create Material
                 </button>
 
-                <button onclick="showModifyMaterial()">
+                <button onclick="materialModifyBackID = null; showModifyMaterial()">
                     Modify Material
                 </button>
 
@@ -1668,13 +1691,13 @@ function showCreateMaterial() {
 
 
             <label>
-                Category
+                Category (optional)
             </label>
 
             <input
                 type="text"
                 id="material-category"
-                placeholder="Enter Category"
+                placeholder="Enter Category (optional)"
             >
 
 
@@ -2895,7 +2918,9 @@ async function createMaterial() {
     }
 
 
-    if (!name || !category) {
+    // Category is optional - a Material without one is grouped under
+    // "Other" in the Purchase cost-by-category views.
+    if (!name) {
 
         message.textContent =
             "Please fill in all required fields.";
@@ -3138,6 +3163,12 @@ async function displayArchivedMaterials() {
 
 async function renderMaterialsList(filterFn, headingText, emptyText) {
 
+    lastMaterialsList = {
+        filterFn: filterFn,
+        headingText: headingText,
+        emptyText: emptyText
+    };
+
     const content =
         document.getElementById(
             "material-content"
@@ -3246,9 +3277,7 @@ async function renderMaterialsList(filterFn, headingText, emptyText) {
 
             html += `
 
-                <tr
-                    onclick="showMaterialDetail('${escapeHtml(material.id)}')"
-                    title="Click to view full material details">
+                <tr>
 
                     <td>
 
@@ -3265,7 +3294,15 @@ async function renderMaterialsList(filterFn, headingText, emptyText) {
                     </td>
 
                     <td>
-                        ${escapeHtml(material.id)}
+                        <a
+                            href="#"
+                            class="material-id-link"
+                            title="View full material details"
+                            onclick="event.preventDefault(); openMaterialFromList('${escapeHtml(material.id)}');">
+
+                            ${escapeHtml(material.id)}
+
+                        </a>
                     </td>
 
                     <td class="material-name-cell">
@@ -3397,18 +3434,8 @@ async function showMaterialDetail(id) {
             <div class="material-detail">
 
                 <div class="module-buttons material-detail-back">
-                    ${materialsReturnProjectionID ? `
-                        <button
-                            class="button-secondary"
-                            onclick="goBackToProjectionFromMaterial()">
-
-                            ← Go Back to Projection
-
-                        </button>
-                    ` : ""}
-
-                    <button onclick="displayMaterials()">
-                        ← Back to Materials
+                    <button onclick="goBackFromMaterialDetail()">
+                        ← Back
                     </button>
 
                     <button onclick="modifyMaterialFromDetail('${escapeHtml(data.id)}')">
@@ -3780,11 +3807,30 @@ async function searchMaterial() {
 
 async function modifyMaterialFromDetail(id) {
 
+    materialModifyBackID = id;
+
     showModifyMaterial();
 
     await initMaterialCombobox("modify", id);
 
     loadMaterialForModify();
+}
+
+// Back from the Modify Material form to the Material detail it was
+// opened from (re-fetched, so it shows any change just saved; its own
+// Back button keeps pointing at the list / product / projection).
+function goBackFromModifyMaterial() {
+
+    const id = materialModifyBackID;
+
+    materialModifyBackID = null;
+
+    if (id) {
+        showMaterialDetail(id);
+    }
+    else {
+        displayMaterials();
+    }
 }
 
 function showModifyMaterial(statusMessage) {
@@ -3797,6 +3843,18 @@ function showModifyMaterial(statusMessage) {
     content.innerHTML = `
 
         <div class="form-container">
+
+            ${materialModifyBackID ? `
+                <div class="module-buttons">
+                    <button
+                        class="button-secondary"
+                        onclick="goBackFromModifyMaterial()">
+
+                        ← Back
+
+                    </button>
+                </div>
+            ` : ""}
 
             <h2>
                 Modify Material
@@ -4225,7 +4283,7 @@ async function loadMaterialForModify() {
 
 
                 <label>
-                    Category
+                    Category (optional)
                 </label>
 
                 <input
@@ -4712,7 +4770,9 @@ async function modifyMaterial() {
     const isDesignOrPCB =
         (type === "Design Part" || type === "PCB");
 
-    if (!name || !category) {
+    // Category is optional - a Material without one is grouped under
+    // "Other" in the Purchase cost-by-category views.
+    if (!name) {
 
         message.textContent =
             "Please fill in all required fields.";
@@ -7417,6 +7477,10 @@ async function showDisplayProducts() {
                             <tr>
 
                                 <th>
+                                    Photo
+                                </th>
+
+                                <th>
                                     Material ID
                                 </th>
 
@@ -7488,9 +7552,27 @@ async function showDisplayProducts() {
                         <tr class="${isInternal ? "product-bom-internal" : ""}">
 
                             <td>
-                                ${escapeHtml(
-                                    item.materialID
-                                )}
+                                ${
+                                    item.photo
+                                    ? `<img
+                                            src="/${item.photo}"
+                                            class="material-thumbnail"
+                                            alt="Material photo"
+                                       >`
+                                    : "No photo"
+                                }
+                            </td>
+
+                            <td>
+                                <a
+                                    href="#"
+                                    class="material-id-link"
+                                    title="View / modify this Material"
+                                    onclick="event.preventDefault(); openMaterialFromProduct('${escapeHtml(item.materialID)}');">
+
+                                    ${escapeHtml(item.materialID)}
+
+                                </a>
                             </td>
 
                             <td>
@@ -9586,6 +9668,74 @@ function openMaterialFromProjection(materialID, projectionID) {
     materialsReturnProjectionID = projectionID;
 
     showMaterialDetail(materialID);
+}
+
+
+function openMaterialFromList(materialID) {
+
+    materialsListScroll =
+        window.scrollY || document.documentElement.scrollTop || 0;
+
+    materialsReturnToList = true;
+
+    showMaterialDetail(materialID);
+}
+
+
+// One Back button for every way of arriving at a Material: it returns
+// to whatever was open before (Products, a Projection, or the exact
+// Materials list at the same scroll position).
+async function goBackFromMaterialDetail() {
+
+    if (materialsReturnToProducts) {
+
+        goBackToProductsFromMaterial();
+
+        return;
+    }
+
+    if (materialsReturnProjectionID) {
+
+        goBackToProjectionFromMaterial();
+
+        return;
+    }
+
+    if (materialsReturnToList && lastMaterialsList) {
+
+        const scroll = materialsListScroll;
+
+        materialsReturnToList = false;
+
+        await renderMaterialsList(
+            lastMaterialsList.filterFn,
+            lastMaterialsList.headingText,
+            lastMaterialsList.emptyText);
+
+        window.scrollTo(0, scroll);
+
+        return;
+    }
+
+    displayMaterials();
+}
+
+
+function openMaterialFromProduct(materialID) {
+
+    openModule("materials");
+
+    materialsReturnToProducts = true;
+
+    showMaterialDetail(materialID);
+}
+
+
+function goBackToProductsFromMaterial() {
+
+    openModule("products");
+
+    showDisplayProducts();
 }
 
 
