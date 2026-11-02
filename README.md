@@ -94,6 +94,11 @@ The `data/` folder is created automatically on first run - see Data Persistence 
 - Material Transfer
 - Inventory Display
 - Inventory Integrity Check
+- Inventory Count (physical inventory of one Warehouse, several materials at once; Admin and Editor, Viewer read-only):
+  - States: **Open** (draft - counted quantities, reasons and comments are saved and can be resumed another day; stock is unchanged), **Applied** (final - stock is set to the counted quantities, no longer editable) and **Cancelled** (no effect). Start and finish dates are recorded. Counts are numbered `CNT-000001` and stored in `data/inventory_counts.txt`
+  - While a count is Open its Warehouse is locked: goods receipts, issues, transfers (from or to it), sales, procurement receipts and completing Projections into that Warehouse (and deleting it) are refused with a message until the count is applied or cancelled
+  - Per material: system quantity, counted quantity (up to 3 decimals), difference and a reason - Missing material, Surplus material, Damaged / Scrap, Registration error / Other or Inventory adjustment - plus an optional comment (also a general comment per count). Materials with stock 0 can be added and counted; materials without a count stay unchanged
+  - Every adjustment is written to the movement history as `INVENTORY ADJUSTMENT` (system, counted, difference, reason, comment), together with `INVENTORY COUNT OPENED / APPLIED / CANCELLED`. The count history can be filtered by status and exported to Excel (CSV)
 
 ### Product Management
 

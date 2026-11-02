@@ -49,6 +49,32 @@ void InventoryManager::setMaterialManager(
 // GOODS RECEIPT
 // ================================================================
 
+void InventoryManager::clearWarehouseLocks()
+{
+    lockedWarehouses.clear();
+}
+
+void InventoryManager::setWarehouseLocked(
+    int warehouseID,
+    bool locked)
+{
+    if (locked)
+    {
+        lockedWarehouses.insert(warehouseID);
+    }
+    else
+    {
+        lockedWarehouses.erase(warehouseID);
+    }
+}
+
+bool InventoryManager::isWarehouseLocked(
+    int warehouseID) const
+{
+    return lockedWarehouses.count(warehouseID) > 0;
+}
+
+
 bool InventoryManager::goodsReceipt(
     int warehouseID,
     Material* material,
@@ -69,6 +95,12 @@ bool InventoryManager::goodsReceipt(
     quantity = roundQty(quantity);
 
     if (quantity <= 0)
+    {
+        return false;
+    }
+
+    // No stock movement while an inventory count is open
+    if (isWarehouseLocked(warehouseID))
     {
         return false;
     }
@@ -132,6 +164,11 @@ bool InventoryManager::goodsIssue(
     quantity = roundQty(quantity);
 
     if (quantity <= 0)
+    {
+        return false;
+    }
+
+    if (isWarehouseLocked(warehouseID))
     {
         return false;
     }
@@ -239,6 +276,12 @@ bool InventoryManager::transferMaterial(
     quantity = roundQty(quantity);
 
     if (quantity <= 0)
+    {
+        return false;
+    }
+
+    if (isWarehouseLocked(sourceWarehouseID) ||
+        isWarehouseLocked(destinationWarehouseID))
     {
         return false;
     }
@@ -380,6 +423,11 @@ bool InventoryManager::sellProduct(
     }
 
     if (quantity <= 0)
+    {
+        return false;
+    }
+
+    if (isWarehouseLocked(warehouseID))
     {
         return false;
     }

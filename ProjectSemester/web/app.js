@@ -231,6 +231,10 @@ function openModule(module) {
                     Inventory Check
                 </button>
 
+                <button class="button-accent" onclick="showInventoryCounts()">
+                    Inventory Count
+                </button>
+
             </div>
 
             <div id="inventory-content">
@@ -2027,7 +2031,15 @@ async function populateSupplierSelect(selectId, selectedName) {
 // show only that one Warehouse's stock instead of every Warehouse.
 // "" (empty selection) means "none set", sent to the backend as 0.
 
-async function populateWarehouseSelect(selectId, selectedID) {
+// Options used by the Warehouse dropdowns of the Inventory Manager forms
+const WH_OPTS = { placeholder: "Select Warehouse", showID: true };
+
+async function populateWarehouseSelect(selectId, selectedID, options) {
+
+    // options (optional): { placeholder, showID, autoSelectSingle }
+    const placeholder =
+        (options && options.placeholder) || "No Main Warehouse";
+
 
     const select =
         document.getElementById(selectId);
@@ -2059,15 +2071,21 @@ async function populateWarehouseSelect(selectId, selectedID) {
         }
 
         select.innerHTML =
-            `<option value="">No Main Warehouse</option>` +
+            `<option value="">${escapeHtml(placeholder)}</option>` +
             warehouses.map(warehouse => `
                 <option value="${warehouse.id}">
-                    ${escapeHtml(warehouse.name)}
+                    ${options && options.showID
+                        ? escapeHtml(warehouse.id + " - ")
+                        : ""}${escapeHtml(warehouse.name)}
                 </option>
             `).join("");
 
         if (selectedID) {
             select.value = String(selectedID);
+        }
+        else if (options && options.autoSelectSingle &&
+                 warehouses.length === 1) {
+            select.value = String(warehouses[0].id);
         }
     }
     catch (error) {
@@ -5221,11 +5239,7 @@ function showDeleteWarehouse() {
                 Warehouse ID
             </label>
 
-            <input
-                type="number"
-                id="delete-warehouse-id"
-                placeholder="Enter Warehouse ID"
-            >
+            <select id="delete-warehouse-id"></select>
 
 
             <div class="form-actions">
@@ -5245,6 +5259,8 @@ function showDeleteWarehouse() {
 
         </div>
     `;
+
+    populateWarehouseSelect("delete-warehouse-id", "", WH_OPTS);
 }
 
 // ============================================================
@@ -5305,9 +5321,8 @@ async function deleteWarehouse() {
                 "Warehouse deleted successfully.";
 
 
-            document.getElementById(
-                "delete-warehouse-id"
-            ).value = "";
+            // Reload the list: the deleted Warehouse is gone from it
+            populateWarehouseSelect("delete-warehouse-id", "", WH_OPTS);
 
         }
         else {
@@ -5350,11 +5365,7 @@ function showGoodsReceipt() {
                 Warehouse ID
             </label>
 
-            <input
-                type="number"
-                id="receipt-warehouse-id"
-                placeholder="Enter Warehouse ID"
-            >
+            <select id="receipt-warehouse-id"></select>
 
 
             <div class="multi-line-items">
@@ -5411,6 +5422,8 @@ function showGoodsReceipt() {
     `;
 
     initGoodsLines("receipt");
+
+    populateWarehouseSelect("receipt-warehouse-id", "", WH_OPTS);
 }
 
 // ============================================================
@@ -5516,11 +5529,7 @@ function showGoodsIssue() {
                 Warehouse ID
             </label>
 
-            <input
-                type="number"
-                id="issue-warehouse-id"
-                placeholder="Enter Warehouse ID"
-            >
+            <select id="issue-warehouse-id"></select>
 
 
             <div class="multi-line-items">
@@ -5577,6 +5586,8 @@ function showGoodsIssue() {
     `;
 
     initGoodsLines("issue");
+
+    populateWarehouseSelect("issue-warehouse-id", "", WH_OPTS);
 }
 
 // ============================================================
@@ -5957,22 +5968,14 @@ function showTransferMaterial() {
                 Source Warehouse ID
             </label>
 
-            <input
-                type="number"
-                id="transfer-source"
-                placeholder="Enter Source Warehouse ID"
-            >
+            <select id="transfer-source"></select>
 
 
             <label>
                 Destination Warehouse ID
             </label>
 
-            <input
-                type="number"
-                id="transfer-destination"
-                placeholder="Enter Destination Warehouse ID"
-            >
+            <select id="transfer-destination"></select>
 
 
             <label>
@@ -6022,6 +6025,10 @@ function showTransferMaterial() {
     `;
 
     initMaterialCombobox("transfer");
+
+    populateWarehouseSelect("transfer-source", "", WH_OPTS);
+
+    populateWarehouseSelect("transfer-destination", "", WH_OPTS);
 }
 
 // ============================================================
@@ -7926,11 +7933,7 @@ function showSellProduct() {
                 Warehouse ID
             </label>
 
-            <input
-                type="number"
-                id="sell-warehouse-id"
-                placeholder="Enter Warehouse ID"
-            >
+            <select id="sell-warehouse-id"></select>
 
 
             <label>
@@ -7974,6 +7977,8 @@ function showSellProduct() {
 
         </div>
     `;
+
+    populateWarehouseSelect("sell-warehouse-id", "", WH_OPTS);
 }
 
 // ============================================================
@@ -10289,14 +10294,12 @@ function showNewProcurementOrder() {
             ${productComboboxHtml("neworder", "Search by ID or name (optional)...")}
 
             <label>
-                Warehouse ID
+                Warehouse
             </label>
 
-            <input
-                type="number"
-                id="neworder-warehouse-id"
-                placeholder="Enter Warehouse ID"
-            >
+            <select id="neworder-warehouse-id">
+                <option value="">Loading warehouses...</option>
+            </select>
 
             <label>
                 Order Date
@@ -10353,6 +10356,15 @@ function showNewProcurementOrder() {
     `;
 
     neworderLineCounter = 1;
+
+    populateWarehouseSelect(
+        "neworder-warehouse-id",
+        "",
+        {
+            placeholder: "Select a Warehouse",
+            showID: true,
+            autoSelectSingle: true
+        });
 
     initProductCombobox("neworder");
 
@@ -10462,7 +10474,7 @@ async function submitNewProcurementOrder() {
     if (!warehouseID) {
 
         message.textContent =
-            "Please enter a Warehouse ID.";
+            "Please select a Warehouse.";
 
         return;
     }
@@ -15385,7 +15397,8 @@ const EDIT_ACTION_PATTERN = new RegExp(
         "showGoods\\w*", "showTransferMaterial",
         "showNewProcurementOrder", "showNewProjection",
         "showSellProduct", "showPurchaseAdjust",
-        "showProductSettings", "showPurchaseSettings"
+        "showProductSettings", "showPurchaseSettings",
+        "showNewInventoryCount", "apply\\w*"
     ].join("|") + ")\\b"
 );
 
@@ -15882,3 +15895,947 @@ async function removeUser(username) {
 
 
 initAuth();
+
+
+/* ============================================================
+   INVENTORY COUNT (physical inventory of one Warehouse)
+   An Open count is a draft: counted quantities are saved but the
+   stock is untouched and the Warehouse is locked (no goods
+   receipts / issues / transfers / sales). Apply sets the stock to
+   the counted quantities and documents every change in the
+   movement history as INVENTORY ADJUSTMENT; Cancel changes nothing.
+============================================================ */
+
+let inventoryCountState = { id: "", status: "", lines: [], reasons: [] };
+
+function inventoryCountToday() {
+
+    const now = new Date();
+
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+
+    const day = String(now.getDate()).padStart(2, "0");
+
+    return `${now.getFullYear()}-${month}-${day}`;
+}
+
+function inventoryCountIsViewer() {
+
+    return !!currentUser && currentUser.role === "viewer";
+}
+
+function inventoryCountStatusClass(status) {
+
+    if (status === "Open") return "status-partial";
+
+    if (status === "Applied") return "status-active";
+
+    return "status-inactive";
+}
+
+function inventoryCountFormat(value) {
+
+    return String(roundQty3(value));
+}
+
+function setInventoryCountMessage(text, isError) {
+
+    const message =
+        document.getElementById("inventory-count-message");
+
+    if (!message) {
+        return;
+    }
+
+    message.textContent = text || "";
+
+    message.style.color = isError ? "#b91c1c" : "#15803d";
+
+    message.style.marginTop = "12px";
+
+    message.style.fontWeight = "bold";
+}
+
+// ------------------------------------------------------------
+// List
+// ------------------------------------------------------------
+
+let inventoryCountList = [];
+
+async function showInventoryCounts(selectedStatus) {
+
+    const content =
+        document.getElementById("inventory-content");
+
+    content.innerHTML = `<p>Loading inventory counts...</p>`;
+
+    try {
+
+        const response =
+            await fetch("/api/inventory-counts");
+
+        if (!response.ok) {
+
+            content.innerHTML = `
+                <p>Error: ${escapeHtml(await response.text())}</p>`;
+
+            return;
+        }
+
+        const data = await response.json();
+
+        inventoryCountList = data.counts || [];
+
+        renderInventoryCountList(selectedStatus || "All");
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `<p>Could not connect to the server.</p>`;
+    }
+}
+
+function renderInventoryCountList(statusFilter) {
+
+    const content =
+        document.getElementById("inventory-content");
+
+    const counts =
+        inventoryCountList.filter(
+            count => statusFilter === "All" ||
+                count.status === statusFilter);
+
+    const statusOptions =
+        ["All", "Open", "Applied", "Cancelled"].map(status => `
+            <option value="${status}"
+                ${status === statusFilter ? "selected" : ""}>
+                ${status}
+            </option>`).join("");
+
+    let rows = "";
+
+    for (const count of counts) {
+
+        rows += `
+            <tr>
+                <td>
+                    <a href="#"
+                        onclick="openInventoryCount('${escapeHtml(count.id)}'); return false;">
+                        ${escapeHtml(count.id)}
+                    </a>
+                </td>
+                <td>${count.warehouseID} - ${escapeHtml(count.warehouseName)}</td>
+                <td>
+                    <span class="status-badge ${inventoryCountStatusClass(count.status)}">
+                        ${escapeHtml(count.status)}
+                    </span>
+                </td>
+                <td>${escapeHtml(count.startDate)}</td>
+                <td>${escapeHtml(count.endDate || "-")}</td>
+                <td>${count.lineCount}</td>
+                <td>${count.countedCount}</td>
+                <td>${count.status === "Applied" ? count.adjustedCount : "-"}</td>
+                <td>${escapeHtml(count.comment || "")}</td>
+            </tr>`;
+    }
+
+    if (counts.length === 0) {
+
+        rows = `
+            <tr>
+                <td colspan="9">No inventory counts found.</td>
+            </tr>`;
+    }
+
+    content.innerHTML = `
+
+        <div class="form-container form-container-wide"
+            style="max-width: 1100px;">
+
+            <h2>Inventory Counts</h2>
+
+            <p>
+                A count stays Open (draft) until it is applied or
+                cancelled. While it is Open, stock movements in that
+                Warehouse are suspended.
+            </p>
+
+            <div class="form-actions" style="gap: 10px; flex-wrap: wrap;">
+
+                <button onclick="showNewInventoryCount()">
+                    New Inventory Count
+                </button>
+
+                <select id="inventory-count-filter"
+                    onchange="renderInventoryCountList(this.value)"
+                    style="width: auto;">
+                    ${statusOptions}
+                </select>
+
+                <button class="button-muted"
+                    onclick="exportInventoryCountListToExcel()">
+                    Export to Excel
+                </button>
+
+            </div>
+
+            <div class="material-table-container" style="margin-top: 16px;">
+                <table class="material-table">
+                    <thead>
+                        <tr>
+                            <th>Count</th>
+                            <th>Warehouse</th>
+                            <th>Status</th>
+                            <th>Started</th>
+                            <th>Finished</th>
+                            <th>Materials</th>
+                            <th>Counted</th>
+                            <th>Adjusted</th>
+                            <th>Comment</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+
+        </div>
+    `;
+}
+
+function exportInventoryCountListToExcel() {
+
+    const statusFilter =
+        (document.getElementById("inventory-count-filter") || {}).value ||
+        "All";
+
+    const rows = [[
+        "Count", "Warehouse ID", "Warehouse", "Status", "Started",
+        "Finished", "Materials", "Counted", "Adjusted", "Comment"
+    ]];
+
+    for (const count of inventoryCountList) {
+
+        if (statusFilter !== "All" && count.status !== statusFilter) {
+            continue;
+        }
+
+        rows.push([
+            count.id, count.warehouseID, count.warehouseName,
+            count.status, count.startDate, count.endDate || "",
+            count.lineCount, count.countedCount,
+            count.status === "Applied" ? count.adjustedCount : "",
+            count.comment || ""
+        ]);
+    }
+
+    downloadCSV("inventory_counts.csv", rows);
+}
+
+// ------------------------------------------------------------
+// New count
+// ------------------------------------------------------------
+
+function showNewInventoryCount() {
+
+    const content =
+        document.getElementById("inventory-content");
+
+    content.innerHTML = `
+
+        <div class="form-container form-container-wide">
+
+            <h2>New Inventory Count</h2>
+
+            <label>Warehouse</label>
+
+            <select id="inventory-count-warehouse"></select>
+
+            <label>Start date</label>
+
+            <input type="date" id="inventory-count-start"
+                value="${inventoryCountToday()}">
+
+            <label>Comment (optional)</label>
+
+            <textarea id="inventory-count-comment" rows="3"
+                placeholder="e.g. Annual inventory, Shelf A-C"></textarea>
+
+            <p>
+                Opening the count suspends goods receipts, issues,
+                transfers and sales in this Warehouse until the count
+                is applied or cancelled.
+            </p>
+
+            <div class="form-actions">
+
+                <button onclick="createInventoryCount()">
+                    Open Count
+                </button>
+
+                <button class="button-muted"
+                    onclick="showInventoryCounts()">
+                    Back
+                </button>
+
+            </div>
+
+            <div id="inventory-count-message"></div>
+
+        </div>
+    `;
+
+    populateWarehouseSelect(
+        "inventory-count-warehouse", "",
+        { placeholder: "Select Warehouse", showID: true });
+}
+
+async function createInventoryCount() {
+
+    const warehouseID =
+        document.getElementById("inventory-count-warehouse").value;
+
+    const startDate =
+        document.getElementById("inventory-count-start").value;
+
+    const comment =
+        document.getElementById("inventory-count-comment").value.trim();
+
+    if (!warehouseID) {
+
+        setInventoryCountMessage("Please select a Warehouse.", true);
+
+        return;
+    }
+
+    if (!startDate) {
+
+        setInventoryCountMessage("Please enter the start date.", true);
+
+        return;
+    }
+
+    const result =
+        await postJson(
+            "/api/inventory-counts/create",
+            {
+                warehouseID: parseInt(warehouseID, 10),
+                startDate,
+                comment
+            });
+
+    if (!result.ok) {
+
+        setInventoryCountMessage(result.text, true);
+
+        return;
+    }
+
+    const data = JSON.parse(result.text);
+
+    await openInventoryCount(data.id, data.message);
+}
+
+// ------------------------------------------------------------
+// Count sheet
+// ------------------------------------------------------------
+
+async function openInventoryCount(id, infoMessage) {
+
+    const content =
+        document.getElementById("inventory-content");
+
+    // Called from list links too - make sure the Inventory screen is up
+    if (!content) {
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch(`/api/inventory-counts/${encodeURIComponent(id)}`);
+
+        if (!response.ok) {
+
+            content.innerHTML = `
+                <p>Error: ${escapeHtml(await response.text())}</p>`;
+
+            return;
+        }
+
+        const count = await response.json();
+
+        inventoryCountState = {
+            id: count.id,
+            status: count.status,
+            lines: count.lines || [],
+            reasons: count.reasons || [],
+            warehouseID: count.warehouseID,
+            warehouseName: count.warehouseName,
+            startDate: count.startDate,
+            endDate: count.endDate,
+            comment: count.comment || ""
+        };
+
+        renderInventoryCountSheet();
+
+        if (infoMessage) {
+            setInventoryCountMessage(infoMessage, false);
+        }
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `<p>Could not connect to the server.</p>`;
+    }
+}
+
+function inventoryCountReasonOptions(selected, enabled) {
+
+    let html = `<option value="">-</option>`;
+
+    for (const reason of inventoryCountState.reasons) {
+
+        html += `
+            <option value="${escapeHtml(reason)}"
+                ${reason === selected ? "selected" : ""}>
+                ${escapeHtml(reason)}
+            </option>`;
+    }
+
+    return html;
+}
+
+function inventoryCountDifferenceHtml(line) {
+
+    if (!line.counted) {
+        return "-";
+    }
+
+    const diff = roundQty3(line.difference);
+
+    if (diff === 0) {
+        return "0";
+    }
+
+    return diff < 0 ?
+        `<span style="color:#b91c1c;font-weight:bold;">${diff}</span>` :
+        `<span style="color:#15803d;font-weight:bold;">+${diff}</span>`;
+}
+
+// Materials of an Internal Supplier (self-made, normally not stocked)
+// are shown in another colour so they stand out in the list.
+
+function inventoryCountRowStyle(line) {
+
+    return line.internalSupplier ?
+        `style="background: #ede9fe;" title="Internal Supplier material"` :
+        "";
+}
+
+function renderInventoryCountSheet() {
+
+    const content =
+        document.getElementById("inventory-content");
+
+    const state = inventoryCountState;
+
+    const editable =
+        state.status === "Open" && !inventoryCountIsViewer();
+
+    let rows = "";
+
+    state.lines.forEach((line, index) => {
+
+        const system = roundQty3(line.systemQuantity);
+
+        const countedText =
+            line.counted ? inventoryCountFormat(line.countedQuantity) : "";
+
+        if (editable) {
+
+            rows += `
+                <tr id="cnt-row-${index}" ${inventoryCountRowStyle(line)}>
+                    <td>
+                        ${escapeHtml(line.materialID)}<br>
+                        <small>${escapeHtml(line.materialName)}</small>
+                    </td>
+                    <td>${escapeHtml(line.uom)}</td>
+                    <td>${inventoryCountFormat(system)}</td>
+                    <td>
+                        <input type="number" id="cnt-counted-${index}"
+                            min="0" step="any" value="${countedText}"
+                            style="width: 110px;"
+                            oninput="updateInventoryCountRow(${index})">
+                    </td>
+                    <td id="cnt-diff-${index}">
+                        ${inventoryCountDifferenceHtml(line)}
+                    </td>
+                    <td>
+                        <select id="cnt-reason-${index}"
+                            ${line.counted && roundQty3(line.difference) !== 0 ? "" : "disabled"}>
+                            ${inventoryCountReasonOptions(line.reason)}
+                        </select>
+                    </td>
+                    <td>
+                        <input type="text" id="cnt-comment-${index}"
+                            value="${escapeHtml(line.comment || "")}"
+                            placeholder="Optional">
+                    </td>
+                </tr>`;
+        }
+        else {
+
+            rows += `
+                <tr ${inventoryCountRowStyle(line)}>
+                    <td>
+                        ${escapeHtml(line.materialID)}<br>
+                        <small>${escapeHtml(line.materialName)}</small>
+                    </td>
+                    <td>${escapeHtml(line.uom)}</td>
+                    <td>${inventoryCountFormat(system)}</td>
+                    <td>${line.counted ? countedText : "not counted"}</td>
+                    <td>${inventoryCountDifferenceHtml(line)}</td>
+                    <td>${escapeHtml(line.reason || "")}</td>
+                    <td>${escapeHtml(line.comment || "")}</td>
+                </tr>`;
+        }
+    });
+
+    if (state.lines.length === 0) {
+
+        rows = `
+            <tr>
+                <td colspan="7">
+                    This Warehouse has no stocked materials. Add the
+                    materials you want to count below.
+                </td>
+            </tr>`;
+    }
+
+    const addBlock = editable ? `
+        <div class="multi-line-header" style="margin-top: 20px;">
+            <label>Add a material (also with stock 0)</label>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: flex-start;">
+            <div style="flex: 1;">
+                ${materialComboboxHtml("cntadd", "Search by ID or name...")}
+            </div>
+            <button type="button" class="add-line-button"
+                onclick="addInventoryCountMaterial()">
+                + Add Material
+            </button>
+        </div>` : "";
+
+    const dateBlock =
+        state.status === "Applied" ? `Finished: ${escapeHtml(state.endDate)}` :
+        state.status === "Cancelled" ? "Cancelled - stock was not changed" :
+        "Not finished yet";
+
+    const actions = editable ? `
+        <label style="margin-top: 18px;">Finish date (used when applying)</label>
+        <input type="date" id="inventory-count-end"
+            value="${inventoryCountToday()}" style="max-width: 200px;">
+
+        <div class="form-actions" style="gap: 10px; flex-wrap: wrap;">
+            <button onclick="saveInventoryCountDraft()">Save Draft</button>
+            <button class="button-accent"
+                onclick="applyInventoryCount()">Apply Count</button>
+            <button class="button-muted"
+                onclick="cancelInventoryCount()">Cancel Count</button>
+        </div>` : "";
+
+    content.innerHTML = `
+
+        <div class="form-container form-container-wide"
+            style="max-width: 1200px;">
+
+            <h2>
+                ${escapeHtml(state.id)}
+                <span class="status-badge ${inventoryCountStatusClass(state.status)}"
+                    style="margin-left: 8px;">
+                    ${escapeHtml(state.status)}
+                </span>
+            </h2>
+
+            <p>
+                Warehouse ${state.warehouseID} -
+                ${escapeHtml(state.warehouseName)}<br>
+                Started: ${escapeHtml(state.startDate)} &nbsp;|&nbsp;
+                ${dateBlock}
+            </p>
+
+            ${state.status === "Open" ? `
+            <p>
+                Stock movements in this Warehouse are suspended until
+                the count is applied or cancelled. Leave "Counted"
+                empty for materials you have not counted yet - they
+                stay unchanged when the count is applied. The system
+                quantity is read when you apply: it cannot change
+                meanwhile.
+            </p>` : ""}
+
+            ${state.lines.some(l => l.internalSupplier) ? `
+            <p>
+                <span style="background: #ede9fe; padding: 2px 10px; border-radius: 6px;">
+                    Purple rows
+                </span>
+                are materials of an Internal Supplier (self-made).
+            </p>` : ""}
+
+            <label>General comment</label>
+
+            <textarea id="inventory-count-comment" rows="2"
+                ${editable ? "" : "disabled"}>${escapeHtml(state.comment)}</textarea>
+
+            <div class="material-table-container" style="margin-top: 16px;">
+                <table class="material-table">
+                    <thead>
+                        <tr>
+                            <th>Material</th>
+                            <th>UoM</th>
+                            <th>System</th>
+                            <th>Counted</th>
+                            <th>Difference</th>
+                            <th>Reason</th>
+                            <th>Comment</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+
+            ${addBlock}
+
+            ${actions}
+
+            <div class="form-actions" style="gap: 10px; flex-wrap: wrap;">
+                <button class="button-muted"
+                    onclick="exportInventoryCountToExcel()">
+                    Export to Excel
+                </button>
+                <button class="button-muted"
+                    onclick="showInventoryCounts()">
+                    Back to list
+                </button>
+            </div>
+
+            <div id="inventory-count-message"></div>
+
+        </div>
+    `;
+
+    if (editable) {
+        initMaterialCombobox("cntadd", "");
+    }
+}
+
+// Live difference / reason handling while typing a counted quantity.
+
+function updateInventoryCountRow(index) {
+
+    const line = inventoryCountState.lines[index];
+
+    const input = document.getElementById(`cnt-counted-${index}`);
+
+    const diffCell = document.getElementById(`cnt-diff-${index}`);
+
+    const reasonSelect = document.getElementById(`cnt-reason-${index}`);
+
+    if (!line || !input || !diffCell || !reasonSelect) {
+        return;
+    }
+
+    const system = roundQty3(line.systemQuantity);
+
+    if (input.value.trim() === "" || !Number.isFinite(Number(input.value))) {
+
+        diffCell.textContent = "-";
+
+        reasonSelect.value = "";
+
+        reasonSelect.disabled = true;
+
+        return;
+    }
+
+    const diff = roundQty3(Number(input.value) - system);
+
+    diffCell.innerHTML =
+        inventoryCountDifferenceHtml(
+            { counted: true, difference: diff });
+
+    if (diff === 0) {
+
+        reasonSelect.value = "";
+
+        reasonSelect.disabled = true;
+
+        return;
+    }
+
+    reasonSelect.disabled = false;
+
+    // Missing / Surplus must match the sign of the difference.
+    const current = reasonSelect.value;
+
+    if (current === "" ||
+        (current === "Missing material" && diff > 0) ||
+        (current === "Surplus material" && diff < 0)) {
+
+        reasonSelect.value =
+            diff < 0 ? "Missing material" : "Surplus material";
+    }
+}
+
+// Reads the sheet. Returns null (after showing the reason) if invalid.
+
+function collectInventoryCountLines() {
+
+    const lines = [];
+
+    for (let index = 0; index < inventoryCountState.lines.length; index++) {
+
+        const source = inventoryCountState.lines[index];
+
+        const input = document.getElementById(`cnt-counted-${index}`);
+
+        const reasonSelect = document.getElementById(`cnt-reason-${index}`);
+
+        const commentInput = document.getElementById(`cnt-comment-${index}`);
+
+        if (!input) {
+            continue;
+        }
+
+        const text = input.value.trim();
+
+        const line = {
+            materialID: source.materialID,
+            counted: text !== "",
+            comment: commentInput ? commentInput.value.trim() : ""
+        };
+
+        if (line.counted) {
+
+            const quantity = Number(text);
+
+            if (!Number.isFinite(quantity) || quantity < 0 ||
+                !hasMaxThreeDecimals(quantity)) {
+
+                setInventoryCountMessage(
+                    `Counted quantity of ${source.materialID} must be zero or more, with at most 3 decimals.`,
+                    true);
+
+                input.focus();
+
+                return null;
+            }
+
+            line.countedQuantity = quantity;
+
+            line.reason = reasonSelect ? reasonSelect.value : "";
+        }
+
+        lines.push(line);
+    }
+
+    return lines;
+}
+
+async function postInventoryCountDraft(extraLine) {
+
+    const lines = collectInventoryCountLines();
+
+    if (lines === null) {
+        return false;
+    }
+
+    if (extraLine) {
+        lines.push(extraLine);
+    }
+
+    const result =
+        await postJson(
+            "/api/inventory-counts/save",
+            {
+                id: inventoryCountState.id,
+                comment:
+                    document.getElementById("inventory-count-comment")
+                        .value.trim(),
+                lines
+            });
+
+    if (!result.ok) {
+
+        setInventoryCountMessage(result.text, true);
+
+        return false;
+    }
+
+    return true;
+}
+
+async function saveInventoryCountDraft() {
+
+    if (!(await postInventoryCountDraft())) {
+        return;
+    }
+
+    await openInventoryCount(
+        inventoryCountState.id, "Draft saved. Stock is unchanged.");
+}
+
+async function addInventoryCountMaterial() {
+
+    const materialID =
+        document.getElementById("cntadd-material-id").value;
+
+    if (!materialID) {
+
+        setInventoryCountMessage("Please select a material to add.", true);
+
+        return;
+    }
+
+    if (inventoryCountState.lines.some(l => l.materialID === materialID)) {
+
+        setInventoryCountMessage(
+            "That material is already in this count.", true);
+
+        return;
+    }
+
+    if (!(await postInventoryCountDraft(
+        { materialID, counted: false, comment: "" }))) {
+        return;
+    }
+
+    await openInventoryCount(
+        inventoryCountState.id, `Material ${materialID} added.`);
+}
+
+async function applyInventoryCount() {
+
+    const lines = collectInventoryCountLines();
+
+    if (lines === null) {
+        return;
+    }
+
+    const endDate =
+        document.getElementById("inventory-count-end").value;
+
+    if (!endDate) {
+
+        setInventoryCountMessage("Please enter the finish date.", true);
+
+        return;
+    }
+
+    const counted = lines.filter(l => l.counted);
+
+    if (counted.length === 0) {
+
+        setInventoryCountMessage(
+            "Enter at least one counted quantity before applying.", true);
+
+        return;
+    }
+
+    const adjusted =
+        counted.filter(l => {
+            const source =
+                inventoryCountState.lines.find(
+                    s => s.materialID === l.materialID);
+            return roundQty3(l.countedQuantity -
+                (source ? source.systemQuantity : 0)) !== 0;
+        }).length;
+
+    const pending = lines.length - counted.length;
+
+    const confirmed =
+        await showConfirmDialog(
+            `Apply ${inventoryCountState.id}?\n\n` +
+            `${adjusted} material(s) will be adjusted to the counted quantity, ` +
+            `${counted.length - adjusted} counted without difference, ` +
+            `${pending} not counted (unchanged).\n\n` +
+            `This cannot be undone. Stock movements in the Warehouse resume afterwards.`);
+
+    if (!confirmed) {
+        return;
+    }
+
+    if (!(await postInventoryCountDraft())) {
+        return;
+    }
+
+    const result =
+        await postJson(
+            "/api/inventory-counts/apply",
+            { id: inventoryCountState.id, endDate });
+
+    if (!result.ok) {
+
+        setInventoryCountMessage(result.text, true);
+
+        return;
+    }
+
+    await openInventoryCount(
+        inventoryCountState.id, JSON.parse(result.text).message);
+}
+
+async function cancelInventoryCount() {
+
+    const confirmed =
+        await showConfirmDialog(
+            `Cancel ${inventoryCountState.id}? The counted quantities are ` +
+            `discarded, stock stays unchanged and the Warehouse is unlocked.`);
+
+    if (!confirmed) {
+        return;
+    }
+
+    const result =
+        await postJson(
+            "/api/inventory-counts/cancel",
+            { id: inventoryCountState.id });
+
+    if (!result.ok) {
+
+        setInventoryCountMessage(result.text, true);
+
+        return;
+    }
+
+    await openInventoryCount(
+        inventoryCountState.id, JSON.parse(result.text).message);
+}
+
+function exportInventoryCountToExcel() {
+
+    const state = inventoryCountState;
+
+    const rows = [[
+        "Count", "Warehouse ID", "Warehouse", "Status", "Started",
+        "Finished", "General comment", "Material ID", "Material", "UoM",
+        "System", "Counted", "Difference", "Reason", "Line comment"
+    ]];
+
+    for (const line of state.lines) {
+
+        rows.push([
+            state.id, state.warehouseID, state.warehouseName, state.status,
+            state.startDate, state.endDate || "", state.comment,
+            line.materialID, line.materialName, line.uom,
+            roundQty3(line.systemQuantity),
+            line.counted ? roundQty3(line.countedQuantity) : "",
+            line.counted ? roundQty3(line.difference) : "",
+            line.reason || "", line.comment || ""
+        ]);
+    }
+
+    downloadCSV(`${state.id}_export.csv`, rows);
+}

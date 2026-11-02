@@ -23,6 +23,11 @@ WarehouseSystem::WarehouseSystem()
         &materialManager),
     purchaseManager(
         &procurementManager,
+        &movementLogger),
+    inventoryCountManager(
+        &warehouseManager,
+        &materialManager,
+        &inventoryManager,
         &movementLogger)
 {
     dataManager.setMovementLogger(
@@ -144,6 +149,17 @@ WarehouseSystem::getPurchaseManager()
 {
     return purchaseManager;
 }
+
+// ================================================================
+// INVENTORY COUNT MANAGER
+// ================================================================
+
+InventoryCountManager&
+WarehouseSystem::getInventoryCountManager()
+{
+    return inventoryCountManager;
+}
+
 
 // ================================================================
 // SET LOG DATA OPERATIONS
