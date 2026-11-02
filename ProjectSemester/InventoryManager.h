@@ -5,6 +5,8 @@
 #include "MovementLogger.h"
 #include "MaterialManager.h"
 
+#include <set>
+
 using namespace std;
 
 class InventoryManager
@@ -22,6 +24,13 @@ private:
     // reasoning, same pattern as ProjectionManager::materialManager.
     MaterialManager* materialManager;
 
+    // Warehouses with an Open inventory count (see
+    // InventoryCountManager.h): while a count is open, no stock may
+    // move in or out of that Warehouse - the counted quantities have
+    // to stay comparable to the system quantities until the count is
+    // applied or cancelled.
+    set<int> lockedWarehouses;
+
 public:
 
     InventoryManager(
@@ -36,6 +45,16 @@ public:
 
     void setMaterialManager(
         MaterialManager* manager);
+
+    // Inventory count lock
+    void clearWarehouseLocks();
+
+    void setWarehouseLocked(
+        int warehouseID,
+        bool locked);
+
+    bool isWarehouseLocked(
+        int warehouseID) const;
 
     // Goods Receipt
     bool goodsReceipt(

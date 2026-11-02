@@ -1793,3 +1793,10 @@ footer {
     .user-row-button-danger:hover {
         background: #fee2e2;
     }
+
+
+/* Confirm dialogs: keep the line breaks of multi-line messages
+   (e.g. the Inventory Count apply summary). */
+#app-confirm-message {
+    white-space: pre-line;
+}

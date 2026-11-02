@@ -41,6 +41,28 @@ static double jsonQuantity(const crow::json::rvalue& value)
     return v;
 }
 
+// Stock movements are suspended in a Warehouse while it has an open
+// inventory count (see InventoryCountManager.h). Empty string when
+// the Warehouse is free, otherwise the error text for the response.
+static string warehouseLockedError(
+    WarehouseSystem* warehouseSystem,
+    int warehouseID)
+{
+    string countID =
+        warehouseSystem->getInventoryCountManager()
+        .getOpenCountID(warehouseID);
+
+    if (countID.empty())
+    {
+        return "";
+    }
+
+    return "Warehouse " + to_string(warehouseID) +
+        " is under inventory count " + countID +
+        ". Stock movements are suspended until the count is "
+        "applied or cancelled.";
+}
+
 // Empty string when OK, otherwise the error text for the response.
 static string quantityDecimalsError(
     double value,
@@ -2663,6 +2685,20 @@ void WebServer::run()
                     // Check if warehouse is empty
                     // ------------------------------------------------
 
+                    {
+                        string lockedError =
+                            warehouseLockedError(
+                                warehouseSystem,
+                                id);
+
+                        if (!lockedError.empty())
+                        {
+                            return crow::response(
+                                409,
+                                lockedError);
+                        }
+                    }
+
                     if (!warehouse->isEmpty())
                     {
                         return crow::response(
@@ -2806,6 +2842,20 @@ void WebServer::run()
                     // ------------------------------------------------
                     // Goods Receipt
                     // ------------------------------------------------
+
+                    {
+                        string lockedError =
+                            warehouseLockedError(
+                                warehouseSystem,
+                                warehouseID);
+
+                        if (!lockedError.empty())
+                        {
+                            return crow::response(
+                                409,
+                                lockedError);
+                        }
+                    }
 
                     InventoryManager& inventoryManager =
                         warehouseSystem->getInventoryManager();
@@ -2983,6 +3033,20 @@ void WebServer::run()
                     // Execute Goods Issue
                     // ------------------------------------------------
 
+                    {
+                        string lockedError =
+                            warehouseLockedError(
+                                warehouseSystem,
+                                warehouseID);
+
+                        if (!lockedError.empty())
+                        {
+                            return crow::response(
+                                409,
+                                lockedError);
+                        }
+                    }
+
                     InventoryManager& inventoryManager =
                         warehouseSystem->getInventoryManager();
 
@@ -3120,6 +3184,34 @@ void WebServer::run()
                     // ------------------------------------------------
                     // Execute transfer
                     // ------------------------------------------------
+
+                    {
+                        string lockedError =
+                            warehouseLockedError(
+                                warehouseSystem,
+                                sourceWarehouseID);
+
+                        if (!lockedError.empty())
+                        {
+                            return crow::response(
+                                409,
+                                lockedError);
+                        }
+                    }
+
+                    {
+                        string lockedError =
+                            warehouseLockedError(
+                                warehouseSystem,
+                                destinationWarehouseID);
+
+                        if (!lockedError.empty())
+                        {
+                            return crow::response(
+                                409,
+                                lockedError);
+                        }
+                    }
 
                     InventoryManager& inventoryManager =
                         warehouseSystem->getInventoryManager();
@@ -4207,6 +4299,20 @@ void WebServer::run()
                     // Execute sale
                     // ------------------------------------------------
 
+                    {
+                        string lockedError =
+                            warehouseLockedError(
+                                warehouseSystem,
+                                warehouseID);
+
+                        if (!lockedError.empty())
+                        {
+                            return crow::response(
+                                409,
+                                lockedError);
+                        }
+                    }
+
                     ProductManager& productManager =
                         warehouseSystem->getProductManager();
 
@@ -5172,6 +5278,20 @@ void WebServer::run()
                         return crow::response(
                             409,
                             "This Projection has already been completed.");
+                    }
+
+                    {
+                        string lockedError =
+                            warehouseLockedError(
+                                warehouseSystem,
+                                projection->getWarehouseID());
+
+                        if (!lockedError.empty())
+                        {
+                            return crow::response(
+                                409,
+                                lockedError);
+                        }
                     }
 
                     bool success =
@@ -6588,6 +6708,20 @@ void WebServer::run()
                             "This Procurement Order is already completed.");
                     }
 
+
+                    {
+                        string lockedError =
+                            warehouseLockedError(
+                                warehouseSystem,
+                                order->getWarehouseID());
+
+                        if (!lockedError.empty())
+                        {
+                            return crow::response(
+                                409,
+                                lockedError);
+                        }
+                    }
 
                     bool success =
                         procurementManager.receiveOrder(
@@ -8570,6 +8704,491 @@ void WebServer::run()
                 result["success"] = true;
 
                 return crow::response(result);
+            });
+
+
+    // ============================================================
+    // INVENTORY COUNTS (physical inventory of one Warehouse)
+    // ============================================================
+    // See InventoryCountManager.h. A count stays Open (draft, stock
+    // untouched, Warehouse locked) until it is applied or cancelled.
+
+    // List of all counts, newest first, plus the available reasons
+
+    CROW_ROUTE(app, "/api/inventory-counts")
+        .methods(crow::HTTPMethod::GET)
+        ([warehouseSystem]()
+            {
+                InventoryCountManager& countManager =
+                    warehouseSystem->getInventoryCountManager();
+
+                WarehouseManager& warehouseManager =
+                    warehouseSystem->getWarehouseManager();
+
+                crow::json::wvalue response;
+
+                crow::json::wvalue::list countList;
+
+                const auto& counts = countManager.getCounts();
+
+                for (size_t i = counts.size(); i > 0; i--)
+                {
+                    const InventoryCount& count = *counts[i - 1];
+
+                    crow::json::wvalue item;
+
+                    item["id"] = count.id;
+
+                    item["warehouseID"] = count.warehouseID;
+
+                    Warehouse* warehouse =
+                        warehouseManager.findWarehouse(
+                            count.warehouseID);
+
+                    item["warehouseName"] =
+                        (warehouse != nullptr) ?
+                        warehouse->getName() : "";
+
+                    item["status"] = count.status;
+
+                    item["startDate"] = count.startDate;
+
+                    item["endDate"] = count.endDate;
+
+                    item["comment"] = count.comment;
+
+                    int counted = 0;
+
+                    int adjusted = 0;
+
+                    for (const auto& line : count.lines)
+                    {
+                        if (line.counted)
+                        {
+                            counted++;
+
+                            if (count.status == "Applied" &&
+                                line.difference != 0.0)
+                            {
+                                adjusted++;
+                            }
+                        }
+                    }
+
+                    item["lineCount"] =
+                        static_cast<int>(count.lines.size());
+
+                    item["countedCount"] = counted;
+
+                    item["pendingCount"] =
+                        static_cast<int>(count.lines.size()) - counted;
+
+                    item["adjustedCount"] = adjusted;
+
+                    countList.push_back(std::move(item));
+                }
+
+                response["counts"] = std::move(countList);
+
+                crow::json::wvalue::list reasonList;
+
+                for (const string& reason :
+                    InventoryCountManager::reasons())
+                {
+                    reasonList.push_back(reason);
+                }
+
+                response["reasons"] = std::move(reasonList);
+
+                return response;
+            });
+
+
+    // One count with its lines
+
+    CROW_ROUTE(app, "/api/inventory-counts/<string>")
+        .methods(crow::HTTPMethod::GET)
+        ([warehouseSystem](const string& id)
+            {
+                InventoryCountManager& countManager =
+                    warehouseSystem->getInventoryCountManager();
+
+                InventoryCount* count =
+                    countManager.findCount(id);
+
+                if (count == nullptr)
+                {
+                    return crow::response(
+                        404,
+                        "Inventory count not found.");
+                }
+
+                MaterialManager& materialManager =
+                    warehouseSystem->getMaterialManager();
+
+                Warehouse* warehouse =
+                    warehouseSystem->getWarehouseManager()
+                    .findWarehouse(count->warehouseID);
+
+                crow::json::wvalue response;
+
+                response["id"] = count->id;
+
+                response["warehouseID"] = count->warehouseID;
+
+                response["warehouseName"] =
+                    (warehouse != nullptr) ?
+                    warehouse->getName() : "";
+
+                response["status"] = count->status;
+
+                response["startDate"] = count->startDate;
+
+                response["endDate"] = count->endDate;
+
+                response["comment"] = count->comment;
+
+                bool isOpen = (count->status == "Open");
+
+                crow::json::wvalue::list lineList;
+
+                for (const auto& line : count->lines)
+                {
+                    crow::json::wvalue item;
+
+                    Material* material =
+                        materialManager.findMaterial(line.materialID);
+
+                    item["materialID"] = line.materialID;
+
+                    item["materialName"] =
+                        (material != nullptr) ?
+                        material->getName() : "";
+
+                    item["uom"] =
+                        (material != nullptr) ?
+                        material->getUoM() : "";
+
+                    item["photo"] =
+                        (material != nullptr) ?
+                        material->getPhotoPath() : "";
+
+                    item["internalSupplier"] =
+                        (material != nullptr) &&
+                        material->hasInternalSupplier();
+
+                    // While Open the system quantity is the live stock
+                    // (it cannot change - the Warehouse is locked);
+                    // once Applied it is the quantity recorded then.
+                    double system =
+                        isOpen ?
+                        countManager.getSystemQuantity(
+                            count->warehouseID, line.materialID) :
+                        line.systemQuantity;
+
+                    item["systemQuantity"] = system;
+
+                    item["counted"] = line.counted;
+
+                    item["countedQuantity"] =
+                        line.counted ? line.countedQuantity : 0.0;
+
+                    item["difference"] =
+                        line.counted ?
+                        roundQty(line.countedQuantity - system) : 0.0;
+
+                    item["reason"] = line.reason;
+
+                    item["comment"] = line.comment;
+
+                    lineList.push_back(std::move(item));
+                }
+
+                response["lines"] = std::move(lineList);
+
+                crow::json::wvalue::list reasonList;
+
+                for (const string& reason :
+                    InventoryCountManager::reasons())
+                {
+                    reasonList.push_back(reason);
+                }
+
+                response["reasons"] = std::move(reasonList);
+
+                return crow::response(response);
+            });
+
+
+    // Open a new count: body { warehouseID, startDate, comment }
+
+    CROW_ROUTE(app, "/api/inventory-counts/create")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body = crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    int warehouseID =
+                        body["warehouseID"].i();
+
+                    string startDate =
+                        body["startDate"].s();
+
+                    string comment = "";
+
+                    if (body.has("comment"))
+                    {
+                        comment = body["comment"].s();
+                    }
+
+                    string error;
+
+                    InventoryCount* count =
+                        warehouseSystem->getInventoryCountManager()
+                        .createCount(
+                            warehouseID,
+                            startDate,
+                            comment,
+                            error);
+
+                    if (count == nullptr)
+                    {
+                        return crow::response(400, error);
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["id"] = count->id;
+
+                    response["message"] =
+                        "Inventory count " + count->id +
+                        " opened. Stock movements in Warehouse " +
+                        to_string(warehouseID) +
+                        " are suspended until it is applied or "
+                        "cancelled.";
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        400,
+                        string("Invalid request: ") + e.what());
+                }
+            });
+
+
+    // Save the draft:
+    // body { id, comment, lines: [ { materialID, counted,
+    //        countedQuantity, reason, comment } ] }
+
+    CROW_ROUTE(app, "/api/inventory-counts/save")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body = crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    string id = body["id"].s();
+
+                    string comment = "";
+
+                    if (body.has("comment"))
+                    {
+                        comment = body["comment"].s();
+                    }
+
+                    vector<InventoryCountLine> lines;
+
+                    if (body.has("lines"))
+                    {
+                        for (const auto& lineJson : body["lines"])
+                        {
+                            InventoryCountLine line;
+
+                            line.materialID =
+                                lineJson["materialID"].s();
+
+                            line.counted =
+                                lineJson.has("counted") &&
+                                lineJson["counted"].b();
+
+                            if (line.counted)
+                            {
+                                line.countedQuantity =
+                                    jsonQuantity(
+                                        lineJson["countedQuantity"]);
+                            }
+
+                            if (lineJson.has("reason"))
+                            {
+                                line.reason =
+                                    lineJson["reason"].s();
+                            }
+
+                            if (lineJson.has("comment"))
+                            {
+                                line.comment =
+                                    lineJson["comment"].s();
+                            }
+
+                            lines.push_back(line);
+                        }
+                    }
+
+                    string error;
+
+                    if (!warehouseSystem->getInventoryCountManager()
+                        .saveDraft(id, comment, lines, error))
+                    {
+                        return crow::response(400, error);
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] = "Inventory count saved.";
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        400,
+                        string("Invalid request: ") + e.what());
+                }
+            });
+
+
+    // Apply: body { id, endDate }
+
+    CROW_ROUTE(app, "/api/inventory-counts/apply")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body = crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    string id = body["id"].s();
+
+                    string endDate = body["endDate"].s();
+
+                    InventoryCountSummary summary;
+
+                    string error;
+
+                    if (!warehouseSystem->getInventoryCountManager()
+                        .applyCount(id, endDate, summary, error))
+                    {
+                        return crow::response(400, error);
+                    }
+
+                    // Stock changed - same auto save as any other
+                    // stock movement.
+                    autoSaveIfEnabled(warehouseSystem);
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["linesCounted"] = summary.linesCounted;
+
+                    response["linesAdjusted"] = summary.linesAdjusted;
+
+                    response["linesPending"] = summary.linesPending;
+
+                    response["message"] =
+                        "Inventory count " + id + " applied: " +
+                        to_string(summary.linesAdjusted) +
+                        " material(s) adjusted, " +
+                        to_string(summary.linesCounted -
+                            summary.linesAdjusted) +
+                        " counted without difference, " +
+                        to_string(summary.linesPending) +
+                        " not counted.";
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        400,
+                        string("Invalid request: ") + e.what());
+                }
+            });
+
+
+    // Cancel: body { id }
+
+    CROW_ROUTE(app, "/api/inventory-counts/cancel")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body = crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid JSON data.");
+                    }
+
+                    string id = body["id"].s();
+
+                    string error;
+
+                    if (!warehouseSystem->getInventoryCountManager()
+                        .cancelCount(id, error))
+                    {
+                        return crow::response(400, error);
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] =
+                        "Inventory count " + id + " cancelled. "
+                        "Stock was not changed.";
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        400,
+                        string("Invalid request: ") + e.what());
+                }
             });
 
 
