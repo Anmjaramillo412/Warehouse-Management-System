@@ -595,6 +595,24 @@ bool ProjectionManager::completeProjection(
 
     for (const auto& bomItem : product->getBOM())
     {
+        // Internal Supplier material: self-made in-house, never stocked
+        // - skipped, exactly as createProjection() and sellProduct()
+        // do. Requiring stock of it made a Projection that needed no
+        // purchase impossible to confirm.
+
+        if (materialManager != nullptr)
+        {
+            Material* bomMaterial =
+                materialManager->findMaterial(
+                    bomItem.materialID);
+
+            if (bomMaterial != nullptr &&
+                bomMaterial->hasInternalSupplier())
+            {
+                continue;
+            }
+        }
+
         double needed =
             roundQty(bomItem.quantity * producedQuantity);
 
@@ -612,6 +630,24 @@ bool ProjectionManager::completeProjection(
 
     for (const auto& bomItem : product->getBOM())
     {
+        // Internal Supplier material: self-made in-house, never stocked
+        // - skipped, exactly as createProjection() and sellProduct()
+        // do. Requiring stock of it made a Projection that needed no
+        // purchase impossible to confirm.
+
+        if (materialManager != nullptr)
+        {
+            Material* bomMaterial =
+                materialManager->findMaterial(
+                    bomItem.materialID);
+
+            if (bomMaterial != nullptr &&
+                bomMaterial->hasInternalSupplier())
+            {
+                continue;
+            }
+        }
+
         double needed =
             roundQty(bomItem.quantity * producedQuantity);
 
