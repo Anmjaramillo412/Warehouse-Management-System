@@ -417,6 +417,8 @@ bool InventoryManager::sellProduct(
     const string& productID,
     int quantity)
 {
+    lastError = "";
+
     if (warehouseManager == nullptr)
     {
         return false;
@@ -424,11 +426,16 @@ bool InventoryManager::sellProduct(
 
     if (quantity <= 0)
     {
+        lastError = "Quantity must be greater than zero.";
+
         return false;
     }
 
     if (isWarehouseLocked(warehouseID))
     {
+        lastError = "Warehouse " + to_string(warehouseID) +
+            " is under an inventory count.";
+
         return false;
     }
 
@@ -442,6 +449,8 @@ bool InventoryManager::sellProduct(
 
     if (product == nullptr)
     {
+        lastError = "Product " + productID + " not found.";
+
         return false;
     }
 
@@ -456,6 +465,9 @@ bool InventoryManager::sellProduct(
 
     if (warehouse == nullptr)
     {
+        lastError = "Warehouse " + to_string(warehouseID) +
+            " not found.";
+
         return false;
     }
 
@@ -469,6 +481,9 @@ bool InventoryManager::sellProduct(
 
     if (bom.empty())
     {
+        lastError = "Product " + productID +
+            " has no Bill of Materials.";
+
         return false;
     }
 
@@ -506,18 +521,33 @@ bool InventoryManager::sellProduct(
             warehouse->findMaterial(
                 item.materialID);
 
-        if (node == nullptr)
-        {
-            return false;
-        }
-
-
         double requiredQuantity =
             roundQty(item.quantity * quantity);
 
+        double availableQuantity =
+            (node != nullptr) ? node->quantity : 0.0;
 
-        if (qtyLess(node->quantity, requiredQuantity))
+
+        if (qtyLess(availableQuantity, requiredQuantity))
         {
+            string name = "";
+
+            if (materialManager != nullptr)
+            {
+                Material* shortMaterial =
+                    materialManager->findMaterial(item.materialID);
+
+                if (shortMaterial != nullptr)
+                {
+                    name = " (" + shortMaterial->getName() + ")";
+                }
+            }
+
+            lastError = "Not enough stock of " + item.materialID +
+                name + " in Warehouse " + to_string(warehouseID) +
+                ": required " + formatQty(requiredQuantity) +
+                ", available " + formatQty(availableQuantity) + ".";
+
             return false;
         }
     }
