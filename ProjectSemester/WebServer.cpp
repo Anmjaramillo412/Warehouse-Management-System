@@ -4333,7 +4333,9 @@ void WebServer::run()
                     {
                         return crow::response(
                             409,
-                            "Sale failed. Check product, warehouse, and component stock.");
+                            inventoryManager.getLastError().empty() ?
+                            string("Sale failed. Check product, warehouse, and component stock.") :
+                            "Sale failed. " + inventoryManager.getLastError());
                     }
 
 
@@ -5304,7 +5306,9 @@ void WebServer::run()
                     {
                         return crow::response(
                             400,
-                            "Could not confirm production. Check that every BOM material has enough stock for the produced quantity.");
+                            projectionManager.getLastCompleteError().empty() ?
+                            string("Could not confirm production. Check that every BOM material has enough stock for the produced quantity.") :
+                            "Could not confirm production. " + projectionManager.getLastCompleteError());
                     }
 
                     crow::json::wvalue response;

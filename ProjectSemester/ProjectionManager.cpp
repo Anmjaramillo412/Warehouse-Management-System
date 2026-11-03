@@ -546,6 +546,8 @@ bool ProjectionManager::completeProjection(
     int producedQuantity,
     const string& completionDate)
 {
+    lastCompleteError = "";
+
     Projection* projection =
         findProjection(id);
 
@@ -561,6 +563,9 @@ bool ProjectionManager::completeProjection(
 
     if (producedQuantity <= 0)
     {
+        lastCompleteError =
+            "Produced quantity must be greater than zero.";
+
         return false;
     }
 
@@ -578,6 +583,9 @@ bool ProjectionManager::completeProjection(
     if (product == nullptr ||
         product->getBOM().empty())
     {
+        lastCompleteError =
+            "The Product no longer exists or has no Bill of Materials.";
+
         return false;
     }
 
@@ -587,6 +595,8 @@ bool ProjectionManager::completeProjection(
 
     if (warehouse == nullptr)
     {
+        lastCompleteError = "The Projection's Warehouse was not found.";
+
         return false;
     }
 
@@ -624,6 +634,25 @@ bool ProjectionManager::completeProjection(
 
         if (qtyLess(available, needed))
         {
+            string name = "";
+
+            if (materialManager != nullptr)
+            {
+                Material* shortMaterial =
+                    materialManager->findMaterial(bomItem.materialID);
+
+                if (shortMaterial != nullptr)
+                {
+                    name = " (" + shortMaterial->getName() + ")";
+                }
+            }
+
+            lastCompleteError = "Not enough stock of " +
+                bomItem.materialID + name + " in Warehouse " +
+                to_string(projection->getWarehouseID()) +
+                ": required " + formatQty(needed) +
+                ", available " + formatQty(available) + ".";
+
             return false;
         }
     }

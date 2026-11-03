@@ -31,7 +31,15 @@ private:
     // applied or cancelled.
     set<int> lockedWarehouses;
 
+    // Why the last sellProduct() failed (empty after a success)
+    string lastError;
+
 public:
+
+    const string& getLastError() const
+    {
+        return lastError;
+    }
 
     InventoryManager(
         WarehouseManager* manager = nullptr,

@@ -30,6 +30,9 @@ class ProjectionManager
 {
 private:
 
+    string lastCompleteError;
+
+
     vector<unique_ptr<Projection>> projections;
 
     string filename;
@@ -204,6 +207,12 @@ public:
         const string& id,
         int producedQuantity,
         const string& completionDate);
+
+    // Why the last completeProjection() failed (empty after success)
+    const string& getLastCompleteError() const
+    {
+        return lastCompleteError;
+    }
 
     // Access
     const vector<unique_ptr<Projection>>&
