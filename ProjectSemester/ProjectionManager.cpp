@@ -519,7 +519,7 @@ Projection* ProjectionManager::createProjection(
 
     if (movementLogger != nullptr)
     {
-        movementLogger->logSystemEvent(
+        movementLogger->log(
             "PROJECTION CREATED",
             "ID: " + id +
             " | Product: " + productID +
@@ -684,7 +684,9 @@ bool ProjectionManager::completeProjection(
             projection->getWarehouseID(),
             bomItem.materialID,
             needed,
-            "Production " + id);
+            "Production " + id,
+            id,
+            "PRODUCTION CONSUMPTION");
     }
 
     projection->setCompleted(
@@ -694,9 +696,29 @@ bool ProjectionManager::completeProjection(
 
     save();
 
+    // The Product's sale record for the movement ledger / Product
+    // history: the batch that was produced and delivered.
     if (movementLogger != nullptr)
     {
-        movementLogger->logSystemEvent(
+        movementLogger->logStock(
+            "PRODUCT SALE",
+            projection->getWarehouseID(),
+            "",
+            "",
+            0.0,
+            static_cast<double>(producedQuantity),
+            -1.0,
+            id,
+            "",
+            product->getID(),
+            product->getName(),
+            "Production confirmed - completion date " +
+            completionDate);
+    }
+
+    if (movementLogger != nullptr)
+    {
+        movementLogger->log(
             "PROJECTION COMPLETED",
             "ID: " + id +
             " | Produced Qty: " + to_string(producedQuantity));
@@ -915,7 +937,7 @@ bool ProjectionManager::deleteProjection(
 
     if (movementLogger != nullptr)
     {
-        movementLogger->logSystemEvent(
+        movementLogger->log(
             "PROJECTION DELETED",
             "ID: " + id);
     }

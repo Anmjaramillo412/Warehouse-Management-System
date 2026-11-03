@@ -413,7 +413,7 @@ PurchaseInvoice* PurchaseManager::createInvoice(
 
     if (movementLogger != nullptr)
     {
-        movementLogger->logSystemEvent(
+        movementLogger->log(
             "PURCHASE INVOICE CREATED",
             "ID: " + id +
             " | Lines: " + to_string(lines.size()) +
@@ -602,7 +602,7 @@ bool PurchaseManager::updateInvoice(
 
     if (movementLogger != nullptr)
     {
-        movementLogger->logSystemEvent(
+        movementLogger->log(
             "PURCHASE INVOICE UPDATED",
             "ID: " + id);
     }
@@ -628,7 +628,7 @@ bool PurchaseManager::deleteInvoice(
 
             if (movementLogger != nullptr)
             {
-                movementLogger->logSystemEvent(
+                movementLogger->log(
                     "PURCHASE INVOICE DELETED",
                     "ID: " + id);
             }
@@ -962,7 +962,7 @@ bool PurchaseManager::setDefaultExchangeRate(double rate)
 
     if (movementLogger != nullptr)
     {
-        movementLogger->logSystemEvent(
+        movementLogger->log(
             "PURCHASE EXCHANGE RATE UPDATED",
             "New USD->EUR rate: " + to_string(defaultExchangeRate));
     }

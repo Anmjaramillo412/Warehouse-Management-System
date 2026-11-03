@@ -62,7 +62,7 @@ private:
     // "Source: PRJ-000006 | Material: 008-200023 (Name) | Supplier: X |
     // WH: 1" - the part every movement-history line about one
     // order line shares (Source is "Manual" for an order that was not
-    // registered from a Projection). See data/movement_history.txt.
+    // registered from a Projection). See data/movement_ledger.csv.
     string describeLineForHistory(
         const ProcurementOrder& order) const;
 

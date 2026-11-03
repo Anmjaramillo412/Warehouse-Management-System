@@ -278,7 +278,7 @@ ProcurementOrder* ProcurementManager::createOrder(
 
     // Procurement milestones always go into the movement history
     // (unlike Save/Load events, they do not depend on the "Log data
-    // operations" setting) - see data/movement_history.txt.
+    // operations" setting) - see data/movement_ledger.csv.
 
     if (movementLogger != nullptr)
     {
@@ -447,7 +447,8 @@ bool ProcurementManager::receiveOrder(
             material,
             receivedQuantity,
             "Procurement " + id +
-                (comment.empty() ? "" : (" - " + comment)));
+                (comment.empty() ? "" : (" - " + comment)),
+            id);
 
     if (!receiptSuccess)
     {
@@ -617,7 +618,7 @@ bool ProcurementManager::cancelOrder(
     }
 
     // Cancellations are deliberately not written to the movement
-    // history - see data/movement_history.txt.
+    // history - see data/movement_ledger.csv.
 
     save();
 

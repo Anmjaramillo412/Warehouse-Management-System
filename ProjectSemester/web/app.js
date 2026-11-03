@@ -143,6 +143,10 @@ function openModule(module) {
                     Sell Product
                 </button>
 
+                <button class="button-accent" onclick="showProductSalesHistory()">
+                    Sales History
+                </button>
+
                 <button class="button-muted" onclick="showProductSettings()">
                     Settings
                 </button>
@@ -3582,9 +3586,12 @@ async function showMaterialDetail(id) {
                     : ""
                 }
 
+                <div id="material-movements"></div>
+
             </div>
         `;
 
+        loadMaterialMovements(data.id);
     }
     catch (error) {
 
@@ -9545,6 +9552,8 @@ async function openProjectionDetail(id) {
 
                     </div>
 
+                    <div id="projdet-confirm-message"></div>
+
                 </div>
 
             ` : ""}
@@ -9566,12 +9575,40 @@ async function openProjectionDetail(id) {
 // PROJECTIONS - CONFIRM PRODUCTION (issue BOM, archive batch)
 // ============================================================
 
+// Result of "Confirm Production", shown right under the button (the
+// page's top message was far away and easy to miss): red box when it
+// is refused, green when it went through.
+
+function showConfirmProductionResult(text, ok) {
+
+    const box =
+        document.getElementById("projdet-confirm-message");
+
+    if (!box) {
+        return;
+    }
+
+    box.textContent = (ok ? "\u2713 " : "\u2717 ") + text;
+
+    box.style.cssText =
+        "margin-top: 14px; padding: 12px 16px; border-radius: 8px;" +
+        "font-weight: bold; border: 1px solid " +
+        (ok ? "#86efac" : "#fca5a5") + ";" +
+        "background: " + (ok ? "#dcfce7" : "#fee2e2") + ";" +
+        "color: " + (ok ? "#166534" : "#991b1b") + ";";
+
+    box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
 async function confirmProduction(id) {
 
-    const message =
-        document.getElementById(
-            "projection-detail-message"
-        );
+    // Same function the rest of this one used for its messages, now
+    // pointing at the box next to the button.
+    const message = {
+        set textContent(text) {
+            showConfirmProductionResult(text, false);
+        }
+    };
 
     const producedQuantity =
         document.getElementById(
@@ -9640,6 +9677,30 @@ async function confirmProduction(id) {
         }
 
         await showProjections();
+
+        // The Projection is archived now, so confirm on the list page.
+        const listContent =
+            document.getElementById("procurement-content");
+
+        if (listContent) {
+
+            const banner = document.createElement("div");
+
+            banner.textContent =
+                "\u2713 Production confirmed: " + id + " - " +
+                producedQuantity + " unit(s) produced on " +
+                completionDate + ". The Bill of Materials was issued " +
+                "from the Warehouse and the Projection is now in " +
+                "Archived Projections.";
+
+            banner.style.cssText =
+                "margin-bottom: 16px; padding: 12px 16px;" +
+                "border-radius: 8px; font-weight: bold;" +
+                "border: 1px solid #86efac; background: #dcfce7;" +
+                "color: #166534;";
+
+            listContent.insertBefore(banner, listContent.firstChild);
+        }
     }
     catch (error) {
 
@@ -16327,6 +16388,14 @@ function inventoryCountDifferenceHtml(line) {
 // Materials of an Internal Supplier (self-made, normally not stocked)
 // are shown in another colour so they stand out in the list.
 
+function inventoryCountPhotoHtml(line) {
+
+    return line.photo ?
+        `<img src="/${escapeHtml(line.photo)}"
+            class="material-thumbnail" alt="Material photo">` :
+        "-";
+}
+
 function inventoryCountRowStyle(line) {
 
     return line.internalSupplier ?
@@ -16357,6 +16426,7 @@ function renderInventoryCountSheet() {
 
             rows += `
                 <tr id="cnt-row-${index}" ${inventoryCountRowStyle(line)}>
+                    <td>${inventoryCountPhotoHtml(line)}</td>
                     <td>
                         ${escapeHtml(line.materialID)}<br>
                         <small>${escapeHtml(line.materialName)}</small>
@@ -16389,6 +16459,7 @@ function renderInventoryCountSheet() {
 
             rows += `
                 <tr ${inventoryCountRowStyle(line)}>
+                    <td>${inventoryCountPhotoHtml(line)}</td>
                     <td>
                         ${escapeHtml(line.materialID)}<br>
                         <small>${escapeHtml(line.materialName)}</small>
@@ -16407,7 +16478,7 @@ function renderInventoryCountSheet() {
 
         rows = `
             <tr>
-                <td colspan="7">
+                <td colspan="8">
                     This Warehouse has no stocked materials. Add the
                     materials you want to count below.
                 </td>
@@ -16493,6 +16564,7 @@ function renderInventoryCountSheet() {
                 <table class="material-table">
                     <thead>
                         <tr>
+                            <th>Photo</th>
                             <th>Material</th>
                             <th>UoM</th>
                             <th>System</th>
@@ -16838,4 +16910,391 @@ function exportInventoryCountToExcel() {
     }
 
     downloadCSV(`${state.id}_export.csv`, rows);
+}
+
+
+/* ============================================================
+   MOVEMENT HISTORY (material) and SALES HISTORY (product)
+   Both read the movement ledger: GET /api/movements
+============================================================ */
+
+let materialMovementRows = [];
+
+let materialMovementID = "";
+
+function movementQty(value) {
+
+    return value === "" || value === undefined ? "" : value;
+}
+
+async function loadMaterialMovements(materialID) {
+
+    const box = document.getElementById("material-movements");
+
+    if (!box) {
+        return;
+    }
+
+    box.innerHTML = `<p>Loading movements...</p>`;
+
+    try {
+
+        const response =
+            await fetch(
+                `/api/movements?material=${encodeURIComponent(materialID)}&limit=2000`);
+
+        if (!response.ok) {
+
+            box.innerHTML = `<p>Error: ${escapeHtml(await response.text())}</p>`;
+
+            return;
+        }
+
+        const data = await response.json();
+
+        materialMovementRows =
+            (data.movements || []).filter(row => row.materialID === materialID);
+
+        materialMovementID = materialID;
+
+        renderMaterialMovements("");
+    }
+    catch (error) {
+
+        console.error(error);
+
+        box.innerHTML = `<p>Could not load the movement history.</p>`;
+    }
+}
+
+function renderMaterialMovements(warehouseFilter) {
+
+    const box = document.getElementById("material-movements");
+
+    if (!box) {
+        return;
+    }
+
+    const warehouses = [];
+
+    for (const row of materialMovementRows) {
+
+        if (row.warehouse && !warehouses.includes(row.warehouse)) {
+            warehouses.push(row.warehouse);
+        }
+    }
+
+    warehouses.sort((a, b) => Number(a) - Number(b));
+
+    const rows =
+        materialMovementRows.filter(
+            row => !warehouseFilter || row.warehouse === warehouseFilter);
+
+    let body = "";
+
+    for (const row of rows) {
+
+        const detail =
+            [row.details, row.comment].filter(Boolean).join(" - ");
+
+        body += `
+            <tr>
+                <td>${escapeHtml(row.timestamp)}</td>
+                <td>${escapeHtml(row.type)}</td>
+                <td>${escapeHtml(row.warehouse)}${row.warehouseName ? " - " + escapeHtml(row.warehouseName) : ""}</td>
+                <td style="color:#15803d;font-weight:bold;">${row.qtyIn ? "+" + escapeHtml(row.qtyIn) : ""}</td>
+                <td style="color:#b91c1c;font-weight:bold;">${row.qtyOut ? "-" + escapeHtml(row.qtyOut) : ""}</td>
+                <td>${escapeHtml(row.balance)}</td>
+                <td>${escapeHtml(row.reference)}</td>
+                <td>${escapeHtml(row.user)}</td>
+                <td>${escapeHtml(detail)}</td>
+            </tr>`;
+    }
+
+    if (rows.length === 0) {
+
+        body = `
+            <tr>
+                <td colspan="9">No movements recorded for this material.</td>
+            </tr>`;
+    }
+
+    const options =
+        `<option value="">All warehouses</option>` +
+        warehouses.map(w => `
+            <option value="${escapeHtml(w)}"
+                ${w === warehouseFilter ? "selected" : ""}>
+                Warehouse ${escapeHtml(w)}
+            </option>`).join("");
+
+    box.innerHTML = `
+
+        <div class="procurement-section">
+
+            <h3>Stock Movements</h3>
+
+            <div class="form-actions" style="gap: 10px; flex-wrap: wrap;">
+
+                <select id="material-movement-filter"
+                    onchange="renderMaterialMovements(this.value)"
+                    style="width: auto;">
+                    ${options}
+                </select>
+
+                <button class="button-muted"
+                    onclick="exportMaterialMovements()">
+                    Export to Excel
+                </button>
+
+            </div>
+
+            <div class="material-table-container" style="margin-top: 12px;">
+                <table class="material-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Type</th>
+                            <th>Warehouse</th>
+                            <th>In</th>
+                            <th>Out</th>
+                            <th>Balance</th>
+                            <th>Reference</th>
+                            <th>User</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>${body}</tbody>
+                </table>
+            </div>
+
+        </div>
+    `;
+}
+
+function exportMaterialMovements() {
+
+    const filter =
+        (document.getElementById("material-movement-filter") || {}).value || "";
+
+    const rows = [[
+        "Timestamp", "User", "Type", "Warehouse", "Material ID", "Material",
+        "Qty In", "Qty Out", "Balance After", "Reference", "Details", "Comment"
+    ]];
+
+    for (const row of materialMovementRows) {
+
+        if (filter && row.warehouse !== filter) {
+            continue;
+        }
+
+        rows.push([
+            row.timestamp, row.user, row.type, row.warehouse,
+            row.materialID, row.materialName, row.qtyIn, row.qtyOut,
+            row.balance, row.reference, row.details, row.comment
+        ]);
+    }
+
+    downloadCSV(`${materialMovementID}_movements.csv`, rows);
+}
+
+// ------------------------------------------------------------
+// Product sales history
+// ------------------------------------------------------------
+
+let productSalesRows = [];
+
+async function showProductSalesHistory() {
+
+    const content = document.getElementById("product-content");
+
+    content.innerHTML = `<p>Loading sales history...</p>`;
+
+    try {
+
+        const response =
+            await fetch("/api/movements?type=PRODUCT%20SALE&limit=5000");
+
+        if (!response.ok) {
+
+            content.innerHTML = `<p>Error: ${escapeHtml(await response.text())}</p>`;
+
+            return;
+        }
+
+        const data = await response.json();
+
+        productSalesRows =
+            (data.movements || []).filter(row => row.type === "PRODUCT SALE");
+
+        renderProductSales();
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `<p>Could not connect to the server.</p>`;
+    }
+}
+
+function renderProductSales() {
+
+    const content = document.getElementById("product-content");
+
+    const selectedProduct =
+        (document.getElementById("sales-filter-product") || {}).value || "";
+
+    const from =
+        (document.getElementById("sales-filter-from") || {}).value || "";
+
+    const to =
+        (document.getElementById("sales-filter-to") || {}).value || "";
+
+    const products = [];
+
+    for (const row of productSalesRows) {
+
+        if (!products.some(p => p.id === row.productID)) {
+            products.push({ id: row.productID, name: row.productName });
+        }
+    }
+
+    products.sort((a, b) => a.id.localeCompare(b.id));
+
+    const rows =
+        productSalesRows.filter(row => {
+
+            const day = row.timestamp.substring(0, 10);
+
+            return (!selectedProduct || row.productID === selectedProduct) &&
+                (!from || day >= from) &&
+                (!to || day <= to);
+        });
+
+    let total = 0;
+
+    let body = "";
+
+    for (const row of rows) {
+
+        total += Number(row.qtyOut || 0);
+
+        const source =
+            row.reference === "Sell Product" ? "Sell Product" :
+            `Projection ${row.reference}`;
+
+        body += `
+            <tr>
+                <td>${escapeHtml(row.timestamp)}</td>
+                <td>${escapeHtml(row.productID)}<br><small>${escapeHtml(row.productName)}</small></td>
+                <td>${escapeHtml(source)}</td>
+                <td>${escapeHtml(row.warehouse)}${row.warehouseName ? " - " + escapeHtml(row.warehouseName) : ""}</td>
+                <td><b>${escapeHtml(row.qtyOut)}</b></td>
+                <td>${escapeHtml(row.user)}</td>
+                <td>${escapeHtml([row.details, row.comment].filter(Boolean).join(" - "))}</td>
+            </tr>`;
+    }
+
+    if (rows.length === 0) {
+
+        body = `
+            <tr>
+                <td colspan="7">No sales recorded.</td>
+            </tr>`;
+    }
+
+    const options =
+        `<option value="">All products</option>` +
+        products.map(p => `
+            <option value="${escapeHtml(p.id)}"
+                ${p.id === selectedProduct ? "selected" : ""}>
+                ${escapeHtml(p.id)} - ${escapeHtml(p.name)}
+            </option>`).join("");
+
+    content.innerHTML = `
+
+        <div class="form-container form-container-wide"
+            style="max-width: 1100px;">
+
+            <h2>Product Sales History</h2>
+
+            <p>
+                Every Sell Product and every confirmed Projection.
+                Units sold in this view: <b>${total}</b>
+            </p>
+
+            <div class="form-actions" style="gap: 10px; flex-wrap: wrap; align-items: center;">
+
+                <select id="sales-filter-product"
+                    onchange="renderProductSales()" style="width: auto;">
+                    ${options}
+                </select>
+
+                <label>From</label>
+                <input type="date" id="sales-filter-from" value="${escapeHtml(from)}"
+                    onchange="renderProductSales()" style="width: auto;">
+
+                <label>To</label>
+                <input type="date" id="sales-filter-to" value="${escapeHtml(to)}"
+                    onchange="renderProductSales()" style="width: auto;">
+
+                <button class="button-muted" onclick="exportProductSales()">
+                    Export to Excel
+                </button>
+
+            </div>
+
+            <div class="material-table-container" style="margin-top: 12px;">
+                <table class="material-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Product</th>
+                            <th>Source</th>
+                            <th>Warehouse</th>
+                            <th>Qty</th>
+                            <th>User</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>${body}</tbody>
+                </table>
+            </div>
+
+        </div>
+    `;
+}
+
+function exportProductSales() {
+
+    const selectedProduct =
+        (document.getElementById("sales-filter-product") || {}).value || "";
+
+    const from =
+        (document.getElementById("sales-filter-from") || {}).value || "";
+
+    const to =
+        (document.getElementById("sales-filter-to") || {}).value || "";
+
+    const rows = [[
+        "Timestamp", "User", "Product ID", "Product", "Source",
+        "Warehouse", "Qty Sold", "Details"
+    ]];
+
+    for (const row of productSalesRows) {
+
+        const day = row.timestamp.substring(0, 10);
+
+        if ((selectedProduct && row.productID !== selectedProduct) ||
+            (from && day < from) || (to && day > to)) {
+            continue;
+        }
+
+        rows.push([
+            row.timestamp, row.user, row.productID, row.productName,
+            row.reference, row.warehouse, row.qtyOut,
+            [row.details, row.comment].filter(Boolean).join(" - ")
+        ]);
+    }
+
+    downloadCSV("product_sales.csv", rows);
 }

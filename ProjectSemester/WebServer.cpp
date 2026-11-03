@@ -9197,6 +9197,184 @@ void WebServer::run()
 
 
     // ============================================================
+    // MOVEMENT LEDGER (history of everything in the Warehouse)
+    // ============================================================
+    // GET /api/movements?material=ID&product=ID&warehouse=N
+    //     &type=TEXT&from=YYYY-MM-DD&to=YYYY-MM-DD&limit=N
+    // Newest first. Every filter is optional.
+
+    CROW_ROUTE(app, "/api/movements")
+        .methods(crow::HTTPMethod::GET)
+        ([warehouseSystem](const crow::request& req)
+            {
+                auto param = [&](const char* key) -> string
+                {
+                    const char* value = req.url_params.get(key);
+
+                    return value != nullptr ? string(value) : string();
+                };
+
+                string material = param("material");
+
+                string product = param("product");
+
+                string warehouse = param("warehouse");
+
+                string type = param("type");
+
+                string from = param("from");
+
+                string to = param("to");
+
+                size_t limit = 5000;
+
+                if (!param("limit").empty())
+                {
+                    try
+                    {
+                        limit = static_cast<size_t>(
+                            stoul(param("limit")));
+                    }
+                    catch (...)
+                    {
+                    }
+                }
+
+                MaterialManager& materialManager =
+                    warehouseSystem->getMaterialManager();
+
+                WarehouseManager& warehouseManager =
+                    warehouseSystem->getWarehouseManager();
+
+                vector<LedgerRow> rows =
+                    warehouseSystem->getMovementLogger().readAll();
+
+                crow::json::wvalue response;
+
+                crow::json::wvalue::list list;
+
+                for (size_t i = rows.size(); i > 0; i--)
+                {
+                    const LedgerRow& row = rows[i - 1];
+
+                    if (!material.empty() &&
+                        row.materialID != material)
+                    {
+                        continue;
+                    }
+
+                    if (!product.empty() &&
+                        row.productID != product)
+                    {
+                        continue;
+                    }
+
+                    if (!warehouse.empty() &&
+                        row.warehouse != warehouse)
+                    {
+                        continue;
+                    }
+
+                    if (!type.empty() &&
+                        row.type.find(type) == string::npos)
+                    {
+                        continue;
+                    }
+
+                    string day = row.timestamp.substr(0, 10);
+
+                    if (!from.empty() && day < from)
+                    {
+                        continue;
+                    }
+
+                    if (!to.empty() && day > to)
+                    {
+                        continue;
+                    }
+
+                    if (list.size() >= limit)
+                    {
+                        break;
+                    }
+
+                    crow::json::wvalue item;
+
+                    item["timestamp"] = row.timestamp;
+
+                    item["user"] = row.user;
+
+                    item["type"] = row.type;
+
+                    item["warehouse"] = row.warehouse;
+
+                    string warehouseName = "";
+
+                    if (!row.warehouse.empty())
+                    {
+                        try
+                        {
+                            Warehouse* found =
+                                warehouseManager.findWarehouse(
+                                    stoi(row.warehouse));
+
+                            if (found != nullptr)
+                            {
+                                warehouseName = found->getName();
+                            }
+                        }
+                        catch (...)
+                        {
+                        }
+                    }
+
+                    item["warehouseName"] = warehouseName;
+
+                    item["materialID"] = row.materialID;
+
+                    string materialName = row.materialName;
+
+                    if (materialName.empty() &&
+                        !row.materialID.empty())
+                    {
+                        Material* found =
+                            materialManager.findMaterial(
+                                row.materialID);
+
+                        if (found != nullptr)
+                        {
+                            materialName = found->getName();
+                        }
+                    }
+
+                    item["materialName"] = materialName;
+
+                    item["productID"] = row.productID;
+
+                    item["productName"] = row.productName;
+
+                    item["qtyIn"] = row.qtyIn;
+
+                    item["qtyOut"] = row.qtyOut;
+
+                    item["balance"] = row.balance;
+
+                    item["reference"] = row.reference;
+
+                    item["details"] = row.details;
+
+                    item["comment"] = row.comment;
+
+                    list.push_back(std::move(item));
+                }
+
+                response["movements"] = std::move(list);
+
+                return response;
+            });
+
+
+    // ============================================================
     // START SERVER
     // ============================================================
 

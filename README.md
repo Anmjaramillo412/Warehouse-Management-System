@@ -133,7 +133,7 @@ The `data/` folder is created automatically on first run - see Data Persistence 
 - Cancel an order that was never confirmed and never will be
 - Optional Estimated Receipt date, one per Procurement Order (Open and Confirmed Orders, saved as soon as the date is picked; clearing the field removes it): shown inside the card (in the material's row for a single-material order, once above the materials otherwise) and as "ETA" in the collapsed card header. It applies to every line still waiting for goods. Informational only; cannot be before the Order Date
 - Confirmed orders cannot be deleted, to keep the PRC numbering a reliable record
-- Movement history (`data/movement_history.txt`, one line per event, always on - independent of the "Log data operations" setting): every order line created (with its Source: the Projection's "PRJ-######", or "Manual"), every confirmation, every receipt (date, quantity, total received / ordered, pending, status and comment) and every Close (Incomplete) with the quantity that never arrived, each with material, supplier and warehouse. The stock movement of a receipt is still logged separately as a GOODS RECEIPT. Cancellations are deliberately not recorded
+- Movement ledger (`data/movement_ledger.csv`, one row per event, always on - independent of the "Log data operations" setting; see Movement Ledger below): every order line created (with its Source: the Projection's "PRJ-######", or "Manual"), every confirmation, every receipt (date, quantity, total received / ordered, pending, status and comment) and every Close (Incomplete) with the quantity that never arrived, each with material, supplier and warehouse. The stock movement of a receipt is still logged separately as a GOODS RECEIPT. Cancellations are deliberately not recorded
 - Each order remembers the ordered material's name at the time it was placed, so the record stays readable even if the material is later renamed or removed
 - Document attachments per whole "PRC-######" order (shared across every material line of that order):
   - **Order Confirmation**: a single PDF; uploading again replaces the previous one
@@ -171,6 +171,16 @@ The web interface requires a login. Every request is checked on the server (not 
 - Documents Folder setting: the root folder (anywhere on disk) that Procurement's Order Confirmation and Lieferschein PDFs are saved under
 - Reset PRC / Invoice Numbering (type `RESET` to confirm): deletes every Procurement Order and every Purchase Invoice outright and restarts both the "PRC-######" and "INV-######" counters at 1 - no undo, meant for clearing test data before real use begins
 - Exit (available to every role): saves all data and shuts the web server down from the dashboard itself, so the application does not need to be stopped from Visual Studio or the console window
+
+### Movement Ledger
+
+`data/movement_ledger.csv` is the single record of everything that happens in the Warehouse (replaces the old `movement_history.txt`, whose lines are imported automatically on first start). It is a plain CSV that opens in Excel with a double click. Each row has: Timestamp, User, Type, Warehouse, Material ID, Material, Product ID, Product, Qty In, Qty Out, Balance After (stock of that material in that Warehouse right after the movement), Reference (Procurement Order, Projection, Inventory Count, transfer route...), Details and Comment.
+
+- Stock movements: `GOODS RECEIPT`, `GOODS ISSUE`, `TRANSFER OUT` / `TRANSFER IN` (one row per Warehouse), `PRODUCTION CONSUMPTION` (materials issued when a Projection's production is confirmed), `SALE CONSUMPTION` (materials issued by Sell Product), `INVENTORY ADJUSTMENT`
+- Product rows: `PRODUCT SALE` for every Sell Product and every confirmed Projection (Reference = "Sell Product" or the PRJ number)
+- Events: procurement milestones, projections created / completed / deleted, inventory counts, purchase invoices (Data save/load events only with "Log data operations")
+- If the file is open in Excel the rows wait in memory and are written with the next movement
+- Material detail and Product Manager show the movements of that material / the sales of that product (`GET /api/movements`)
 
 ### Data Persistence
 
