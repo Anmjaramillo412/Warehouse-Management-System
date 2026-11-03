@@ -34,6 +34,17 @@ private:
     // Why the last sellProduct() failed (empty after a success)
     string lastError;
 
+    // Writes one stock movement of a material to the movement ledger
+    // (balance = stock left in that Warehouse right after it).
+    void ledgerStock(
+        const string& type,
+        int warehouseID,
+        const string& materialID,
+        double qtyIn,
+        double qtyOut,
+        const string& reference,
+        const string& comment);
+
 public:
 
     const string& getLastError() const
@@ -65,18 +76,24 @@ public:
         int warehouseID) const;
 
     // Goods Receipt
+    // reference: e.g. the Procurement Order ID, for the movement ledger
     bool goodsReceipt(
         int warehouseID,
         Material* material,
         double quantity,
-        const string& comment = "");
+        const string& comment = "",
+        const string& reference = "");
 
     // Goods Issue
+    // type / reference: how the movement shows in the movement ledger
+    // (e.g. "PRODUCTION CONSUMPTION" with the Projection ID)
     bool goodsIssue(
         int warehouseID,
         const string& materialID,
         double quantity,
-        const string& comment = "");
+        const string& comment = "",
+        const string& reference = "",
+        const string& type = "GOODS ISSUE");
 
     // Transfer
     bool transferMaterial(

@@ -1073,16 +1073,24 @@ public:
 
             summary.linesAdjusted++;
 
-            log("INVENTORY ADJUSTMENT",
-                "Count: " + count->id +
-                " | WH: " + to_string(count->warehouseID) +
-                " | Material: " + line.materialID +
-                " | System: " + formatQty(system) +
-                " | Counted: " + formatQty(line.countedQuantity) +
-                " | Difference: " +
-                (difference > 0 ? "+" : "") + formatQty(difference) +
-                " | Reason: " + line.reason,
-                line.comment);
+            if (movementLogger != nullptr)
+            {
+                movementLogger->logStock(
+                    "INVENTORY ADJUSTMENT",
+                    count->warehouseID,
+                    line.materialID,
+                    material != nullptr ? material->getName() : "",
+                    difference > 0 ? difference : 0.0,
+                    difference < 0 ? -difference : 0.0,
+                    line.countedQuantity,
+                    count->id,
+                    line.comment,
+                    "",
+                    "",
+                    "System: " + formatQty(system) +
+                    " | Counted: " + formatQty(line.countedQuantity) +
+                    " | Reason: " + line.reason);
+            }
         }
 
         count->status = "Applied";

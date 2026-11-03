@@ -42,6 +42,8 @@
 
 #include <crow.h>
 
+#include "MovementLogger.h"
+
 namespace auth
 {
 
@@ -1060,6 +1062,9 @@ struct AuthMiddleware
         bool loggedIn =
             auth::AuthManager::instance().userForToken(token, user);
 
+        // The movement ledger records who did what
+        MovementLogger::setActor(loggedIn ? user.username : "");
+
         bool isRead =
             req.method == crow::HTTPMethod::GET ||
             req.method == crow::HTTPMethod::HEAD;
@@ -1091,5 +1096,6 @@ struct AuthMiddleware
         crow::response&,
         context&)
     {
+        MovementLogger::setActor("");
     }
 };

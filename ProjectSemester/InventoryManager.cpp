@@ -46,6 +46,69 @@ void InventoryManager::setMaterialManager(
 }
 
 // ================================================================
+// MOVEMENT LEDGER ROW FOR A STOCK MOVEMENT
+// ================================================================
+
+void InventoryManager::ledgerStock(
+    const string& type,
+    int warehouseID,
+    const string& materialID,
+    double qtyIn,
+    double qtyOut,
+    const string& reference,
+    const string& comment)
+{
+    if (movementLogger == nullptr)
+    {
+        return;
+    }
+
+    double balance = 0.0;
+
+    if (warehouseManager != nullptr)
+    {
+        Warehouse* warehouse =
+            warehouseManager->findWarehouse(warehouseID);
+
+        if (warehouse != nullptr)
+        {
+            WarehouseNode* node =
+                warehouse->findMaterial(materialID);
+
+            if (node != nullptr)
+            {
+                balance = node->quantity;
+            }
+        }
+    }
+
+    string name = "";
+
+    if (materialManager != nullptr)
+    {
+        Material* material =
+            materialManager->findMaterial(materialID);
+
+        if (material != nullptr)
+        {
+            name = material->getName();
+        }
+    }
+
+    movementLogger->logStock(
+        type,
+        warehouseID,
+        materialID,
+        name,
+        qtyIn,
+        qtyOut,
+        balance,
+        reference,
+        comment);
+}
+
+
+// ================================================================
 // GOODS RECEIPT
 // ================================================================
 
@@ -79,7 +142,8 @@ bool InventoryManager::goodsReceipt(
     int warehouseID,
     Material* material,
     double quantity,
-    const string& comment)
+    const string& comment,
+    const string& reference)
 {
     if (warehouseManager == nullptr)
     {
@@ -126,22 +190,14 @@ bool InventoryManager::goodsReceipt(
     // Log movement
     // ------------------------------------------------------------
 
-    if (movementLogger != nullptr)
-    {
-        string details =
-            "WH: "
-            + to_string(warehouseID)
-            + " | Material: "
-            + material->getID()
-            + " | Qty: "
-            + formatQty(quantity);
-
-
-        movementLogger->log(
-            "GOODS RECEIPT",
-            details,
-            comment);
-    }
+    ledgerStock(
+        "GOODS RECEIPT",
+        warehouseID,
+        material->getID(),
+        quantity,
+        0.0,
+        reference,
+        comment);
 
     return true;
 }
@@ -154,7 +210,9 @@ bool InventoryManager::goodsIssue(
     int warehouseID,
     const string& materialID,
     double quantity,
-    const string& comment)
+    const string& comment,
+    const string& reference,
+    const string& type)
 {
     if (warehouseManager == nullptr)
     {
@@ -235,22 +293,14 @@ bool InventoryManager::goodsIssue(
     // Log movement
     // ------------------------------------------------------------
 
-    if (movementLogger != nullptr)
-    {
-        string details =
-            "WH: "
-            + to_string(warehouseID)
-            + " | Material: "
-            + materialID
-            + " | Qty: "
-            + formatQty(quantity);
-
-
-        movementLogger->log(
-            "GOODS ISSUE",
-            details,
-            comment);
-    }
+    ledgerStock(
+        type,
+        warehouseID,
+        materialID,
+        0.0,
+        quantity,
+        reference,
+        comment);
 
     return true;
 }
@@ -386,23 +436,28 @@ bool InventoryManager::transferMaterial(
     // Log movement
     // ------------------------------------------------
 
-    if (movementLogger != nullptr)
-    {
-        string details =
-            "WH: "
-            + to_string(sourceWarehouseID)
-            + " -> WH: "
-            + to_string(destinationWarehouseID)
-            + " | Material: "
-            + materialID
-            + " | Qty: "
-            + formatQty(quantity);
+    // One row per side so each Warehouse's history is complete
+    string route =
+        "WH " + to_string(sourceWarehouseID) +
+        " -> WH " + to_string(destinationWarehouseID);
 
-        movementLogger->log(
-            "TRANSFER",
-            details,
-            comment);
-    }
+    ledgerStock(
+        "TRANSFER OUT",
+        sourceWarehouseID,
+        materialID,
+        0.0,
+        quantity,
+        route,
+        comment);
+
+    ledgerStock(
+        "TRANSFER IN",
+        destinationWarehouseID,
+        materialID,
+        quantity,
+        0.0,
+        route,
+        comment);
 
     return true;
 }
@@ -587,8 +642,34 @@ bool InventoryManager::sellProduct(
         {
             return false;
         }
+
+        ledgerStock(
+            "SALE CONSUMPTION",
+            warehouseID,
+            item.materialID,
+            0.0,
+            requiredQuantity,
+            "Sale of " + productID,
+            "");
     }
 
+
+    // The Product's own sale record (shows in the Product history)
+    if (movementLogger != nullptr)
+    {
+        movementLogger->logStock(
+            "PRODUCT SALE",
+            warehouseID,
+            "",
+            "",
+            0.0,
+            static_cast<double>(quantity),
+            -1.0,
+            "Sell Product",
+            "",
+            productID,
+            product->getName());
+    }
 
     return true;
 }
