@@ -470,7 +470,8 @@ bool InventoryManager::sellProduct(
     ProductManager& productManager,
     int warehouseID,
     const string& productID,
-    int quantity)
+    int quantity,
+    const string& comment)
 {
     lastError = "";
 
@@ -650,7 +651,7 @@ bool InventoryManager::sellProduct(
             0.0,
             requiredQuantity,
             "Sale of " + productID,
-            "");
+            comment);
     }
 
 
@@ -666,7 +667,7 @@ bool InventoryManager::sellProduct(
             static_cast<double>(quantity),
             -1.0,
             "Sell Product",
-            "",
+            comment,
             productID,
             product->getName());
     }

@@ -108,6 +108,7 @@ public:
         ProductManager& productManager,
         int warehouseID,
         const string& productID,
-        int quantity);
+        int quantity,
+        const string& comment = "");
 };
 

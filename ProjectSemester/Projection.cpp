@@ -23,6 +23,7 @@ Projection::Projection(
     creationDate = cDate;
 
     completed = false;
+    cancelled = false;
     producedQuantity = 0;
     completionDate = "";
 }
@@ -218,6 +219,21 @@ void Projection::setCompleted(
     completed = value;
     producedQuantity = produced;
     completionDate = cDate;
+}
+
+
+bool Projection::isCancelled() const
+{
+    return cancelled;
+}
+
+
+void Projection::setCancelled(const string& date)
+{
+    cancelled = true;
+    completed = true;
+    producedQuantity = 0;
+    completionDate = date;
 }
 
 
