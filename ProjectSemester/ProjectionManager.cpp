@@ -923,22 +923,32 @@ bool ProjectionManager::deleteProjection(
         return false;
     }
 
-    projections.erase(
-        remove_if(
-            projections.begin(),
-            projections.end(),
-            [&id](const unique_ptr<Projection>& p)
-            {
-                return p->getID() == id;
-            }),
-        projections.end());
+    // Not removed: the Projection is archived as Cancelled so its
+    // history stays visible in Archived Projections.
+    {
+        time_t now = time(nullptr);
+
+        tm localTime{};
+
+#ifdef _WIN32
+        localtime_s(&localTime, &now);
+#else
+        localtime_r(&now, &localTime);
+#endif
+
+        char buffer[16];
+
+        strftime(buffer, sizeof(buffer), "%Y-%m-%d", &localTime);
+
+        projection->setCancelled(buffer);
+    }
 
     save();
 
     if (movementLogger != nullptr)
     {
         movementLogger->log(
-            "PROJECTION DELETED",
+            "PROJECTION CANCELLED",
             "ID: " + id);
     }
 
@@ -1007,7 +1017,8 @@ bool ProjectionManager::save()
             << itemsField << "|"
             << (projection->isCompleted() ? "1" : "0") << "|"
             << projection->getProducedQuantity() << "|"
-            << projection->getCompletionDate()
+            << projection->getCompletionDate() << "|"
+            << (projection->isCancelled() ? "1" : "0")
             << endl;
     }
 
@@ -1113,6 +1124,13 @@ bool ProjectionManager::load()
                 completed,
                 producedQuantity,
                 completionDate);
+        }
+
+        if (fields.size() > 10 &&
+            fields[10] == "1")
+        {
+            projection->setCancelled(
+                fields.size() > 9 ? fields[9] : "");
         }
 
         // Track the highest existing "PRJ-######" number so new

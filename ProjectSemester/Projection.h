@@ -79,6 +79,11 @@ private:
     // the Warehouse and this batch moves to Archived Projections.
     bool completed;
 
+    // A cancelled Projection is archived as closed ("completed" is
+    // also true so it stops reserving stock / demand like any other
+    // closed one) but nothing was produced or issued.
+    bool cancelled;
+
     int producedQuantity;
 
     string completionDate;
@@ -149,6 +154,10 @@ public:
         bool value,
         int produced = 0,
         const string& cDate = "");
+
+    // Cancellation (archived without producing anything)
+    bool isCancelled() const;
+    void setCancelled(const string& date);
 
     // Display
     void display() const;

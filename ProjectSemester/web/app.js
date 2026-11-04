@@ -12,6 +12,10 @@
 
 let materialsReturnProjectionID = null;
 
+// Set by openMaterialFromInventoryCount(): the Inventory Count whose
+// sheet the Back button on the Material detail returns to.
+let materialsReturnInventoryCount = null;
+
 // Same idea for Display Products: set only by openMaterialFromProduct()
 // so the Material detail offers a "Go Back to Products" button.
 let materialsReturnToProducts = false;
@@ -33,6 +37,8 @@ let materialsListScroll = 0;
 function openModule(module) {
 
     materialsReturnProjectionID = null;
+
+    materialsReturnInventoryCount = null;
 
     materialsReturnToProducts = false;
 
@@ -7947,12 +7953,7 @@ function showSellProduct() {
                 Product ID
             </label>
 
-            <input
-                type="text"
-                id="sell-product-id"
-                placeholder="###-######"
-                maxlength="10"
-            >
+            <select id="sell-product-id"></select>
 
 
             <label>
@@ -7965,6 +7966,16 @@ function showSellProduct() {
                 min="1"
                 placeholder="Enter Quantity"
             >
+
+
+            <label>
+                Comment (optional)
+            </label>
+
+            <textarea
+                id="sell-comment"
+                rows="3"
+                placeholder="Identify this sale: customer, order number, delivery note..."></textarea>
 
 
             <div class="form-actions">
@@ -7986,6 +7997,41 @@ function showSellProduct() {
     `;
 
     populateWarehouseSelect("sell-warehouse-id", "", WH_OPTS);
+
+    populateSellProductSelect();
+}
+
+// Product list for Sell Product: "ID - Name"
+async function populateSellProductSelect() {
+
+    const select = document.getElementById("sell-product-id");
+
+    if (!select) {
+        return;
+    }
+
+    try {
+
+        const response = await fetch("/api/products");
+
+        const data = await response.json();
+
+        const products = data.products || [];
+
+        select.innerHTML =
+            `<option value="">Select Product</option>` +
+            products.map(product => `
+                <option value="${escapeHtml(product.id)}">
+                    ${escapeHtml(product.id)} - ${escapeHtml(product.name)}
+                </option>`).join("");
+    }
+    catch (error) {
+
+        console.error(error);
+
+        select.innerHTML =
+            `<option value="">Could not load products</option>`;
+    }
 }
 
 // ============================================================
@@ -8009,6 +8055,11 @@ async function sellProduct() {
             "sell-quantity"
         ).value;
 
+    const comment =
+        document.getElementById(
+            "sell-comment"
+        ).value.trim();
+
 
     const message =
         document.getElementById(
@@ -8028,6 +8079,15 @@ async function sellProduct() {
 
         message.textContent =
             "Please enter a Warehouse ID.";
+
+        return;
+    }
+
+
+    if (!productID) {
+
+        message.textContent =
+            "Please select a Product.";
 
         return;
     }
@@ -8061,7 +8121,10 @@ async function sellProduct() {
             productID,
 
         quantity:
-            Number(quantity)
+            Number(quantity),
+
+        comment:
+            comment
 
     };
 
@@ -8100,6 +8163,10 @@ async function sellProduct() {
 
             document.getElementById(
                 "sell-quantity"
+            ).value = "";
+
+            document.getElementById(
+                "sell-comment"
             ).value = "";
 
         }
@@ -9095,6 +9162,10 @@ async function displayArchivedProjections() {
 
 function projectionStatusClass(status) {
 
+    if (status === "Cancelled") {
+        return "status-inactive";
+    }
+
     if (status === "Fully Ordered" ||
         status === "Completed") {
         return "status-completed";
@@ -9127,6 +9198,7 @@ function timingStatusClass(status) {
 function renderProjectionCard(projection) {
 
     const displayStatus =
+        projection.cancelled ? "Cancelled" :
         projection.completed ? "Completed" : projection.status;
 
     return `
@@ -9217,6 +9289,7 @@ async function openProjectionDetail(id) {
         const readOnly = !!projection.completed;
 
         const displayStatus =
+            projection.cancelled ? "Cancelled" :
             readOnly ? "Completed" : projection.status;
 
         let html = `
@@ -9251,8 +9324,11 @@ async function openProjectionDetail(id) {
 
                 ${readOnly ? `
                     <p>
-                        Production confirmed: ${projection.producedQuantity} units on ${escapeHtml(projection.completionDate || "-")}.
-                        BOM materials were issued from the Warehouse.
+                        ${projection.cancelled
+                            ? `Cancelled on ${escapeHtml(projection.completionDate || "-")}.
+                               Nothing was produced and no BOM materials were issued.`
+                            : `Production confirmed: ${projection.producedQuantity} units on ${escapeHtml(projection.completionDate || "-")}.
+                               BOM materials were issued from the Warehouse.`}
                     </p>
                     <div class="projection-delete-button-row">
                         <button
@@ -9279,7 +9355,7 @@ async function openProjectionDetail(id) {
                             class="button-danger"
                             onclick="deleteProjectionConfirm('${escapeHtml(projection.id)}')">
 
-                            Delete Projection
+                            Cancel Projection
 
                         </button>
                     </div>
@@ -9753,6 +9829,17 @@ function openMaterialFromList(materialID) {
 // Materials list at the same scroll position).
 async function goBackFromMaterialDetail() {
 
+    if (materialsReturnInventoryCount) {
+
+        const countID = materialsReturnInventoryCount;
+
+        openModule("inventory");
+
+        await openInventoryCount(countID, "", true);
+
+        return;
+    }
+
     if (materialsReturnToProducts) {
 
         goBackToProductsFromMaterial();
@@ -9894,6 +9981,7 @@ async function exportProjectionToExcel(id) {
             await response.json();
 
         const displayStatus =
+            projection.cancelled ? "Cancelled" :
             projection.completed ? "Completed" : projection.status;
 
         const rows = [
@@ -9977,8 +10065,9 @@ async function deleteProjectionConfirm(id) {
         );
 
     const confirmed = await showConfirmDialog(
-        `Delete Projection ${id}? This cannot be undone. ` +
-        "Procurement Orders already placed from it will not be deleted."
+        `Cancel Projection ${id}? It moves to Archived Projections as ` +
+        "Cancelled and stops counting as demand. " +
+        "Procurement Orders already placed from it will not be touched."
     );
 
     if (!confirmed) {
@@ -16301,7 +16390,7 @@ async function createInventoryCount() {
 // Count sheet
 // ------------------------------------------------------------
 
-async function openInventoryCount(id, infoMessage) {
+async function openInventoryCount(id, infoMessage, restore) {
 
     const content =
         document.getElementById("inventory-content");
@@ -16339,6 +16428,12 @@ async function openInventoryCount(id, infoMessage) {
         };
 
         renderInventoryCountSheet();
+
+        // Coming back from a material: put back what was typed but
+        // not saved yet.
+        if (restore) {
+            restoreInventoryCountUnsaved();
+        }
 
         if (infoMessage) {
             setInventoryCountMessage(infoMessage, false);
@@ -16388,6 +16483,111 @@ function inventoryCountDifferenceHtml(line) {
 // Materials of an Internal Supplier (self-made, normally not stocked)
 // are shown in another colour so they stand out in the list.
 
+// "12,5" is accepted as 12.5
+function inventoryCountParse(text) {
+
+    return String(text).trim().replace(",", ".");
+}
+
+// Material ID as a link to the Material detail; Back returns here.
+function inventoryCountMaterialLink(materialID) {
+
+    return `<a href="#" class="material-id-link"
+        title="View this Material"
+        onclick="event.preventDefault(); openMaterialFromInventoryCount('${escapeHtml(materialID)}');">
+        ${escapeHtml(materialID)}</a>`;
+}
+
+let inventoryCountUnsaved = null;
+
+function openMaterialFromInventoryCount(materialID) {
+
+    const state = inventoryCountState;
+
+    // Remember what is typed (even if not saved) before leaving
+    inventoryCountUnsaved = null;
+
+    if (state.status === "Open" && !inventoryCountIsViewer()) {
+
+        const snapshot = { id: state.id, comment: "", lines: {} };
+
+        const general = document.getElementById("inventory-count-comment");
+
+        snapshot.comment = general ? general.value : "";
+
+        state.lines.forEach((line, index) => {
+
+            const counted = document.getElementById(`cnt-counted-${index}`);
+
+            const reason = document.getElementById(`cnt-reason-${index}`);
+
+            const comment = document.getElementById(`cnt-comment-${index}`);
+
+            if (counted) {
+
+                snapshot.lines[line.materialID] = {
+                    counted: counted.value,
+                    reason: reason ? reason.value : "",
+                    comment: comment ? comment.value : ""
+                };
+            }
+        });
+
+        inventoryCountUnsaved = snapshot;
+    }
+
+    openModule("materials");
+
+    materialsReturnInventoryCount = state.id;
+
+    showMaterialDetail(materialID);
+}
+
+function restoreInventoryCountUnsaved() {
+
+    const snapshot = inventoryCountUnsaved;
+
+    inventoryCountUnsaved = null;
+
+    if (!snapshot || snapshot.id !== inventoryCountState.id ||
+        inventoryCountState.status !== "Open") {
+        return;
+    }
+
+    const general = document.getElementById("inventory-count-comment");
+
+    if (general) {
+        general.value = snapshot.comment;
+    }
+
+    inventoryCountState.lines.forEach((line, index) => {
+
+        const saved = snapshot.lines[line.materialID];
+
+        const counted = document.getElementById(`cnt-counted-${index}`);
+
+        if (!saved || !counted) {
+            return;
+        }
+
+        counted.value = saved.counted;
+
+        updateInventoryCountRow(index);
+
+        const reason = document.getElementById(`cnt-reason-${index}`);
+
+        if (reason && !reason.disabled) {
+            reason.value = saved.reason;
+        }
+
+        const comment = document.getElementById(`cnt-comment-${index}`);
+
+        if (comment) {
+            comment.value = saved.comment;
+        }
+    });
+}
+
 function inventoryCountPhotoHtml(line) {
 
     return line.photo ?
@@ -16428,14 +16628,15 @@ function renderInventoryCountSheet() {
                 <tr id="cnt-row-${index}" ${inventoryCountRowStyle(line)}>
                     <td>${inventoryCountPhotoHtml(line)}</td>
                     <td>
-                        ${escapeHtml(line.materialID)}<br>
+                        ${inventoryCountMaterialLink(line.materialID)}<br>
                         <small>${escapeHtml(line.materialName)}</small>
                     </td>
                     <td>${escapeHtml(line.uom)}</td>
                     <td>${inventoryCountFormat(system)}</td>
                     <td>
-                        <input type="number" id="cnt-counted-${index}"
-                            min="0" step="any" value="${countedText}"
+                        <input type="text" inputmode="decimal"
+                            id="cnt-counted-${index}"
+                            autocomplete="off" value="${countedText}"
                             style="width: 110px;"
                             oninput="updateInventoryCountRow(${index})">
                     </td>
@@ -16461,7 +16662,7 @@ function renderInventoryCountSheet() {
                 <tr ${inventoryCountRowStyle(line)}>
                     <td>${inventoryCountPhotoHtml(line)}</td>
                     <td>
-                        ${escapeHtml(line.materialID)}<br>
+                        ${inventoryCountMaterialLink(line.materialID)}<br>
                         <small>${escapeHtml(line.materialName)}</small>
                     </td>
                     <td>${escapeHtml(line.uom)}</td>
@@ -16621,7 +16822,8 @@ function updateInventoryCountRow(index) {
 
     const system = roundQty3(line.systemQuantity);
 
-    if (input.value.trim() === "" || !Number.isFinite(Number(input.value))) {
+    if (input.value.trim() === "" ||
+        !Number.isFinite(Number(inventoryCountParse(input.value)))) {
 
         diffCell.textContent = "-";
 
@@ -16632,7 +16834,8 @@ function updateInventoryCountRow(index) {
         return;
     }
 
-    const diff = roundQty3(Number(input.value) - system);
+    const diff =
+        roundQty3(Number(inventoryCountParse(input.value)) - system);
 
     diffCell.innerHTML =
         inventoryCountDifferenceHtml(
@@ -16691,7 +16894,7 @@ function collectInventoryCountLines() {
 
         if (line.counted) {
 
-            const quantity = Number(text);
+            const quantity = Number(inventoryCountParse(text));
 
             if (!Number.isFinite(quantity) || quantity < 0 ||
                 !hasMaxThreeDecimals(quantity)) {

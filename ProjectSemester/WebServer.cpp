@@ -4274,6 +4274,15 @@ void WebServer::run()
                     int quantity =
                         body["quantity"].i();
 
+                    // Optional note identifying this sale (customer,
+                    // order number...) - goes into the movement ledger
+                    string comment = "";
+
+                    if (body.has("comment"))
+                    {
+                        comment = body["comment"].s();
+                    }
+
 
                     // ------------------------------------------------
                     // Validate
@@ -4326,7 +4335,8 @@ void WebServer::run()
                             productManager,
                             warehouseID,
                             productID,
-                            quantity);
+                            quantity,
+                            comment);
 
 
                     if (!success)
@@ -4944,6 +4954,9 @@ void WebServer::run()
                     item["completed"] =
                         projection->isCompleted();
 
+                    item["cancelled"] =
+                        projection->isCancelled();
+
                     item["producedQuantity"] =
                         projection->getProducedQuantity();
 
@@ -5202,6 +5215,9 @@ void WebServer::run()
                 response["completed"] =
                     projection->isCompleted();
 
+                response["cancelled"] =
+                    projection->isCancelled();
+
                 response["producedQuantity"] =
                     projection->getProducedQuantity();
 
@@ -5378,7 +5394,7 @@ void WebServer::run()
                     {
                         return crow::response(
                             409,
-                            "This Projection has already been completed and archived - it cannot be deleted.");
+                            "This Projection is already archived (completed or cancelled).");
                     }
 
                     bool success =
@@ -5388,7 +5404,7 @@ void WebServer::run()
                     {
                         return crow::response(
                             400,
-                            "Could not delete this Projection.");
+                            "Could not cancel this Projection.");
                     }
 
                     crow::json::wvalue response;
@@ -5396,7 +5412,7 @@ void WebServer::run()
                     response["success"] = true;
 
                     response["message"] =
-                        "Projection deleted successfully.";
+                        "Projection cancelled and moved to Archived Projections.";
 
                     return crow::response(response);
                 }
