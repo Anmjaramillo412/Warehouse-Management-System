@@ -1815,3 +1815,29 @@ footer {
     .material-popup-link:hover {
         color: #1d4ed8;
     }
+
+/* Every hyperlink: blue letters, never underlined */
+
+#module-content a:not([class*="button"]),
+.app-modal-box a:not([class*="button"]),
+.material-id-link,
+.procurement-document-row a,
+.material-popup-link {
+    color: #1d4ed8;
+    text-decoration: none;
+}
+
+    #module-content a:not([class*="button"]):hover,
+    .app-modal-box a:not([class*="button"]):hover,
+    .material-id-link:hover,
+    .procurement-document-row a:hover,
+    .material-popup-link:hover {
+        color: #1e40af;
+        text-decoration: none;
+    }
+
+/* Greyed rows (self-manufactured BOM items) keep their grey */
+
+#module-content .product-bom-internal td a {
+    color: #9ca3af;
+}

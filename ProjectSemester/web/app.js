@@ -10144,11 +10144,8 @@ async function goBackFromMaterialDetail() {
 
 function openMaterialFromProduct(materialID) {
 
-    openModule("materials");
-
-    materialsReturnToProducts = true;
-
-    showMaterialDetail(materialID);
+    // Pop-up over the Product view; "Open full page" is inside it
+    openMaterialFromQuotation(materialID);
 }
 
 
@@ -11430,12 +11427,14 @@ function renderProcurementCard(group, cardMode = "open") {
             title="Show material information"
             onclick="event.preventDefault(); event.stopPropagation(); openMaterialFromQuotation('${escapeHtml(materialID)}');">${escapeHtml(materialID)}</a>`.trim();
 
+    // The collapsed header is plain text (no links); the material IDs
+    // inside the expanded order are the links
     const materialsLabelHtml =
         lines.length === 1
-        ? `${materialLinkHtml(lines[0].materialID)} ${escapeHtml(lines[0].materialName || "")}` +
+        ? `${escapeHtml(lines[0].materialID)} ${escapeHtml(lines[0].materialName || "")}` +
             (lines[0].supplierPartNumber ?
                 `  \u00b7  Supplier P/N: ${escapeHtml(lines[0].supplierPartNumber)}` : "")
-        : lines.map(line => materialLinkHtml(line.materialID)).join(", ");
+        : lines.map(line => escapeHtml(line.materialID)).join(", ");
 
     const warehouseID =
         lines[0].warehouseID;
@@ -11521,7 +11520,7 @@ function renderProcurementCard(group, cardMode = "open") {
     for (const line of lines) {
 
         const materialHeaderHtml =
-            lines.length > 1
+            true
             ? `
                 <div class="procurement-line-header">
                     <strong>${materialLinkHtml(line.materialID)}</strong>
