@@ -39,12 +39,12 @@ struct PurchaseInvoiceLine
     string procurementOrderID;
     string materialID;
 
-    int receiptIndex;
+    int receiptIndex = -1;
 
     // Cached from the receipt at the time this line was created, so
     // the cost calculation below does not depend on Procurement data
     // still existing/matching later.
-    double receivedQuantity;
+    double receivedQuantity = 0.0;
 
     // This line's own per-unit cost as stated on the supplier's
     // invoice, in the invoice's currency (see PurchaseInvoice) - the
@@ -52,7 +52,16 @@ struct PurchaseInvoiceLine
     // receivedQuantity, see PurchaseInvoice::getLineMaterialCost())
     // is what customs and freight get allocated against, prorated
     // across every line of the invoice (see PurchaseInvoice below).
-    double unitCost;
+    double unitCost = 0.0;
+
+    // Optional: the quotation ("QUO-######") this line was priced
+    // from, and the unit price that quotation gave for this line's
+    // quantity (price tier), in EUR, frozen when the link was made so
+    // later changes to the quotation never alter the recorded
+    // deviation. Empty / 0 = not linked to a quotation.
+    string quotationID;
+
+    double quotedUnitPriceEUR = 0.0;
 };
 
 

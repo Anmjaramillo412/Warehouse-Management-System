@@ -3,6 +3,7 @@
 #include <crow.h>
 #include "AuthManager.h"
 #include "Quantity.h"
+#include "CostEstimator.h"
 
 #include <iostream>
 #include <fstream>
@@ -39,6 +40,365 @@ static double jsonQuantity(const crow::json::rvalue& value)
     }
 
     return v;
+}
+
+// ============================================================
+// COST ESTIMATE HELPERS (see CostEstimator.h)
+// ============================================================
+
+// Optional ?quantity=N (how many Products will be produced) and
+// ?date=YYYY-MM-DD (price reconstruction on a past date)
+static void costQueryParams(
+    const crow::request& req,
+    double& quantity,
+    string& asOfDate)
+{
+    // (?basis=quantity switches the price basis, see usualBasis())
+    quantity = 1.0;
+
+    asOfDate = "";
+
+    const char* q = req.url_params.get("quantity");
+
+    if (q != nullptr && *q != '\0')
+    {
+        double value = atof(q);
+
+        if (std::isfinite(value) && value > 0.0)
+        {
+            quantity = value;
+        }
+    }
+
+    const char* d = req.url_params.get("date");
+
+    if (d != nullptr &&
+        QuotationManager::isValidDate(string(d)))
+    {
+        asOfDate = d;
+    }
+}
+
+// Product cost views price quotation-governed materials at the
+// usual purchase quantity of the quotation by default;
+// ?basis=quantity prices them at the quantity needed instead
+static bool usualBasis(const crow::request& req)
+{
+    const char* b = req.url_params.get("basis");
+
+    return !(b != nullptr && string(b) == "quantity");
+}
+
+static crow::json::wvalue estimateToJson(const MaterialCostEstimate& e)
+{
+    crow::json::wvalue j;
+
+    j["source"] = e.source;
+    j["estimated"] = e.estimated;
+    j["unitPriceEUR"] = e.unitPriceEUR;
+    j["sourceRef"] = e.sourceRef;
+    j["sourceDate"] = e.sourceDate;
+    j["supplierName"] = e.supplierName;
+    j["basePriceEUR"] = e.basePriceEUR;
+    j["importIncrementEUR"] = e.importIncrementEUR;
+    j["hasImportIncrement"] = e.hasImportIncrement;
+    j["incrementRef"] = e.incrementRef;
+    j["belowFirstTier"] = e.belowFirstTier;
+    j["belowMoq"] = e.belowMoq;
+    j["quotationExpired"] = e.quotationExpired;
+    j["tierMinQuantity"] = e.tierMinQuantity;
+    j["usedUsualTier"] = e.usedUsualTier;
+    j["usualMissing"] = e.usualMissing;
+    j["hasQuoteInfo"] = e.hasQuoteInfo;
+    j["quoteRef"] = e.quoteRef;
+    j["quoteSupplier"] = e.quoteSupplier;
+    j["quoteDate"] = e.quoteDate;
+    j["quotePriceEUR"] = e.quotePriceEUR;
+    j["quoteExpired"] = e.quoteExpired;
+    j["quoteBelowFirstTier"] = e.quoteBelowFirstTier;
+    j["quoteTierMinQuantity"] = e.quoteTierMinQuantity;
+    j["hasLastInvoice"] = e.hasLastInvoice;
+    j["lastInvoiceRef"] = e.lastInvoiceRef;
+    j["lastInvoiceDate"] = e.lastInvoiceDate;
+    j["lastInvoicePriceEUR"] = e.lastInvoicePriceEUR;
+
+    return j;
+}
+
+// IDs of the invoices whose lines were priced from this quotation
+static vector<string> quotationInvoiceIDs(
+    WarehouseSystem* warehouseSystem,
+    const string& quotationID)
+{
+    vector<string> ids;
+
+    for (const auto& invoice :
+        warehouseSystem->getPurchaseManager().getInvoices())
+    {
+        for (const auto& line : invoice->getLines())
+        {
+            if (line.quotationID == quotationID)
+            {
+                ids.push_back(invoice->getID());
+
+                break;
+            }
+        }
+    }
+
+    return ids;
+}
+
+// Checks the quotation chosen for an invoice line and freezes the
+// price its tier gives for the line's quantity (EUR). Returns ""
+// when fine (or when no quotation was chosen), else the error text.
+static string resolveLineQuotation(
+    WarehouseSystem* warehouseSystem,
+    PurchaseInvoiceLine& line)
+{
+    if (line.quotationID.empty())
+    {
+        line.quotedUnitPriceEUR = 0.0;
+
+        return "";
+    }
+
+    const Quotation* quotation =
+        warehouseSystem->getQuotationManager()
+            .findQuotation(line.quotationID);
+
+    if (quotation == nullptr)
+    {
+        return "Quotation " + line.quotationID + " not found.";
+    }
+
+    const QuotationLine* quotationLine =
+        quotation->findLine(line.materialID);
+
+    if (quotationLine == nullptr)
+    {
+        return "Quotation " + line.quotationID +
+            " has no price for material " + line.materialID + ".";
+    }
+
+    const QuotationTier& tier =
+        QuotationManager::tierFor(
+            *quotationLine,
+            line.receivedQuantity > 0.0 ?
+            line.receivedQuantity :
+            QuotationManager::referenceQuantity(*quotationLine));
+
+    line.quotedUnitPriceEUR =
+        QuotationManager::unitPriceEUR(*quotation, tier);
+
+    return "";
+}
+
+static string invoiceLineQuotationID(const crow::json::rvalue& lineJson)
+{
+    if (!lineJson.has("quotationID") ||
+        lineJson["quotationID"].t() != crow::json::type::String)
+    {
+        return "";
+    }
+
+    return string(lineJson["quotationID"].s());
+}
+
+// ============================================================
+// QUOTATION HELPERS (see QuotationManager.h)
+// ============================================================
+
+static crow::json::wvalue quotationToJson(
+    WarehouseSystem* warehouseSystem,
+    const Quotation& q)
+{
+    QuotationManager& quotationManager =
+        warehouseSystem->getQuotationManager();
+
+    crow::json::wvalue item;
+
+    item["id"] = q.id;
+
+    item["supplier"] = q.supplierName;
+
+    item["supplierQuoteNumber"] = q.supplierQuoteNumber;
+
+    item["issueDate"] = q.issueDate;
+
+    item["validUntil"] = q.validUntil;
+
+    item["currency"] = q.currency;
+
+    item["exchangeRate"] = q.exchangeRate;
+
+    item["incoterm"] = q.incoterm;
+
+    item["leadTimeWeeks"] = q.leadTimeWeeks;
+
+    item["comment"] = q.comment;
+
+    item["status"] = quotationManager.status(q);
+
+    item["hasDocument"] =
+        !q.documentPath.empty() && fs::exists(q.documentPath);
+
+    // Invoices whose lines were priced from this quotation
+    crow::json::wvalue::list invoiceList;
+
+    for (const string& invoiceID :
+        quotationInvoiceIDs(warehouseSystem, q.id))
+    {
+        invoiceList.push_back(invoiceID);
+    }
+
+    item["invoices"] = std::move(invoiceList);
+
+    crow::json::wvalue::list lineList;
+
+    for (const auto& line : q.lines)
+    {
+        crow::json::wvalue l;
+
+        l["materialID"] = line.materialID;
+
+        Material* material =
+            warehouseSystem->getMaterialManager()
+                .findMaterial(line.materialID);
+
+        l["materialName"] =
+            material != nullptr ? material->getName() : "";
+
+        l["uom"] =
+            material != nullptr ? material->getUoM() : "";
+
+        l["moq"] = line.moq;
+
+        l["usualQuantity"] = line.usualQuantity;
+
+        l["current"] =
+            quotationManager.isLineCurrent(q, line.materialID);
+
+        crow::json::wvalue::list tierList;
+
+        for (const auto& tier : line.tiers)
+        {
+            crow::json::wvalue t;
+
+            t["minQuantity"] = tier.minQuantity;
+
+            t["unitPrice"] = tier.unitPrice;
+
+            t["unitPriceEUR"] =
+                QuotationManager::unitPriceEUR(q, tier);
+
+            tierList.push_back(std::move(t));
+        }
+
+        l["tiers"] = std::move(tierList);
+
+        lineList.push_back(std::move(l));
+    }
+
+    item["lines"] = std::move(lineList);
+
+    return item;
+}
+
+static string quotationJsonString(
+    const crow::json::rvalue& body,
+    const char* key)
+{
+    if (!body.has(key) ||
+        body[key].t() != crow::json::type::String)
+    {
+        return "";
+    }
+
+    return string(body[key].s());
+}
+
+// Reads the quotation fields of a create / update request.
+// Returns "" when readable, otherwise the error text.
+static string quotationFromJson(
+    const crow::json::rvalue& body,
+    Quotation& q)
+{
+    q.supplierName = quotationJsonString(body, "supplier");
+
+    q.supplierQuoteNumber =
+        quotationJsonString(body, "supplierQuoteNumber");
+
+    q.issueDate = quotationJsonString(body, "issueDate");
+
+    q.validUntil = quotationJsonString(body, "validUntil");
+
+    q.currency = quotationJsonString(body, "currency");
+
+    if (q.currency.empty())
+    {
+        q.currency = "EUR";
+    }
+
+    q.incoterm = quotationJsonString(body, "incoterm");
+
+    q.comment = quotationJsonString(body, "comment");
+
+    q.leadTimeWeeks =
+        body.has("leadTimeWeeks") &&
+        body["leadTimeWeeks"].t() == crow::json::type::Number ?
+        (int)body["leadTimeWeeks"].d() : 0;
+
+    q.exchangeRate =
+        body.has("exchangeRate") ?
+        jsonQuantity(body["exchangeRate"]) : 1.0;
+
+    if (!body.has("lines") ||
+        body["lines"].t() != crow::json::type::List)
+    {
+        return "Add at least one material line.";
+    }
+
+    for (size_t i = 0; i < body["lines"].size(); i++)
+    {
+        const auto& l = body["lines"][i];
+
+        QuotationLine line;
+
+        line.materialID = quotationJsonString(l, "materialID");
+
+        line.moq = l.has("moq") ? jsonQuantity(l["moq"]) : 0.0;
+
+        line.usualQuantity =
+            l.has("usualQuantity") &&
+            l["usualQuantity"].t() == crow::json::type::Number ?
+            jsonQuantity(l["usualQuantity"]) : 0.0;
+
+        if (l.has("tiers") &&
+            l["tiers"].t() == crow::json::type::List)
+        {
+            for (size_t t = 0; t < l["tiers"].size(); t++)
+            {
+                const auto& tj = l["tiers"][t];
+
+                QuotationTier tier;
+
+                tier.minQuantity =
+                    tj.has("minQuantity") ?
+                    jsonQuantity(tj["minQuantity"]) : -1.0;
+
+                tier.unitPrice =
+                    tj.has("unitPrice") ?
+                    jsonQuantity(tj["unitPrice"]) : -1.0;
+
+                line.tiers.push_back(tier);
+            }
+        }
+
+        q.lines.push_back(line);
+    }
+
+    return "";
 }
 
 // Stock movements are suspended in a Warehouse while it has an open
@@ -4430,6 +4790,13 @@ void WebServer::run()
                         (supplier != nullptr) ?
                         supplier->getName() : "No Supplier";
 
+                    // The primary Supplier's own part number for this
+                    // material - what the Supplier knows it by, so it
+                    // is shown on the order lines
+                    item["supplierPartNumber"] =
+                        (material != nullptr) ?
+                        material->getSupplierPartNumber() : "";
+
 
                     item["warehouseID"] =
                         order->getWarehouseID();
@@ -7285,6 +7652,37 @@ void WebServer::run()
                             purchaseManager.getLineLandedUnitPriceEUR(
                                 invoice.get(), i);
 
+                        // Quotation this line was priced from, and how
+                        // far the invoiced price (before customs /
+                        // freight, like a quotation) is from it
+                        lineItem["quotationID"] =
+                            lines[i].quotationID;
+
+                        lineItem["quotedUnitPriceEUR"] =
+                            lines[i].quotedUnitPriceEUR;
+
+                        double invoicedUnitEUR =
+                            lines[i].unitCost *
+                            invoice->getExchangeRate();
+
+                        lineItem["invoicedUnitCostEUR"] =
+                            invoicedUnitEUR;
+
+                        bool linked =
+                            !lines[i].quotationID.empty() &&
+                            lines[i].quotedUnitPriceEUR > 0.0;
+
+                        lineItem["deviationEUR"] =
+                            linked ?
+                            invoicedUnitEUR -
+                                lines[i].quotedUnitPriceEUR : 0.0;
+
+                        lineItem["deviationPct"] =
+                            linked ?
+                            (invoicedUnitEUR -
+                                lines[i].quotedUnitPriceEUR) /
+                                lines[i].quotedUnitPriceEUR * 100.0 : 0.0;
+
                         lineList.push_back(
                             std::move(lineItem));
                     }
@@ -7424,6 +7822,17 @@ void WebServer::run()
 
                         line.unitCost =
                             lineJson["unitCost"].d();
+
+                        line.quotationID =
+                            invoiceLineQuotationID(lineJson);
+
+                        string quotationError =
+                            resolveLineQuotation(warehouseSystem, line);
+
+                        if (!quotationError.empty())
+                        {
+                            return crow::response(400, quotationError);
+                        }
 
                         lines.push_back(line);
                     }
@@ -7824,6 +8233,48 @@ void WebServer::run()
                         line.unitCost =
                             lineJson["unitCost"].d();
 
+                        line.quotationID =
+                            invoiceLineQuotationID(lineJson);
+
+                        // Same quotation as before: keep the price
+                        // frozen when the link was made
+
+                        bool keptQuote = false;
+
+                        PurchaseInvoice* existingInvoice =
+                            warehouseSystem->getPurchaseManager()
+                                .findInvoice(id);
+
+                        if (existingInvoice != nullptr &&
+                            lines.size() <
+                                existingInvoice->getLines().size())
+                        {
+                            const PurchaseInvoiceLine& before =
+                                existingInvoice->getLines()[lines.size()];
+
+                            if (!line.quotationID.empty() &&
+                                before.quotationID == line.quotationID)
+                            {
+                                line.quotedUnitPriceEUR =
+                                    before.quotedUnitPriceEUR;
+
+                                keptQuote = true;
+                            }
+                        }
+
+                        if (!keptQuote)
+                        {
+                            string quotationError =
+                                resolveLineQuotation(
+                                    warehouseSystem, line);
+
+                            if (!quotationError.empty())
+                            {
+                                return crow::response(
+                                    400, quotationError);
+                            }
+                        }
+
                         lines.push_back(line);
                     }
 
@@ -7958,8 +8409,17 @@ void WebServer::run()
     // ============================================================
 
     CROW_ROUTE(app, "/api/purchase/products/cost")
-        ([warehouseSystem]()
+        ([warehouseSystem](const crow::request& req)
             {
+                // ?quantity=N: how many Products are produced (picks
+                // the price tier of each material), ?date=: cost on a
+                // past date. See CostEstimator.h.
+                double heaterQuantity = 1.0;
+
+                string asOfDate;
+
+                costQueryParams(req, heaterQuantity, asOfDate);
+
                 crow::json::wvalue response;
 
                 crow::json::wvalue::list productList;
@@ -7978,12 +8438,24 @@ void WebServer::run()
                 for (const auto& product :
                     productManager.getProducts())
                 {
-                    ProductCostResult cost =
-                        purchaseManager.computeProductCost(
+                    EstimatedProductCost cost =
+                        computeEstimatedProductCost(
                             product->getID(),
-                            product->getBOM());
+                            product->getBOM(),
+                            heaterQuantity,
+                            asOfDate,
+                            purchaseManager,
+                            warehouseSystem->getQuotationManager(),
+                            materialManager,
+                            usualBasis(req));
 
                     crow::json::wvalue item;
+
+                    item["realCostEUR"] = cost.realCostEUR;
+
+                    item["estimatedCostEUR"] = cost.estimatedCostEUR;
+
+                    item["hasEstimates"] = cost.hasEstimates;
 
                     item["productID"] = cost.productID;
 
@@ -8003,6 +8475,9 @@ void WebServer::run()
 
                         lineItem["materialID"] = line.materialID;
                         lineItem["quantity"] = line.quantity;
+                        lineItem["totalQuantity"] = line.totalQuantity;
+                        lineItem["estimate"] =
+                            estimateToJson(line.estimate);
                         lineItem["hasPrice"] = line.hasPrice;
                         lineItem["unitPriceEUR"] = line.unitPriceEUR;
                         lineItem["lineCostEUR"] = line.lineCostEUR;
@@ -8020,6 +8495,10 @@ void WebServer::run()
                             lineMaterial->getCategory() : "Other";
 
                         lineItem["category"] = category;
+
+                        lineItem["materialName"] =
+                            lineMaterial != nullptr ?
+                            lineMaterial->getName() : "";
 
                         lineList.push_back(
                             std::move(lineItem));
@@ -8046,8 +8525,14 @@ void WebServer::run()
 
     CROW_ROUTE(app, "/api/purchase/products/<string>/cost")
         ([warehouseSystem]
-        (string productID)
+        (const crow::request& req, string productID)
             {
+                double heaterQuantity = 1.0;
+
+                string asOfDate;
+
+                costQueryParams(req, heaterQuantity, asOfDate);
+
                 PurchaseManager& purchaseManager =
                     warehouseSystem->getPurchaseManager();
 
@@ -8069,12 +8554,24 @@ void WebServer::run()
                 }
 
 
-                ProductCostResult cost =
-                    purchaseManager.computeProductCost(
+                EstimatedProductCost cost =
+                    computeEstimatedProductCost(
                         product->getID(),
-                        product->getBOM());
+                        product->getBOM(),
+                        heaterQuantity,
+                        asOfDate,
+                        purchaseManager,
+                        warehouseSystem->getQuotationManager(),
+                        materialManager,
+                        usualBasis(req));
 
                 crow::json::wvalue response;
+
+                response["realCostEUR"] = cost.realCostEUR;
+
+                response["estimatedCostEUR"] = cost.estimatedCostEUR;
+
+                response["hasEstimates"] = cost.hasEstimates;
 
                 response["productID"] = cost.productID;
 
@@ -8094,6 +8591,9 @@ void WebServer::run()
 
                     lineItem["materialID"] = line.materialID;
                     lineItem["quantity"] = line.quantity;
+                    lineItem["totalQuantity"] = line.totalQuantity;
+                    lineItem["estimate"] =
+                        estimateToJson(line.estimate);
                     lineItem["hasPrice"] = line.hasPrice;
                     lineItem["unitPriceEUR"] = line.unitPriceEUR;
                     lineItem["lineCostEUR"] = line.lineCostEUR;
@@ -8112,6 +8612,10 @@ void WebServer::run()
                         lineMaterial->getCategory() : "Other";
 
                     lineItem["category"] = category;
+
+                    lineItem["materialName"] =
+                        lineMaterial != nullptr ?
+                        lineMaterial->getName() : "";
 
                     lineList.push_back(
                         std::move(lineItem));
@@ -9389,6 +9893,751 @@ void WebServer::run()
                 return response;
             });
 
+
+    // ============================================================
+    // QUOTATIONS (supplier quotations with price tiers by quantity)
+    // ============================================================
+    // See QuotationManager.h. The newest quotation per Supplier and
+    // Material is the current one; older ones stay on file as
+    // "Replaced" and are only listed when includePast=1.
+
+    // List (filters: material, supplier, status, includePast)
+
+    CROW_ROUTE(app, "/api/quotations")
+        .methods(crow::HTTPMethod::GET)
+        ([warehouseSystem](const crow::request& req)
+            {
+                QuotationManager& quotationManager =
+                    warehouseSystem->getQuotationManager();
+
+                string material =
+                    req.url_params.get("material") ?
+                    req.url_params.get("material") : "";
+
+                string supplier =
+                    req.url_params.get("supplier") ?
+                    req.url_params.get("supplier") : "";
+
+                string status =
+                    req.url_params.get("status") ?
+                    req.url_params.get("status") : "";
+
+                bool includePast =
+                    req.url_params.get("includePast") != nullptr &&
+                    string(req.url_params.get("includePast")) == "1";
+
+                const auto& all = quotationManager.getQuotations();
+
+                // Newest first (issue date, then ID)
+
+                vector<const Quotation*> sorted;
+
+                for (const auto& q : all)
+                {
+                    sorted.push_back(q.get());
+                }
+
+                sort(sorted.begin(), sorted.end(),
+                    [](const Quotation* a, const Quotation* b)
+                    {
+                        if (a->issueDate != b->issueDate)
+                        {
+                            return a->issueDate > b->issueDate;
+                        }
+
+                        return a->id > b->id;
+                    });
+
+                crow::json::wvalue response;
+
+                crow::json::wvalue::list list;
+
+                int pastHidden = 0;
+
+                for (const Quotation* q : sorted)
+                {
+                    string qStatus = quotationManager.status(*q);
+
+                    if (!supplier.empty() && q->supplierName != supplier)
+                    {
+                        continue;
+                    }
+
+                    if (!material.empty() &&
+                        q->findLine(material) == nullptr)
+                    {
+                        continue;
+                    }
+
+                    if (!status.empty() && qStatus != status)
+                    {
+                        continue;
+                    }
+
+                    if (!includePast && qStatus == "Replaced" &&
+                        status.empty())
+                    {
+                        pastHidden++;
+
+                        continue;
+                    }
+
+                    list.push_back(
+                        quotationToJson(warehouseSystem, *q));
+                }
+
+                response["quotations"] = std::move(list);
+
+                response["pastHidden"] = pastHidden;
+
+                return response;
+            });
+
+    // One quotation
+
+    CROW_ROUTE(app, "/api/quotations/<string>")
+        .methods(crow::HTTPMethod::GET)
+        ([warehouseSystem](string id)
+            {
+                const Quotation* q =
+                    warehouseSystem->getQuotationManager()
+                        .findQuotation(id);
+
+                if (q == nullptr)
+                {
+                    return crow::response(
+                        404,
+                        "Quotation not found.");
+                }
+
+                return crow::response(
+                    quotationToJson(warehouseSystem, *q));
+            });
+
+    // Create
+
+    CROW_ROUTE(app, "/api/quotations/create")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body = crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(400, "Invalid JSON.");
+                    }
+
+                    Quotation data;
+
+                    string error =
+                        quotationFromJson(body, data);
+
+                    string newID;
+
+                    if (error.empty())
+                    {
+                        warehouseSystem->getQuotationManager()
+                            .create(data, error, &newID);
+                    }
+
+                    if (!error.empty())
+                    {
+                        return crow::response(400, error);
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["id"] = newID;
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+    // Update (everything except the ID and the PDF)
+
+    CROW_ROUTE(app, "/api/quotations/update")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body = crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(400, "Invalid JSON.");
+                    }
+
+                    string id = quotationJsonString(body, "id");
+
+                    Quotation data;
+
+                    string error =
+                        quotationFromJson(body, data);
+
+                    if (error.empty())
+                    {
+                        warehouseSystem->getQuotationManager()
+                            .update(id, data, error);
+                    }
+
+                    if (!error.empty())
+                    {
+                        return crow::response(400, error);
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+    // Delete (the PDF, if any, stays in the Documents Folder)
+
+    CROW_ROUTE(app, "/api/quotations/delete")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body = crow::json::load(req.body);
+
+                    if (!body)
+                    {
+                        return crow::response(400, "Invalid JSON.");
+                    }
+
+                    string error;
+
+                    string deleteID = quotationJsonString(body, "id");
+
+                    vector<string> linkedInvoices =
+                        quotationInvoiceIDs(warehouseSystem, deleteID);
+
+                    if (!linkedInvoices.empty())
+                    {
+                        string names;
+
+                        for (const string& invoiceID : linkedInvoices)
+                        {
+                            names += (names.empty() ? "" : ", ") + invoiceID;
+                        }
+
+                        return crow::response(
+                            400,
+                            "Quotation " + deleteID + " cannot be deleted: "
+                            "it is linked to invoice(s) " + names + ".");
+                    }
+
+                    if (!warehouseSystem->getQuotationManager()
+                        .remove(deleteID, error))
+                    {
+                        return crow::response(400, error);
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+    // Upload the quotation PDF (a new upload replaces the previous
+    // one). Saved under the Documents Folder as
+    // "QUO-000001 - quotation.pdf", like the Procurement documents.
+
+    CROW_ROUTE(app, "/api/quotations/<string>/document")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req, string id)
+            {
+                try
+                {
+                    QuotationManager& quotationManager =
+                        warehouseSystem->getQuotationManager();
+
+                    if (quotationManager.findQuotation(id) == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Quotation not found.");
+                    }
+
+                    string documentsFolder =
+                        warehouseSystem->getDataManager()
+                            .getDocumentsFolder();
+
+                    if (documentsFolder.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Set a Documents Folder first in Data "
+                            "Management Settings.");
+                    }
+
+                    auto body = crow::json::load(req.body);
+
+                    if (!body || !body.has("fileData"))
+                    {
+                        return crow::response(
+                            400,
+                            "fileData is required.");
+                    }
+
+                    string fileData = body["fileData"].s();
+
+                    size_t commaPosition = fileData.find(',');
+
+                    if (commaPosition == string::npos)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid file data.");
+                    }
+
+                    string decoded =
+                        decodeBase64(
+                            fileData.substr(commaPosition + 1));
+
+                    fs::create_directories(documentsFolder);
+
+                    fs::path filePath =
+                        fs::path(documentsFolder) /
+                        (id + " - quotation.pdf");
+
+                    ofstream outFile(filePath, ios::binary);
+
+                    if (!outFile)
+                    {
+                        return crow::response(
+                            500,
+                            "Could not write file.");
+                    }
+
+                    outFile.write(decoded.data(), decoded.size());
+
+                    outFile.close();
+
+                    quotationManager.setDocumentPath(
+                        id,
+                        filePath.string());
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+    // View the quotation PDF
+
+    CROW_ROUTE(app, "/api/quotations/<string>/document/file")
+        ([warehouseSystem](string id)
+            {
+                const Quotation* q =
+                    warehouseSystem->getQuotationManager()
+                        .findQuotation(id);
+
+                if (q == nullptr || q->documentPath.empty() ||
+                    !fs::exists(q->documentPath))
+                {
+                    return crow::response(
+                        404,
+                        "No PDF on file for this quotation.");
+                }
+
+                ifstream inFile(q->documentPath, ios::binary);
+
+                ostringstream contents;
+
+                contents << inFile.rdbuf();
+
+                crow::response res(contents.str());
+
+                res.set_header("Content-Type", "application/pdf");
+
+                return res;
+            });
+
+
+    // ============================================================
+    // PRICE INFO OF ONE MATERIAL (quotations + estimate + timeline)
+    // ============================================================
+    // ?quantity=N prices the quotation tiers for that quantity,
+    // ?date=YYYY-MM-DD reconstructs the cost on a past date,
+    // ?lite=1 skips the timeline (used by the invoice forms).
+
+    CROW_ROUTE(app, "/api/materials/<string>/price-info")
+        ([warehouseSystem](const crow::request& req, string materialID)
+            {
+                MaterialManager& materialManager =
+                    warehouseSystem->getMaterialManager();
+
+                Material* material =
+                    materialManager.findMaterial(materialID);
+
+                if (material == nullptr)
+                {
+                    return crow::response(404, "Material not found.");
+                }
+
+                double quantity = 1.0;
+
+                string asOfDate;
+
+                costQueryParams(req, quantity, asOfDate);
+
+                bool hasQuantity =
+                    req.url_params.get("quantity") != nullptr &&
+                    *req.url_params.get("quantity") != '\0';
+
+                if (!hasQuantity)
+                {
+                    quantity = 0.0;
+                }
+
+                bool lite =
+                    req.url_params.get("lite") != nullptr &&
+                    string(req.url_params.get("lite")) == "1";
+
+                PurchaseManager& purchaseManager =
+                    warehouseSystem->getPurchaseManager();
+
+                QuotationManager& quotationManager =
+                    warehouseSystem->getQuotationManager();
+
+                crow::json::wvalue response;
+
+                response["materialID"] = materialID;
+
+                response["materialName"] = material->getName();
+
+                response["uom"] = material->getUoM();
+
+                response["quantity"] = quantity;
+
+                response["asOfDate"] = asOfDate;
+
+                response["primarySupplier"] =
+                    material->getSupplier() != nullptr ?
+                    material->getSupplier()->getName() : "";
+
+                response["estimate"] =
+                    estimateToJson(
+                        CostEstimator::estimate(
+                            materialID, quantity, asOfDate,
+                            purchaseManager, quotationManager,
+                            materialManager, !hasQuantity));
+
+                // Every quotation line of the material, newest first
+
+                crow::json::wvalue::list quoteList;
+
+                for (const QuotationHit& hit :
+                    quotationManager.findAllForMaterial(materialID))
+                {
+                    const Quotation& q = *hit.quotation;
+
+                    crow::json::wvalue item;
+
+                    item["id"] = q.id;
+                    item["supplier"] = q.supplierName;
+                    item["supplierQuoteNumber"] = q.supplierQuoteNumber;
+                    item["issueDate"] = q.issueDate;
+                    item["validUntil"] = q.validUntil;
+                    item["status"] = quotationManager.status(q);
+                    item["current"] =
+                        quotationManager.isLineCurrent(q, materialID);
+                    item["currency"] = q.currency;
+                    item["exchangeRate"] = q.exchangeRate;
+                    item["leadTimeWeeks"] = q.leadTimeWeeks;
+                    item["incoterm"] = q.incoterm;
+                    item["moq"] = hit.line->moq;
+                    item["usualQuantity"] = hit.line->usualQuantity;
+                    item["hasDocument"] =
+                        !q.documentPath.empty() &&
+                        fs::exists(q.documentPath);
+                    item["primarySupplier"] =
+                        material->getSupplier() != nullptr &&
+                        material->getSupplier()->getName() ==
+                            q.supplierName;
+
+                    crow::json::wvalue::list tierList;
+
+                    for (const auto& tier : hit.line->tiers)
+                    {
+                        crow::json::wvalue t;
+
+                        t["minQuantity"] = tier.minQuantity;
+                        t["unitPrice"] = tier.unitPrice;
+                        t["unitPriceEUR"] =
+                            QuotationManager::unitPriceEUR(q, tier);
+
+                        tierList.push_back(std::move(t));
+                    }
+
+                    item["tiers"] = std::move(tierList);
+
+                    // Price of the asked quantity on this quotation
+
+                    bool below = false;
+
+                    const QuotationTier& used =
+                        QuotationManager::tierFor(
+                            *hit.line,
+                            quantity > 0.0 ? quantity :
+                            QuotationManager::referenceQuantity(
+                                *hit.line),
+                            &below);
+
+                    item["tierMinQuantity"] = used.minQuantity;
+                    item["tierPrice"] = used.unitPrice;
+                    item["tierPriceEUR"] =
+                        QuotationManager::unitPriceEUR(q, used);
+                    item["belowFirstTier"] = quantity > 0.0 && below;
+                    item["belowMoq"] =
+                        quantity > 0.0 && hit.line->moq > 0.0 &&
+                        quantity < hit.line->moq;
+
+                    quoteList.push_back(std::move(item));
+                }
+
+                response["quotations"] = std::move(quoteList);
+
+                if (lite)
+                {
+                    return crow::response(response);
+                }
+
+                // Timeline: invoices (real, landed price) and
+                // quotations (offered price) of this material together
+
+                struct TimelineRow
+                {
+                    string date;
+                    string sortKey;
+                    crow::json::wvalue json;
+                };
+
+                vector<TimelineRow> rows;
+
+                for (const auto& invoice : purchaseManager.getInvoices())
+                {
+                    const auto& lines = invoice->getLines();
+
+                    for (size_t i = 0; i < lines.size(); i++)
+                    {
+                        if (lines[i].materialID != materialID)
+                        {
+                            continue;
+                        }
+
+                        double rate = invoice->getExchangeRate();
+
+                        double importPerUnit =
+                            lines[i].receivedQuantity > 0.0 ?
+                            invoice->getLineAllocatedCost(i) /
+                            lines[i].receivedQuantity * rate : 0.0;
+
+                        double otherPerUnit =
+                            purchaseManager.getLineOtherCostAdditionEUR(
+                                invoice.get(), i);
+
+                        TimelineRow row;
+
+                        row.date = invoice->getDate();
+                        row.sortKey = invoice->getDate() + "1" +
+                            invoice->getID();
+
+                        row.json["type"] = "Invoice";
+                        row.json["date"] = invoice->getDate();
+                        row.json["ref"] = invoice->getID();
+                        row.json["supplier"] =
+                            material->getSupplier() != nullptr ?
+                            material->getSupplier()->getName() : "";
+                        row.json["quantity"] = lines[i].receivedQuantity;
+                        row.json["basePriceEUR"] =
+                            lines[i].unitCost * rate;
+                        row.json["extraPerUnitEUR"] =
+                            importPerUnit + otherPerUnit;
+                        row.json["unitPriceEUR"] =
+                            purchaseManager.getLineLandedUnitPriceEUR(
+                                invoice.get(), i);
+                        row.json["quotationID"] = lines[i].quotationID;
+                        row.json["quotedUnitPriceEUR"] =
+                            lines[i].quotedUnitPriceEUR;
+
+                        rows.push_back(std::move(row));
+                    }
+                }
+
+                for (const QuotationHit& hit :
+                    quotationManager.findAllForMaterial(materialID))
+                {
+                    const Quotation& q = *hit.quotation;
+
+                    TimelineRow row;
+
+                    row.date = q.issueDate;
+                    row.sortKey = q.issueDate + "0" + q.id;
+
+                    row.json["type"] = "Quotation";
+                    row.json["date"] = q.issueDate;
+                    row.json["ref"] = q.id;
+                    row.json["supplier"] = q.supplierName;
+                    row.json["status"] = quotationManager.status(q);
+                    row.json["current"] =
+                        quotationManager.isLineCurrent(q, materialID);
+
+                    crow::json::wvalue::list tierList;
+
+                    for (const auto& tier : hit.line->tiers)
+                    {
+                        crow::json::wvalue t;
+
+                        t["minQuantity"] = tier.minQuantity;
+                        t["unitPriceEUR"] =
+                            QuotationManager::unitPriceEUR(q, tier);
+
+                        tierList.push_back(std::move(t));
+                    }
+
+                    row.json["tiers"] = std::move(tierList);
+
+                    rows.push_back(std::move(row));
+                }
+
+                sort(rows.begin(), rows.end(),
+                    [](const TimelineRow& a, const TimelineRow& b)
+                    {
+                        return a.sortKey > b.sortKey;
+                    });
+
+                crow::json::wvalue::list timeline;
+
+                for (auto& row : rows)
+                {
+                    timeline.push_back(std::move(row.json));
+                }
+
+                response["timeline"] = std::move(timeline);
+
+                return crow::response(response);
+            });
+
+    // ============================================================
+    // PRICE ESTIMATES OF SEVERAL MATERIALS AT THEIR QUANTITIES
+    // ============================================================
+    // ?items=ID:qty;ID:qty  (&date=YYYY-MM-DD)
+
+    CROW_ROUTE(app, "/api/price-estimates")
+        ([warehouseSystem](const crow::request& req)
+            {
+                double ignoredQuantity = 1.0;
+
+                string asOfDate;
+
+                costQueryParams(req, ignoredQuantity, asOfDate);
+
+                const char* itemsParam = req.url_params.get("items");
+
+                string items = itemsParam != nullptr ? itemsParam : "";
+
+                MaterialManager& materialManager =
+                    warehouseSystem->getMaterialManager();
+
+                crow::json::wvalue::list list;
+
+                size_t start = 0;
+
+                while (start <= items.size())
+                {
+                    size_t end = items.find(';', start);
+
+                    if (end == string::npos)
+                    {
+                        end = items.size();
+                    }
+
+                    string token = items.substr(start, end - start);
+
+                    start = end + 1;
+
+                    size_t colon = token.find(':');
+
+                    if (token.empty() || colon == string::npos)
+                    {
+                        continue;
+                    }
+
+                    string materialID = token.substr(0, colon);
+
+                    double quantity = atof(token.c_str() + colon + 1);
+
+                    Material* material =
+                        materialManager.findMaterial(materialID);
+
+                    if (material == nullptr)
+                    {
+                        continue;
+                    }
+
+                    crow::json::wvalue item;
+
+                    item["materialID"] = materialID;
+
+                    item["materialName"] = material->getName();
+
+                    item["quantity"] = quantity;
+
+                    item["estimate"] =
+                        estimateToJson(
+                            CostEstimator::estimate(
+                                materialID, quantity, asOfDate,
+                                warehouseSystem->getPurchaseManager(),
+                                warehouseSystem->getQuotationManager(),
+                                materialManager));
+
+                    list.push_back(std::move(item));
+                }
+
+                crow::json::wvalue response;
+
+                response["items"] = std::move(list);
+
+                return response;
+            });
 
     // ============================================================
     // START SERVER

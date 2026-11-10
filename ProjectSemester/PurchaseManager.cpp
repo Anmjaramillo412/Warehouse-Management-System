@@ -980,7 +980,9 @@ bool PurchaseManager::setDefaultExchangeRate(double rate)
 //   lines|otherCosts
 //
 // lines: each as "procurementOrderID,materialID,receiptIndex,
-//   receivedQuantity,unitCost", several joined by "~"
+//   receivedQuantity,unitCost,quotationID,quotedUnitPriceEUR", several
+//   joined by "~" (the last two are empty / 0 when not linked to a
+//   quotation; older files have only the first five)
 //
 // otherCosts: each as "supplierName,amountEUR,supplierWide,comment",
 //   several joined by "~" - supplierWide is "1"/"0". Field is simply
@@ -1015,7 +1017,9 @@ bool PurchaseManager::save()
                 lines[i].materialID + "," +
                 to_string(lines[i].receiptIndex) + "," +
                 formatQty(lines[i].receivedQuantity) + "," +
-                to_string(lines[i].unitCost);
+                to_string(lines[i].unitCost) + "," +
+                lines[i].quotationID + "," +
+                to_string(lines[i].quotedUnitPriceEUR);
         }
 
         string otherCostsField = "";
@@ -1140,6 +1144,15 @@ bool PurchaseManager::load()
                 invoiceLine.receiptIndex = atoi(lineFields[2].c_str());
                 invoiceLine.receivedQuantity = parseQty(lineFields[3]);
                 invoiceLine.unitCost = atof(lineFields[4].c_str());
+
+                // Optional quotation link (files saved before it
+                // existed simply have 5 fields)
+                if (lineFields.size() >= 7)
+                {
+                    invoiceLine.quotationID = lineFields[5];
+                    invoiceLine.quotedUnitPriceEUR =
+                        atof(lineFields[6].c_str());
+                }
 
                 invoice->addLine(invoiceLine);
             }
