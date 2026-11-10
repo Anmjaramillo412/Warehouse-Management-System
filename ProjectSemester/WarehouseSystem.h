@@ -11,6 +11,7 @@
 #include "ProjectionManager.h"
 #include "PurchaseManager.h"
 #include "InventoryCountManager.h"
+#include "QuotationManager.h"
 
 class WarehouseSystem
 {
@@ -47,6 +48,10 @@ private:
     // materialManager, inventoryManager and movementLogger above.
     InventoryCountManager inventoryCountManager;
 
+    // Declared last too: it takes pointers to materialManager,
+    // supplierManager and movementLogger above.
+    QuotationManager quotationManager;
+
 public:
 
     WarehouseSystem();
@@ -72,6 +77,8 @@ public:
     PurchaseManager& getPurchaseManager();
 
     InventoryCountManager& getInventoryCountManager();
+
+    QuotationManager& getQuotationManager();
 
     void setLogDataOperations(
         bool enabled);

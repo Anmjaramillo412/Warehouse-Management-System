@@ -157,9 +157,22 @@ function openModule(module) {
                     Settings
                 </button>
 
+                <div style="flex-basis: 100%; height: 0; margin-top: -15px;"></div>
+
+                <button onclick="showPurchaseProductCost()">
+                    Product Cost
+                </button>
+
+                <button onclick="showPurchaseCostByCategory()">
+                    Cost by Category
+                </button>
+
             </div>
 
             <div id="product-content">
+            </div>
+
+            <div id="purchase-content">
             </div>
 
         `;
@@ -351,21 +364,35 @@ function openModule(module) {
     // PURCHASE
     // ========================================================
 
-    else if (module === "purchase") {
+    // ========================================================
+    // QUOTATIONS
+    // ========================================================
+
+    else if (module === "prices") {
 
         content.innerHTML = `
 
             <h1>
-                Purchase
+                Pricing
             </h1>
 
             <p>
-                Price received deliveries using landed cost (material
-                cost plus customs and freight), track material price
-                history, and see current Product cost.
+                Supplier quotations with price tiers by quantity, pricing
+                of received deliveries (landed cost: material cost plus
+                customs and freight), invoices and material price
+                history. Product Cost and Cost by Category are in the
+                Product Manager.
             </p>
 
             <div class="module-buttons">
+
+                <button class="button-accent" onclick="showNewQuotation()">
+                    New Quotation
+                </button>
+
+                <button onclick="showQuotations()">
+                    Quotations
+                </button>
 
                 <button class="button-accent" onclick="showPurchasePending()">
                     Pending Pricing
@@ -381,14 +408,6 @@ function openModule(module) {
 
                 <button onclick="showPurchaseHistory()">
                     Material Price History
-                </button>
-
-                <button onclick="showPurchaseProductCost()">
-                    Product Cost
-                </button>
-
-                <button onclick="showPurchaseCostByCategory()">
-                    Cost by Category
                 </button>
 
                 <button class="button-muted" onclick="showPurchaseSettings()">
@@ -1792,6 +1811,11 @@ function showCreateMaterial() {
 
             <div id="material-supplier-fields-group">
 
+                <!-- Kept (hidden) for the rest of the code: the
+                     supplier marked "Primary" in the list below is
+                     copied into these fields on save. -->
+                <div style="display: none;">
+
                 <label>
                     Primary Supplier
                 </label>
@@ -1816,36 +1840,31 @@ function showCreateMaterial() {
 
                 </div>
 
-                <small>
-                    No supplier listed?
-                    <a href="#" onclick="openModule('suppliers'); return false;">
-                        Create one first.
-                    </a>
-                </small>
-
-
                 <div id="material-supplier-pn-group">
-
-                    <label>
-                        Primary Supplier Part Number
-                    </label>
 
                     <input
                         type="text"
                         id="material-supplier-pn"
-                        placeholder="Enter Supplier Part Number"
                     >
+
+                </div>
 
                 </div>
 
 
                 <label>
-                    Additional Suppliers (optional)
+                    Suppliers
                 </label>
 
                 <small>
-                    This Material can also be purchased from other
-                    suppliers besides the primary one above.
+                    Add every supplier this Material can be purchased
+                    from and tick <strong>Primary</strong> on the main
+                    one. To change the primary supplier later, just
+                    tick another row.
+                    No supplier listed?
+                    <a href="#" onclick="openModule('suppliers'); return false;">
+                        Create one first.
+                    </a>
                 </small>
 
                 <div id="material-addsup-lines">
@@ -1906,6 +1925,9 @@ function showCreateMaterial() {
     initSupplierCombobox("material");
 
     additionalSupplierCounters["material"] = 0;
+
+    // First row of the supplier list (marked Primary)
+    addAdditionalSupplierRow("material", "", "", true);
 }
 
 // ============================================================
@@ -2344,9 +2366,21 @@ function additionalSupplierRowHtml(
                 value="${escapeHtml(partNumber || "")}"
             >
 
+            <label class="checkbox-label" style="margin: 8px 0 !important;" title="Main supplier of this Material">
+
+                <input
+                    type="radio"
+                    name="${formPrefix}-primary-supplier"
+                    id="${rowPrefix}-primary"
+                >
+
+                Primary
+
+            </label>
+
             <button
                 type="button"
-                onclick="document.getElementById('${rowPrefix}-row').remove()">
+                onclick="removeSupplierRow('${formPrefix}', '${rowPrefix}')">
 
                 Remove
 
@@ -2359,7 +2393,8 @@ function additionalSupplierRowHtml(
 function addAdditionalSupplierRow(
     formPrefix,
     selectedName,
-    partNumber) {
+    partNumber,
+    isPrimary) {
 
     const container =
         document.getElementById(
@@ -2397,6 +2432,20 @@ function addAdditionalSupplierRow(
         selectedName
     );
 
+    // Exactly one row is always the primary one: the requested one,
+    // or the first row if none is marked yet
+    const radios = document.querySelectorAll(
+        `input[name="${formPrefix}-primary-supplier"]`);
+
+    const newRadio =
+        document.getElementById(`${formPrefix}-addsup-${rowIndex}-primary`);
+
+    if (newRadio && (isPrimary ||
+        ![...radios].some(radio => radio.checked))) {
+
+        newRadio.checked = true;
+    }
+
     // A custom-made Material (Design Part / PCB) has no commercial
     // part number at all - if that's the current Material Type,
     // hide this new row's Supplier Part Number input too, same as
@@ -2427,7 +2476,97 @@ function addAdditionalSupplierRow(
 // to send to the backend. Rows left empty (never given a Supplier)
 // are skipped rather than sent as blank entries.
 
+// Removing the row marked Primary hands the mark to the first
+// remaining row.
+function removeSupplierRow(formPrefix, rowPrefix) {
+
+    const row = document.getElementById(`${rowPrefix}-row`);
+
+    if (!row) {
+        return;
+    }
+
+    row.remove();
+
+    const radios = [...document.querySelectorAll(
+        `input[name="${formPrefix}-primary-supplier"]`)];
+
+    if (radios.length > 0 && !radios.some(radio => radio.checked)) {
+
+        radios[0].checked = true;
+    }
+}
+
+// Copies the supplier marked Primary in the list into the (hidden)
+// primary-supplier fields the rest of the form reads, and flags that
+// row so collectAdditionalSuppliers() leaves it out. A marked row
+// with no supplier chosen falls back to the first row that has one.
+function syncSupplierList(formPrefix) {
+
+    const rows = [...document.querySelectorAll(
+        `[id^="${formPrefix}-addsup-"][id$="-row"]`)];
+
+    const supplierOf = row => {
+
+        const hidden = row.querySelector(
+            'input[type="hidden"][id$="-supplier"]');
+
+        return hidden ? hidden.value.trim() : "";
+    };
+
+    let primary = rows.find(row => {
+
+        const radio = row.querySelector('input[type="radio"]');
+
+        return radio && radio.checked && supplierOf(row);
+    });
+
+    if (!primary) {
+
+        primary = rows.find(row => supplierOf(row));
+    }
+
+    rows.forEach(row => delete row.dataset.isPrimary);
+
+    const hiddenSupplier =
+        document.getElementById(`${formPrefix}-supplier`);
+
+    const searchSupplier =
+        document.getElementById(`${formPrefix}-supplier-search`);
+
+    const primaryPn =
+        document.getElementById(`${formPrefix}-supplier-pn`);
+
+    if (!primary) {
+
+        if (hiddenSupplier) hiddenSupplier.value = "";
+
+        if (searchSupplier) searchSupplier.value = "";
+
+        if (primaryPn) primaryPn.value = "";
+
+        return;
+    }
+
+    primary.dataset.isPrimary = "1";
+
+    const pnInput = primary.querySelector('input[id$="-pn"]');
+
+    const searchInput = primary.querySelector(
+        'input[type="text"][id$="-supplier-search"]');
+
+    if (hiddenSupplier) hiddenSupplier.value = supplierOf(primary);
+
+    if (searchSupplier) {
+        searchSupplier.value = searchInput ? searchInput.value : "";
+    }
+
+    if (primaryPn) primaryPn.value = pnInput ? pnInput.value.trim() : "";
+}
+
 function collectAdditionalSuppliers(formPrefix) {
+
+    syncSupplierList(formPrefix);
 
     const rows =
         document.querySelectorAll(
@@ -2437,6 +2576,11 @@ function collectAdditionalSuppliers(formPrefix) {
     const result = [];
 
     for (const row of rows) {
+
+        // The supplier marked Primary is sent as the primary one
+        if (row.dataset.isPrimary === "1") {
+            continue;
+        }
 
         const hiddenInput =
             row.querySelector(
@@ -2828,6 +2972,8 @@ function materialComboboxHtml(prefix, placeholder) {
 
 async function createMaterial() {
 
+    syncSupplierList("material");
+
     const id =
         document.getElementById(
             "material-id"
@@ -3127,6 +3273,13 @@ async function createMaterial() {
             document.getElementById(
                 "material-supplier-pn"
             ).value = "";
+
+            // Supplier list back to one empty (primary) row
+            document.getElementById("material-addsup-lines").innerHTML = "";
+
+            additionalSupplierCounters["material"] = 0;
+
+            addAdditionalSupplierRow("material", "", "", true);
 
             document.getElementById(
                 "material-photo"
@@ -3594,10 +3747,14 @@ async function showMaterialDetail(id) {
 
                 <div id="material-movements"></div>
 
+                <div id="material-price-info"></div>
+
             </div>
         `;
 
         loadMaterialMovements(data.id);
+
+        loadMaterialPriceInfo(data.id);
     }
     catch (error) {
 
@@ -4424,6 +4581,11 @@ async function loadMaterialForModify() {
 
                 <div id="modify-supplier-fields-group">
 
+                    <!-- Kept (hidden) for the rest of the code: the
+                         supplier marked "Primary" in the list below is
+                         copied into these fields on save. -->
+                    <div style="display: none;">
+
                     <label>
                         Primary Supplier
                     </label>
@@ -4468,13 +4630,17 @@ async function loadMaterialForModify() {
 
                     </div>
 
+                    </div>
+
                     <label>
-                        Additional Suppliers (optional)
+                        Suppliers
                     </label>
 
                     <small>
-                        This Material can also be purchased from other
-                        suppliers besides the primary one above.
+                        Add every supplier this Material can be purchased
+                        from and tick <strong>Primary</strong> on the main
+                        one. To change the primary supplier later, just
+                        tick another row.
                     </small>
 
                     <div id="modify-addsup-lines">
@@ -4544,6 +4710,18 @@ async function loadMaterialForModify() {
 
         additionalSupplierCounters["modify"] = 0;
 
+        // The list starts with the current primary supplier (marked),
+        // followed by the additional ones
+        if (data.supplier) {
+
+            addAdditionalSupplierRow(
+                "modify",
+                data.supplier,
+                data.supplierPartNumber,
+                true
+            );
+        }
+
         for (const link of (data.additionalSuppliers || [])) {
 
             addAdditionalSupplierRow(
@@ -4551,6 +4729,14 @@ async function loadMaterialForModify() {
                 link.supplier,
                 link.supplierPartNumber
             );
+        }
+
+        // Nothing to list yet: one empty row, so the form still shows
+        // the supplier list
+        if (!data.supplier &&
+            (data.additionalSuppliers || []).length === 0) {
+
+            addAdditionalSupplierRow("modify", "", "", true);
         }
     }
     catch (error) {
@@ -4696,6 +4882,8 @@ function showConfirmDialog(message) {
 // ============================================================
 
 async function modifyMaterial() {
+
+    syncSupplierList("modify");
 
     const id =
         document.getElementById(
@@ -9377,6 +9565,7 @@ async function openProjectionDetail(id) {
                             <th title="This Product's Main Warehouse - current stock, right now">Stock</th>
                             <th title="How much of this material THIS Projection needs">Required</th>
                             <th title="Shared total: what every open Projection in this Warehouse still needs for this material, minus current stock">Qty to Order</th>
+                            <th title="Unit price and total for the Qty to Order: the last invoice, or the quotation price tier for that quantity (estimate)">Price at Qty to Order</th>
                             <th title="Still-outstanding Procurement Order quantity for this material in this Warehouse - informational, not subtracted from Qty to Order">Ordered</th>
                             <th>Order By</th>
                             <th>Status</th>
@@ -9422,7 +9611,7 @@ async function openProjectionDetail(id) {
 
                 html += `
                     <tr class="projection-supplier-group-row">
-                        <td colspan="12">
+                        <td colspan="13">
                             ${escapeHtml(supplierGroup || "No Supplier")}
                         </td>
                     </tr>
@@ -9510,6 +9699,7 @@ async function openProjectionDetail(id) {
                     <td>${item.currentStock}</td>
                     <td>${item.requiredQuantity}</td>
                     <td>${pendingCell}</td>
+                    <td id="${rowID}-price"><small>-</small></td>
                     <td>${orderedCell}</td>
                     <td>${escapeHtml(item.orderByDate || "-")}</td>
 
@@ -9636,6 +9826,8 @@ async function openProjectionDetail(id) {
         `;
 
         content.innerHTML = html;
+
+        fillProjectionPrices(projection, readOnly);
     }
     catch (error) {
 
@@ -9644,6 +9836,84 @@ async function openProjectionDetail(id) {
         content.innerHTML = `
             <p>Could not connect to the server.</p>
         `;
+    }
+}
+
+// Price of each material at its Qty to Order (last invoice, or the
+// quotation price tier for that quantity as an estimate).
+async function fillProjectionPrices(projection, readOnly) {
+
+    if (readOnly) {
+        return;
+    }
+
+    const items = (projection.items || []).filter(
+        item => item.pendingQuantity > 0 && !item.orderRegistered);
+
+    if (items.length === 0) {
+        return;
+    }
+
+    try {
+
+        const query = items.map(
+            item => `${item.materialID}:${item.pendingQuantity}`).join(";");
+
+        const response = await fetch(
+            `/api/price-estimates?items=${encodeURIComponent(query)}`);
+
+        if (!response.ok) {
+            return;
+        }
+
+        const data = await response.json();
+
+        let grandTotal = 0;
+
+        for (const entry of (data.items || [])) {
+
+            const cell = document.getElementById(
+                `projdet-${entry.materialID}-price`);
+
+            if (!cell) {
+                continue;
+            }
+
+            const est = entry.estimate;
+
+            if (est.source === "None") {
+
+                cell.innerHTML = `<small>No price yet</small>`;
+
+                continue;
+            }
+
+            const total = est.unitPriceEUR * entry.quantity;
+
+            grandTotal += total;
+
+            cell.innerHTML =
+                renderCostSourceHtml(est, entry.quantity) +
+                `<br><strong>Total ${formatMoney(total)} EUR` +
+                `${est.estimated ? " (est.)" : ""}</strong>` +
+                `<br><small><a href="#" onclick="event.preventDefault(); ` +
+                `openMaterialFromProjection('${escapeHtml(entry.materialID)}', ` +
+                `'${escapeHtml(projection.id)}');">price tiers</a></small>`;
+        }
+
+        const message = document.getElementById("projection-detail-message");
+
+        if (message && grandTotal > 0 && !message.textContent.trim()) {
+
+            message.innerHTML =
+                `<p><small>Estimated purchase value of the Qty to Order ` +
+                `(priced materials only): <strong>${formatMoney(grandTotal)} EUR` +
+                `</strong></small></p>`;
+        }
+    }
+    catch (error) {
+
+        console.error(error);
     }
 }
 
@@ -9805,11 +10075,9 @@ async function confirmProduction(id) {
 
 function openMaterialFromProjection(materialID, projectionID) {
 
-    openModule("materials");
-
-    materialsReturnProjectionID = projectionID;
-
-    showMaterialDetail(materialID);
+    // Pop-up over the Projection (nothing is left, nothing to return
+    // to); the pop-up has its own "Open full page" button
+    openMaterialFromQuotation(materialID);
 }
 
 
@@ -11156,10 +11424,18 @@ function renderProcurementCard(group, cardMode = "open") {
     const totalReceived =
         roundQty3(lines.reduce((sum, line) => sum + line.totalReceivedQuantity, 0));
 
-    const materialsLabel =
+    // Material IDs open the material pop-up (without toggling the card)
+    const materialLinkHtml = materialID => `
+        <a href="#" class="material-popup-link"
+            title="Show material information"
+            onclick="event.preventDefault(); event.stopPropagation(); openMaterialFromQuotation('${escapeHtml(materialID)}');">${escapeHtml(materialID)}</a>`.trim();
+
+    const materialsLabelHtml =
         lines.length === 1
-        ? `${lines[0].materialID} ${lines[0].materialName || ""}`
-        : lines.map(line => line.materialID).join(", ");
+        ? `${materialLinkHtml(lines[0].materialID)} ${escapeHtml(lines[0].materialName || "")}` +
+            (lines[0].supplierPartNumber ?
+                `  \u00b7  Supplier P/N: ${escapeHtml(lines[0].supplierPartNumber)}` : "")
+        : lines.map(line => materialLinkHtml(line.materialID)).join(", ");
 
     const warehouseID =
         lines[0].warehouseID;
@@ -11248,8 +11524,13 @@ function renderProcurementCard(group, cardMode = "open") {
             lines.length > 1
             ? `
                 <div class="procurement-line-header">
-                    <strong>${escapeHtml(line.materialID)}</strong>
+                    <strong>${materialLinkHtml(line.materialID)}</strong>
                     ${escapeHtml(line.materialName || "")}
+                    ${line.supplierPartNumber ?
+                        `<span class="procurement-supplier-pn">
+                            &nbsp;&middot;&nbsp; Supplier P/N:
+                            <strong>${escapeHtml(line.supplierPartNumber)}</strong>
+                        </span>` : ""}
                 </div>
             `
             : "";
@@ -11606,7 +11887,7 @@ function renderProcurementCard(group, cardMode = "open") {
                 </span>
 
                 <span class="procurement-summary-material">
-                    ${escapeHtml(materialsLabel)}
+                    ${materialsLabelHtml}
                 </span>
 
                 <span class="procurement-summary-qty">
@@ -12556,6 +12837,18 @@ function renderPurchasePendingForm(pending) {
                     >
                 </td>
 
+                <td>
+                    <select
+                        id="purchpending-${i}-quote"
+                        class="purchase-quote-select"
+                        style="max-width: 280px;"
+                        onchange="applyPendingQuote(${i})"
+                        disabled
+                    >
+                        <option value="">- none -</option>
+                    </select>
+                </td>
+
             </tr>
         `;
     }
@@ -12694,6 +12987,7 @@ function renderPurchasePendingForm(pending) {
                         <th>Received Qty</th>
                         <th>Previous Price (EUR)</th>
                         <th>Unit Cost</th>
+                        <th>Quotation (optional)</th>
                     </tr>
                 </thead>
 
@@ -12758,6 +13052,28 @@ function togglePurchasePendingRow(index) {
 
     if (!checkbox.checked) {
         costInput.value = "";
+    }
+
+    // Quotation to price from (optional)
+    const quoteSelect =
+        document.getElementById(`purchpending-${index}-quote`);
+
+    if (quoteSelect) {
+
+        quoteSelect.disabled = !checkbox.checked;
+
+        if (!checkbox.checked) {
+
+            quoteSelect.value = "";
+        }
+        else if (!quoteSelect.dataset.loaded) {
+
+            const receipt = purchasePendingCache[index];
+
+            loadQuoteOptions(
+                quoteSelect.id, receipt.materialID,
+                receipt.receivedQuantity, "");
+        }
     }
 
     // Any Other Cost row's "Quantity (this invoice)" hint depends on
@@ -12873,7 +13189,10 @@ async function submitPurchaseInvoice() {
             materialID: pending[i].materialID,
             receiptIndex: pending[i].receiptIndex,
             receivedQuantity: pending[i].receivedQuantity,
-            unitCost: unitCost
+            unitCost: unitCost,
+            quotationID:
+                (document.getElementById(`purchpending-${i}-quote`) || {})
+                    .value || ""
         });
     }
 
@@ -13925,8 +14244,23 @@ function renderPurchaseInvoiceCard(invoice, editing, previousPrices) {
                                 id="purchinv-${escapedID}-line-${i}-cost"
                                 class="purchase-cost-input"
                                 value="${line.unitCost}"
-                           >`
-                        : formatMoney(line.unitCost)}
+                           >
+                           ${isManual ? "" : `
+                           <br>
+                           <select
+                                id="purchinv-${escapedID}-line-${i}-quote"
+                                class="purchase-quote-select"
+                                style="max-width: 240px; margin-top: 4px;"
+                                onchange="applyInvoiceQuote('${escapedID}', ${i})"
+                           >
+                                <option value="${escapeHtml(line.quotationID || "")}">
+                                    ${line.quotationID ?
+                                        escapeHtml(line.quotationID) :
+                                        "- no quotation -"}
+                                </option>
+                           </select>`}`
+                        : formatMoney(line.unitCost) +
+                            purchaseInvoiceQuoteNote(line, invoice.currency)}
                 </td>
                 <td>${formatMoney(line.materialCost)}</td>
                 <td>${formatMoney(line.allocatedCost)}</td>
@@ -14245,6 +14579,17 @@ async function toggleEditPurchaseInvoice(id) {
 
     stillThere.replaceWith(wrapper.firstElementChild);
 
+    invoice.lines.forEach((line, lineIndex) => {
+
+        if (line.procurementOrderID !== "MANUAL") {
+
+            loadQuoteOptions(
+                `purchinv-${id}-line-${lineIndex}-quote`,
+                line.materialID, line.receivedQuantity,
+                line.quotationID || "");
+        }
+    });
+
     otherCostRowCounters[`invedit-${id}`] = 0;
 
     for (const otherCost of (invoice.otherCosts || [])) {
@@ -14377,7 +14722,10 @@ async function savePurchaseInvoiceEdit(id) {
             materialID: invoice.lines[i].materialID,
             receiptIndex: invoice.lines[i].receiptIndex,
             receivedQuantity: invoice.lines[i].receivedQuantity,
-            unitCost: unitCost
+            unitCost: unitCost,
+            quotationID:
+                (document.getElementById(`purchinv-${id}-line-${i}-quote`) ||
+                    { value: invoice.lines[i].quotationID || "" }).value
         });
     }
 
@@ -14665,6 +15013,22 @@ async function loadPurchaseHistory() {
 // PRODUCT COST
 // ============================================================
 
+// Product Cost with estimates from quotations. "Heaters" is how many
+// Products will be produced: each material is priced for its BOM
+// quantity times that number (so the right quotation price tier
+// applies); the cost shown stays per ONE Product. "As of" rebuilds
+// the cost on a past date from the records dated on or before it
+// (the Bill of Materials is always the current one).
+
+let productCostQuantity = 1;
+
+let productCostDate = "";
+
+// "usual" = quotation-governed materials are priced at the usual
+// purchase quantity marked on the quotation; "quantity" = at the
+// quantity needed (BOM x heaters)
+let productCostBasis = "usual";
+
 async function showPurchaseProductCost() {
 
     const content =
@@ -14673,13 +15037,129 @@ async function showPurchaseProductCost() {
         );
 
     content.innerHTML = `
+
+        <div class="form-container form-container-wide"
+            style="max-width: 900px;">
+
+            <h2>Product Cost</h2>
+
+            <p>
+                Real prices come from invoices; when a quotation is
+                newer than the last invoice (or there is no invoice),
+                its price tier for the quantity is used and marked as
+                an estimate.
+            </p>
+
+            <div class="form-actions" style="gap: 12px; flex-wrap: wrap; align-items: end;">
+
+                <div>
+                    <label>Heaters to produce</label>
+                    <input type="number" id="pcost-qty" min="1" step="any"
+                        style="width: 140px;"
+                        value="${productCostQuantity}">
+                </div>
+
+                <div>
+                    <label>Cost as of (optional)</label>
+                    <input type="date" id="pcost-date"
+                        value="${escapeHtml(productCostDate)}">
+                </div>
+
+                <div>
+                    <label>Price basis (quotations)</label>
+                    <select id="pcost-basis">
+                        <option value="usual"
+                            ${productCostBasis === "usual" ? "selected" : ""}>
+                            Usual purchase quantity (marked on quotation)
+                        </option>
+                        <option value="quantity"
+                            ${productCostBasis === "quantity" ? "selected" : ""}>
+                            Quantity needed (BOM x heaters)
+                        </option>
+                    </select>
+                </div>
+
+                <button onclick="applyProductCostControls()">
+                    Calculate
+                </button>
+
+                <button class="button-muted" onclick="resetProductCostControls()">
+                    Today
+                </button>
+
+            </div>
+
+            <div id="pcost-note"></div>
+
+        </div>
+
+        <div id="pcost-results"></div>
+    `;
+
+    await loadPurchaseProductCostResults();
+}
+
+function applyProductCostControls() {
+
+    const qty = Number(document.getElementById("pcost-qty").value);
+
+    productCostQuantity = qty > 0 ? qty : 1;
+
+    productCostDate = document.getElementById("pcost-date").value || "";
+
+    productCostBasis = document.getElementById("pcost-basis").value;
+
+    loadPurchaseProductCostResults();
+}
+
+function resetProductCostControls() {
+
+    productCostQuantity = 1;
+
+    productCostDate = "";
+
+    productCostBasis = "usual";
+
+    document.getElementById("pcost-basis").value = "usual";
+
+    document.getElementById("pcost-qty").value = 1;
+
+    document.getElementById("pcost-date").value = "";
+
+    loadPurchaseProductCostResults();
+}
+
+async function loadPurchaseProductCostResults() {
+
+    const content =
+        document.getElementById(
+            "pcost-results"
+        );
+
+    const note = document.getElementById("pcost-note");
+
+    if (note) {
+
+        note.innerHTML = productCostDate ? `
+            <p><small>
+                Cost as of ${escapeHtml(productCostDate)}: each material
+                uses the latest invoice or quotation dated on or before
+                that day. The Bill of Materials is the current one (its
+                changes are not kept in history).
+            </small></p>` : "";
+    }
+
+    content.innerHTML = `
         <p>Loading Product Cost...</p>
     `;
 
     try {
 
         const response =
-            await fetch("/api/purchase/products/cost");
+            await fetch(
+                `/api/purchase/products/cost?quantity=${encodeURIComponent(productCostQuantity)}` +
+                (productCostDate ? `&date=${encodeURIComponent(productCostDate)}` : "") +
+                `&basis=${productCostBasis}`);
 
         if (!response.ok) {
 
@@ -14731,14 +15211,26 @@ function renderPurchaseProductCostCard(product) {
 
         lineRows += `
             <tr>
-                <td>${escapeHtml(line.materialID)}</td>
-                <td>${line.quantity}</td>
                 <td>
-                    ${line.hasPrice
-                        ? formatMoney(line.unitPriceEUR)
-                        : "No price yet"}
+                    <a href="#"
+                        onclick="openMaterialFromQuotation('${escapeHtml(line.materialID)}'); return false;">
+                        ${escapeHtml(line.materialID)}</a>
+                    ${line.materialName ?
+                        "&mdash; " + escapeHtml(line.materialName) : ""}
                 </td>
-                <td>${formatMoney(line.lineCostEUR)}</td>
+                <td>
+                    ${line.quantity}
+                    ${line.totalQuantity !== line.quantity ?
+                        `<br><small>priced for ${line.totalQuantity}</small>` : ""}
+                </td>
+                <td>
+                    ${renderCostSourceHtml(line.estimate, line.totalQuantity)}
+                </td>
+                <td>
+                    ${formatMoney(line.lineCostEUR)}
+                    ${line.estimate && line.estimate.estimated ?
+                        `<br><small style="color:#b45309;">estimated</small>` : ""}
+                </td>
             </tr>
         `;
     }
@@ -14760,6 +15252,13 @@ function renderPurchaseProductCostCard(product) {
             <p>
                 Total Cost:
                 <strong>${formatMoney(product.totalCostEUR)} EUR</strong>
+                ${product.hasEstimates ?
+                    `<br><small>
+                        Real (invoices): ${formatMoney(product.realCostEUR)} EUR
+                        &nbsp;|&nbsp;
+                        <span style="color:#b45309;">Estimated (quotations):
+                        ${formatMoney(product.estimatedCostEUR)} EUR</span>
+                    </small>` : ""}
                 ${!product.complete
                     ? `<br><small>Partial - at least one BOM material
                         has no price history yet.</small>`
@@ -14943,6 +15442,11 @@ function renderPurchaseCostByCategory(product) {
                 ${product.complete ? "Complete" : "Incomplete"}
             </span>
         </h3>
+
+        ${product.hasEstimates
+            ? `<p><small>Includes prices estimated from quotations
+                (${formatMoney(product.estimatedCostEUR)} EUR of the total).</small></p>`
+            : ""}
 
         ${!product.complete
             ? `<p><small>Partial - at least one BOM material has no
@@ -15548,7 +16052,8 @@ const EDIT_ACTION_PATTERN = new RegExp(
         "showNewProcurementOrder", "showNewProjection",
         "showSellProduct", "showPurchaseAdjust",
         "showProductSettings", "showPurchaseSettings",
-        "showNewInventoryCount", "apply\\w*"
+        "showNewInventoryCount", "apply\\w*",
+        "showNewQuotation", "showEditQuotation"
     ].join("|") + ")\\b"
 );
 
@@ -15560,7 +16065,7 @@ const ADMIN_ACTION_PATTERN =
 // Inputs whose change saves something (settings switches, uploads).
 
 const EDIT_CHANGE_PATTERN =
-    /^(toggleAutoSaveAndLoad|setDataLogging|uploadProcurementDocument)\b/;
+    /^(toggleAutoSaveAndLoad|setDataLogging|uploadProcurementDocument|uploadQuotationDocument)\b/;
 
 const ADMIN_CHANGE_PATTERN =
     /^(toggleAutoSaveAndLoad|setDataLogging)\b/;
@@ -17500,4 +18005,1629 @@ function exportProductSales() {
     }
 
     downloadCSV("product_sales.csv", rows);
+}
+
+
+// ============================================================
+// QUOTATIONS (supplier quotations with price tiers by quantity)
+// ============================================================
+// The newest quotation per Supplier and Material is the current
+// one; older ones stay on file as "Replaced" (with their PDF) and
+// are shown with the "Replaced (past)" / "All" views. A quotation
+// never includes customs / freight - those only appear on invoices.
+
+let quotationList = [];
+
+let quotationDetail = null;
+
+let quotationLineSeq = 0;
+
+function quotationIsViewer() {
+
+    return !!currentUser && currentUser.role === "viewer";
+}
+
+function quotationStatusClass(status) {
+
+    if (status === "Valid") return "status-active";
+
+    if (status === "Expired") return "status-partial";
+
+    return "status-inactive";
+}
+
+function quotationNumber(value) {
+
+    return String(Math.round(Number(value) * 1000000) / 1000000);
+}
+
+function setQuotationMessage(text, isError) {
+
+    const message = document.getElementById("quotation-message");
+
+    if (!message) {
+        return;
+    }
+
+    message.textContent = text || "";
+
+    message.style.color = isError ? "#b91c1c" : "#15803d";
+
+    message.style.marginTop = "12px";
+
+    message.style.fontWeight = "bold";
+}
+
+// Material information in a pop-up over the current view: nothing is
+// navigated away from, closing it leaves the page exactly as it was
+async function openMaterialFromQuotation(materialID) {
+
+    const existing = document.getElementById("material-popup");
+
+    if (existing) {
+        existing.remove();
+    }
+
+    const overlay = document.createElement("div");
+
+    overlay.id = "material-popup";
+
+    overlay.className = "app-modal-overlay";
+
+    overlay.style.zIndex = "1600";
+
+    overlay.innerHTML = `
+        <div class="app-modal-box"
+            style="max-width: 640px; max-height: 85vh; overflow-y: auto;">
+            <p>Loading material...</p>
+        </div>`;
+
+    const close = () => {
+        document.removeEventListener("keydown", onKey);
+        overlay.remove();
+    };
+
+    const onKey = event => {
+        if (event.key === "Escape") {
+            close();
+        }
+    };
+
+    document.addEventListener("keydown", onKey);
+
+    overlay.addEventListener("mousedown", event => {
+        if (event.target === overlay) {
+            close();
+        }
+    });
+
+    document.body.appendChild(overlay);
+
+    const box = overlay.firstElementChild;
+
+    try {
+
+        const response = await fetch(
+            `/api/materials/${encodeURIComponent(materialID)}`);
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            box.innerHTML = `<p>${escapeHtml(data.message || "Material not found.")}</p>
+                <div class="app-modal-actions">
+                    <button type="button" class="app-modal-button-primary">Close</button>
+                </div>`;
+            box.querySelector("button").onclick = close;
+            return;
+        }
+
+        const field = (label, value) => `
+            <div class="detail-field">
+                <div class="detail-label">${label}</div>
+                <div class="detail-value">${escapeHtml(value || "—")}</div>
+            </div>`;
+
+        const extra = (data.additionalSuppliers || []).map(link =>
+            escapeHtml(link.name || link.supplier || link.supplierName || "") +
+            (link.supplierPartNumber ?
+                " (P/N " + escapeHtml(link.supplierPartNumber) + ")" : "")
+        ).filter(text => text).join("<br>");
+
+        box.innerHTML = `
+            <div class="material-detail-header">
+                <div class="material-detail-photo">
+                    ${data.photo ?
+                        `<img src="/${data.photo}" alt="Material photo">` :
+                        `<div class="material-detail-photo-placeholder">No photo</div>`}
+                </div>
+                <div class="material-detail-title">
+                    <h2>${escapeHtml(data.name)}</h2>
+                    <p class="material-detail-id">${escapeHtml(data.id)}</p>
+                    <span class="status-badge ${data.active ? "status-active" : "status-inactive"}">
+                        ${data.active ? "Active" : "Inactive"}
+                    </span>
+                </div>
+            </div>
+            <div class="material-detail-grid">
+                ${field("Description", data.description)}
+                ${field("Unit of Measure", data.uom)}
+                ${field("Category", data.category)}
+                ${field("Type", data.type)}
+                ${field("Drawing Number", data.drawingNumber)}
+                ${field("Drawing Version", data.drawingVersion)}
+                ${field("Manufacturer", data.manufacturer)}
+                ${field("Manufacturer Part Number", data.manufacturerPartNumber)}
+                ${field("Primary Supplier", data.supplier)}
+                ${field("Primary Supplier Part Number", data.supplierPartNumber)}
+            </div>
+            ${extra ? `<div class="detail-field" style="margin-top:10px;">
+                <div class="detail-label">Additional Suppliers</div>
+                <div class="detail-value">${extra}</div></div>` : ""}
+            <div class="app-modal-actions">
+                <button type="button" class="app-modal-button-secondary" id="material-popup-full">
+                    Open full page
+                </button>
+                <button type="button" class="app-modal-button-primary" id="material-popup-close">
+                    Close
+                </button>
+            </div>`;
+
+        box.querySelector("#material-popup-close").onclick = close;
+
+        box.querySelector("#material-popup-full").onclick = () => {
+            close();
+            openModule("materials");
+            showMaterialDetail(materialID);
+        };
+    }
+    catch (error) {
+
+        box.innerHTML = `<p>Could not load the material.</p>
+            <div class="app-modal-actions">
+                <button type="button" class="app-modal-button-primary">Close</button>
+            </div>`;
+        box.querySelector("button").onclick = close;
+    }
+}
+
+// ------------------------------------------------------------
+// List
+// ------------------------------------------------------------
+
+// Quotations live inside the Pricing module, which shares the
+// "purchase-content" area with the other price views - this makes
+// sure the quotation area exists inside it.
+function ensureQuotationContainer() {
+
+    if (!document.getElementById("quotation-content")) {
+
+        const host = document.getElementById("purchase-content");
+
+        if (host) {
+            host.innerHTML = `<div id="quotation-content"></div>`;
+        }
+    }
+}
+
+async function showQuotations(view, supplier, search) {
+
+    ensureQuotationContainer();
+
+    const content = document.getElementById("quotation-content");
+
+    if (!content) {
+        return;
+    }
+
+    content.innerHTML = `<p>Loading quotations...</p>`;
+
+    try {
+
+        const response = await fetch("/api/quotations?includePast=1");
+
+        if (!response.ok) {
+
+            content.innerHTML =
+                `<p>Error: ${escapeHtml(await response.text())}</p>`;
+
+            return;
+        }
+
+        const data = await response.json();
+
+        quotationList = data.quotations || [];
+
+        renderQuotationList(
+            view || "Current", supplier || "", search || "");
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `<p>Could not connect to the server.</p>`;
+    }
+}
+
+function quotationFilteredList(view, supplier, search) {
+
+    const text = (search || "").trim().toLowerCase();
+
+    return quotationList.filter(q => {
+
+        if (view === "Current" && q.status === "Replaced") return false;
+
+        if ((view === "Valid" || view === "Expired" ||
+            view === "Replaced") && q.status !== view) return false;
+
+        if (supplier && q.supplier !== supplier) return false;
+
+        if (text) {
+
+            const haystack = [
+                q.id, q.supplier, q.supplierQuoteNumber, q.comment,
+                ...q.lines.map(l => `${l.materialID} ${l.materialName}`)
+            ].join(" ").toLowerCase();
+
+            if (!haystack.includes(text)) return false;
+        }
+
+        return true;
+    });
+}
+
+function renderQuotationList(view, supplier, search) {
+
+    const content = document.getElementById("quotation-content");
+
+    const quotations = quotationFilteredList(view, supplier, search);
+
+    const views = [
+        ["Current", "Current (Valid + Expired)"],
+        ["Valid", "Valid only"],
+        ["Expired", "Expired (still used, review)"],
+        ["Replaced", "Replaced (past)"],
+        ["All", "All"]
+    ];
+
+    const viewOptions = views.map(([value, label]) => `
+        <option value="${value}" ${value === view ? "selected" : ""}>
+            ${label}
+        </option>`).join("");
+
+    const suppliers =
+        [...new Set(quotationList.map(q => q.supplier))].sort();
+
+    const supplierOptions =
+        `<option value="">All suppliers</option>` +
+        suppliers.map(name => `
+            <option value="${escapeHtml(name)}"
+                ${name === supplier ? "selected" : ""}>
+                ${escapeHtml(name)}
+            </option>`).join("");
+
+    let rows = "";
+
+    for (const q of quotations) {
+
+        const expired = q.status === "Expired";
+
+        rows += `
+            <tr>
+                <td>
+                    <a href="#"
+                        onclick="openQuotation('${escapeHtml(q.id)}'); return false;">
+                        ${escapeHtml(q.id)}
+                    </a>
+                </td>
+                <td>${escapeHtml(q.supplier)}</td>
+                <td>${escapeHtml(q.supplierQuoteNumber || "-")}</td>
+                <td>${escapeHtml(q.issueDate)}</td>
+                <td style="${expired ? "color:#b91c1c;font-weight:bold;" : ""}">
+                    ${escapeHtml(q.validUntil || "-")}
+                </td>
+                <td>${escapeHtml(q.currency)}</td>
+                <td>${q.lines.length}</td>
+                <td>
+                    <span class="status-badge ${quotationStatusClass(q.status)}">
+                        ${escapeHtml(q.status)}
+                    </span>
+                </td>
+                <td>
+                    ${q.hasDocument ?
+                `<a href="/api/quotations/${encodeURIComponent(q.id)}/document/file"
+                            target="_blank">PDF</a>` : "-"}
+                </td>
+            </tr>`;
+    }
+
+    if (quotations.length === 0) {
+
+        rows = `
+            <tr>
+                <td colspan="9">No quotations found.</td>
+            </tr>`;
+    }
+
+    content.innerHTML = `
+
+        <div class="form-container form-container-wide"
+            style="max-width: 1100px;">
+
+            <h2>Quotations</h2>
+
+            <p>
+                The newest quotation of a supplier for a material is
+                the current one. Older ones are kept as
+                "Replaced" and can be consulted with their PDF. An
+                Expired quotation is still used for estimates - check
+                with the supplier whether it is still valid.
+            </p>
+
+            <div class="form-actions" style="gap: 10px; flex-wrap: wrap;">
+
+                <button onclick="showNewQuotation()">
+                    New Quotation
+                </button>
+
+                <select id="quotation-view-filter" style="width: auto;"
+                    onchange="applyQuotationFilters()">
+                    ${viewOptions}
+                </select>
+
+                <select id="quotation-supplier-filter" style="width: auto;"
+                    onchange="applyQuotationFilters()">
+                    ${supplierOptions}
+                </select>
+
+                <input type="text" id="quotation-search"
+                    placeholder="Search ID, material, quote no..."
+                    value="${escapeHtml(search || "")}"
+                    style="width: 220px;"
+                    oninput="applyQuotationFilters()">
+
+                <button class="button-muted"
+                    onclick="exportQuotationsToExcel()">
+                    Export to Excel
+                </button>
+
+            </div>
+
+            <div class="material-table-container" style="margin-top: 16px;">
+                <table class="material-table">
+                    <thead>
+                        <tr>
+                            <th>Quotation</th>
+                            <th>Supplier</th>
+                            <th>Supplier quote no.</th>
+                            <th>Issued</th>
+                            <th>Valid until</th>
+                            <th>Currency</th>
+                            <th>Materials</th>
+                            <th>Status</th>
+                            <th>PDF</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+
+        </div>
+    `;
+
+    if (search) {
+
+        const box = document.getElementById("quotation-search");
+
+        if (box) {
+
+            box.focus();
+
+            box.setSelectionRange(box.value.length, box.value.length);
+        }
+    }
+}
+
+function applyQuotationFilters() {
+
+    renderQuotationList(
+        document.getElementById("quotation-view-filter").value,
+        document.getElementById("quotation-supplier-filter").value,
+        document.getElementById("quotation-search").value);
+}
+
+function exportQuotationsToExcel() {
+
+    const view =
+        (document.getElementById("quotation-view-filter") || {}).value ||
+        "Current";
+
+    const supplier =
+        (document.getElementById("quotation-supplier-filter") || {}).value ||
+        "";
+
+    const search =
+        (document.getElementById("quotation-search") || {}).value || "";
+
+    const rows = [[
+        "Quotation", "Supplier", "Supplier quote no.", "Issued",
+        "Valid until", "Status", "Currency", "Exchange rate", "Incoterm",
+        "Lead time (weeks)", "Material", "Material name", "MOQ",
+        "From quantity", "Unit price", "Unit price (EUR)", "Comment"
+    ]];
+
+    for (const q of quotationFilteredList(view, supplier, search)) {
+
+        for (const line of q.lines) {
+
+            for (const tier of line.tiers) {
+
+                rows.push([
+                    q.id, q.supplier, q.supplierQuoteNumber, q.issueDate,
+                    q.validUntil, q.status, q.currency, q.exchangeRate,
+                    q.incoterm, q.leadTimeWeeks, line.materialID,
+                    line.materialName, line.moq, tier.minQuantity,
+                    tier.unitPrice, tier.unitPriceEUR, q.comment
+                ]);
+            }
+        }
+    }
+
+    downloadCSV("quotations.csv", rows);
+}
+
+// ------------------------------------------------------------
+// Detail
+// ------------------------------------------------------------
+
+async function openQuotation(id) {
+
+    ensureQuotationContainer();
+
+    const content = document.getElementById("quotation-content");
+
+    content.innerHTML = `<p>Loading quotation...</p>`;
+
+    try {
+
+        const response =
+            await fetch(`/api/quotations/${encodeURIComponent(id)}`);
+
+        if (!response.ok) {
+
+            content.innerHTML =
+                `<p>Error: ${escapeHtml(await response.text())}</p>`;
+
+            return;
+        }
+
+        quotationDetail = await response.json();
+
+        renderQuotationDetail();
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `<p>Could not connect to the server.</p>`;
+    }
+}
+
+function renderQuotationDetail() {
+
+    const q = quotationDetail;
+
+    const content = document.getElementById("quotation-content");
+
+    let lineBlocks = "";
+
+    for (const line of q.lines) {
+
+        const tierRows = line.tiers.map(tier => `
+            <tr>
+                <td>from ${quotationNumber(tier.minQuantity)} ${escapeHtml(line.uom)}
+                    ${line.usualQuantity > 0 && line.usualQuantity === tier.minQuantity ?
+                `<span class="status-badge status-ordered">usual purchase</span>` : ""}</td>
+                <td>${quotationNumber(tier.unitPrice)} ${escapeHtml(q.currency)}</td>
+                <td>${q.currency === "EUR" ? "-" :
+                quotationNumber(tier.unitPriceEUR) + " EUR"}</td>
+            </tr>`).join("");
+
+        lineBlocks += `
+            <div style="margin-top: 18px;">
+                <strong>
+                    <a href="#"
+                        onclick="openMaterialFromQuotation('${escapeHtml(line.materialID)}'); return false;">
+                        ${escapeHtml(line.materialID)}
+                    </a>
+                    - ${escapeHtml(line.materialName)}
+                </strong>
+                ${line.current ? "" :
+                `<span class="status-badge status-inactive"
+                        style="margin-left: 8px;">Replaced</span>`}
+                <div>
+                    Minimum order quantity:
+                    ${line.moq ? quotationNumber(line.moq) : "-"}
+                </div>
+                <table class="material-table" style="margin-top: 6px; max-width: 520px;">
+                    <thead>
+                        <tr>
+                            <th>Quantity</th>
+                            <th>Unit price</th>
+                            <th>Unit price (EUR)</th>
+                        </tr>
+                    </thead>
+                    <tbody>${tierRows}</tbody>
+                </table>
+            </div>`;
+    }
+
+    const viewer = quotationIsViewer();
+
+    content.innerHTML = `
+
+        <div class="form-container form-container-wide"
+            style="max-width: 900px;">
+
+            <h2>
+                ${escapeHtml(q.id)}
+                <span class="status-badge ${quotationStatusClass(q.status)}"
+                    style="margin-left: 8px;">
+                    ${escapeHtml(q.status)}
+                </span>
+            </h2>
+
+            ${q.status === "Expired" ? `
+                <p style="color:#b91c1c;font-weight:bold;">
+                    This quotation passed its valid-until date and is
+                    still used for estimates. Ask the supplier for an
+                    updated one.
+                </p>` : ""}
+
+            ${q.status === "Replaced" ? `
+                <p>
+                    A newer quotation of this supplier replaced it. It
+                    stays on file for price history.
+                </p>` : ""}
+
+            <p>
+                <strong>Supplier:</strong> ${escapeHtml(q.supplier)}<br>
+                <strong>Supplier quote no.:</strong>
+                ${escapeHtml(q.supplierQuoteNumber || "-")}<br>
+                <strong>Issued:</strong> ${escapeHtml(q.issueDate)}<br>
+                <strong>Valid until:</strong> ${escapeHtml(q.validUntil || "-")}<br>
+                <strong>Currency:</strong> ${escapeHtml(q.currency)}${q.currency === "USD" ?
+            ` (1 USD = ${quotationNumber(q.exchangeRate)} EUR)` : ""}<br>
+                <strong>Incoterm:</strong> ${escapeHtml(q.incoterm || "-")}<br>
+                <strong>Lead time:</strong> ${q.leadTimeWeeks ? q.leadTimeWeeks + " weeks" : "-"}<br>
+                <strong>Comment:</strong> ${escapeHtml(q.comment || "-")}
+            </p>
+
+            <p>
+                <strong>Invoices priced from it:</strong>
+                ${(q.invoices || []).length > 0 ?
+            q.invoices.map(escapeHtml).join(", ") +
+            ` <small>(it cannot be deleted while linked)</small>` : "none"}
+            </p>
+
+            <p>
+                <strong>PDF:</strong>
+                ${q.hasDocument ?
+            `<a href="/api/quotations/${encodeURIComponent(q.id)}/document/file"
+                        target="_blank">View PDF</a>` : "none on file"}
+                ${viewer ? "" : `
+                    &nbsp;
+                    <label class="button-muted" style="cursor:pointer; padding: 6px 12px;">
+                        ${q.hasDocument ? "Replace PDF" : "Attach PDF"}
+                        <input type="file" accept="application/pdf" style="display:none;"
+                            onchange="uploadQuotationDocument('${escapeHtml(q.id)}', this)">
+                    </label>`}
+            </p>
+
+            ${lineBlocks}
+
+            <div class="form-actions" style="margin-top: 20px;">
+
+                <button onclick="showEditQuotation('${escapeHtml(q.id)}')">
+                    Edit
+                </button>
+
+                <button class="button-danger"
+                    onclick="deleteQuotation('${escapeHtml(q.id)}')">
+                    Delete
+                </button>
+
+                <button class="button-muted" onclick="showQuotations()">
+                    Back to list
+                </button>
+
+            </div>
+
+            <div id="quotation-message"></div>
+
+        </div>
+    `;
+}
+
+async function uploadQuotationDocument(id, inputEl) {
+
+    const file = inputEl.files[0];
+
+    if (!file) {
+        return;
+    }
+
+    setQuotationMessage("Uploading...", false);
+
+    try {
+
+        const fileData = await readFileAsBase64(file);
+
+        const response = await fetch(
+            `/api/quotations/${encodeURIComponent(id)}/document`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ fileData: fileData })
+            });
+
+        if (!response.ok) {
+
+            setQuotationMessage(await response.text(), true);
+
+            inputEl.value = "";
+
+            return;
+        }
+
+        await openQuotation(id);
+
+        setQuotationMessage("PDF saved.", false);
+    }
+    catch (error) {
+
+        console.error(error);
+
+        setQuotationMessage("Could not upload the PDF.", true);
+    }
+}
+
+async function deleteQuotation(id) {
+
+    const confirmed = await showConfirmDialog(
+        `Delete quotation ${id}? Its PDF stays in the Documents Folder.`);
+
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+
+        const response = await fetch("/api/quotations/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: id })
+        });
+
+        if (!response.ok) {
+
+            setQuotationMessage(await response.text(), true);
+
+            return;
+        }
+
+        await showQuotations();
+    }
+    catch (error) {
+
+        console.error(error);
+
+        setQuotationMessage("Could not connect to the server.", true);
+    }
+}
+
+// ------------------------------------------------------------
+// Create / edit form
+// ------------------------------------------------------------
+
+async function showNewQuotation() {
+
+    ensureQuotationContainer();
+
+    await renderQuotationForm(null);
+}
+
+async function showEditQuotation(id) {
+
+    if (!quotationDetail || quotationDetail.id !== id) {
+
+        await openQuotation(id);
+    }
+
+    await renderQuotationForm(quotationDetail);
+}
+
+async function renderQuotationForm(existing) {
+
+    const content = document.getElementById("quotation-content");
+
+    const q = existing || {
+        id: "", supplier: "", supplierQuoteNumber: "",
+        issueDate: inventoryCountToday(), validUntil: "",
+        currency: "EUR", exchangeRate: 1, incoterm: "", comment: "",
+        lines: []
+    };
+
+    content.innerHTML = `
+
+        <div class="form-container form-container-wide"
+            style="max-width: 1000px;">
+
+            <h2>${existing ? "Edit " + escapeHtml(q.id) : "New Quotation"}</h2>
+
+            <label>Supplier</label>
+            <select id="quo-supplier"></select>
+
+            <label>Supplier quote number</label>
+            <input type="text" id="quo-number"
+                value="${escapeHtml(q.supplierQuoteNumber)}"
+                placeholder="Number on the supplier's document">
+
+            <label>Issue date</label>
+            <input type="date" id="quo-issue" value="${escapeHtml(q.issueDate)}">
+
+            <label>Valid until (optional)</label>
+            <input type="date" id="quo-valid" value="${escapeHtml(q.validUntil)}">
+
+            <label>Currency</label>
+            <select id="quo-currency" onchange="updateQuotationCurrency()">
+                <option value="EUR" ${q.currency === "EUR" ? "selected" : ""}>EUR</option>
+                <option value="USD" ${q.currency === "USD" ? "selected" : ""}>USD</option>
+            </select>
+
+            <div id="quo-rate-box" style="${q.currency === "USD" ? "" : "display:none;"}">
+                <label>Exchange rate (1 USD = ? EUR)</label>
+                <input type="number" id="quo-rate" step="any" min="0"
+                    value="${q.currency === "USD" ? q.exchangeRate : ""}">
+            </div>
+
+            <label>Incoterm (optional)</label>
+            <input type="text" id="quo-incoterm"
+                value="${escapeHtml(q.incoterm)}" placeholder="e.g. EXW, DAP">
+
+            <label>Lead time (weeks, optional)</label>
+            <input type="number" id="quo-lead" min="0" step="1"
+                style="width: 160px;"
+                value="${q.leadTimeWeeks ? q.leadTimeWeeks : ""}">
+
+            <label>Comment (optional)</label>
+            <textarea id="quo-comment" rows="2">${escapeHtml(q.comment)}</textarea>
+
+            <h3 style="margin-top: 20px;">Materials and price tiers</h3>
+
+            <p>
+                A tier applies from its quantity up to the next tier:
+                the quantity bought decides the price. Customs and
+                freight are not part of a quotation.
+            </p>
+
+            <div id="quo-lines"></div>
+
+            <div class="form-actions">
+                <button class="button-muted" onclick="addQuotationLine()">
+                    + Add Material
+                </button>
+            </div>
+
+            <div class="form-actions" style="margin-top: 20px;">
+
+                <button onclick="saveQuotation('${escapeHtml(q.id)}')">
+                    ${existing ? "Save Changes" : "Create Quotation"}
+                </button>
+
+                <button class="button-muted"
+                    onclick="${existing ?
+            `openQuotation('${escapeHtml(q.id)}')` : "showQuotations()"}">
+                    Cancel
+                </button>
+
+            </div>
+
+            <div id="quotation-message"></div>
+
+        </div>
+    `;
+
+    await populateSupplierSelect("quo-supplier", q.supplier);
+
+    const supplierSelect = document.getElementById("quo-supplier");
+
+    if (supplierSelect && q.supplier) {
+        supplierSelect.value = q.supplier;
+    }
+
+    // Suggest the current default exchange rate for a new USD quote
+    if (!existing) {
+
+        try {
+
+            const response = await fetch("/api/purchase/config");
+
+            if (response.ok) {
+
+                const data = await response.json();
+
+                const rate = document.getElementById("quo-rate");
+
+                if (rate && data.exchangeRate) {
+                    rate.value = data.exchangeRate;
+                }
+            }
+        }
+        catch (error) {
+            console.error(error);
+        }
+    }
+
+    quotationLineSeq = 0;
+
+    if (q.lines.length === 0) {
+
+        await addQuotationLine();
+    }
+    else {
+
+        for (const line of q.lines) {
+
+            await addQuotationLine(line);
+        }
+    }
+}
+
+function updateQuotationCurrency() {
+
+    const usd =
+        document.getElementById("quo-currency").value === "USD";
+
+    document.getElementById("quo-rate-box").style.display =
+        usd ? "" : "none";
+}
+
+async function addQuotationLine(line) {
+
+    const container = document.getElementById("quo-lines");
+
+    const n = quotationLineSeq++;
+
+    const prefix = `quo-line-${n}`;
+
+    const wrapper = document.createElement("div");
+
+    wrapper.className = "quo-line";
+
+    wrapper.id = prefix;
+
+    wrapper.style.cssText =
+        "border:1px solid #d1d5db; border-radius:8px; padding:12px; margin-bottom:12px;";
+
+    wrapper.innerHTML = `
+        <label>Material</label>
+        ${materialComboboxHtml(prefix, "Search by ID or name...")}
+
+        <label>Minimum order qty (optional)</label>
+        <input type="number" min="0" step="any"
+            class="quo-moq" style="width:180px;"
+            value="${line && line.moq ? line.moq : ""}">
+
+        <label>Price tiers</label>
+        <div class="quo-tiers"></div>
+
+        <div class="form-actions">
+            <button class="button-muted" type="button"
+                onclick="addQuotationTier('${prefix}')">
+                + Add Tier
+            </button>
+            <button class="button-muted" type="button"
+                onclick="removeQuotationLine('${prefix}')">
+                Remove Material
+            </button>
+        </div>
+    `;
+
+    container.appendChild(wrapper);
+
+    await initMaterialCombobox(prefix, line ? line.materialID : "");
+
+    const tiers = line && line.tiers.length > 0 ?
+        line.tiers : [{ minQuantity: "", unitPrice: "" }];
+
+    for (const tier of tiers) {
+
+        addQuotationTier(prefix, tier,
+            !!line && line.usualQuantity > 0 &&
+            Number(tier.minQuantity) === line.usualQuantity);
+    }
+}
+
+// The "usual" check works like a radio button (one per material)
+// but can be unchecked again
+function markUsualTier(checkbox) {
+
+    if (!checkbox.checked) {
+        return;
+    }
+
+    for (const other of checkbox.closest(".quo-tiers")
+        .querySelectorAll(".quo-tier-usual")) {
+
+        if (other !== checkbox) {
+            other.checked = false;
+        }
+    }
+}
+
+function addQuotationTier(prefix, tier, usual) {
+
+    const box = document.querySelector(`#${prefix} .quo-tiers`);
+
+    if (!box) {
+        return;
+    }
+
+    const row = document.createElement("div");
+
+    row.className = "quo-tier";
+
+    row.style.cssText =
+        "display:flex; gap:10px; align-items:center; margin-bottom:6px;";
+
+    row.innerHTML = `
+        <span>from quantity</span>
+        <input type="number" min="0" step="any" class="quo-tier-qty"
+            style="width:140px;"
+            value="${tier ? tier.minQuantity : ""}">
+        <span>unit price</span>
+        <input type="number" min="0" step="any" class="quo-tier-price"
+            style="width:140px;"
+            value="${tier ? tier.unitPrice : ""}">
+        <button class="button-muted" type="button"
+            onclick="this.parentElement.remove()">x</button>
+        <label style="display:flex; gap:4px; align-items:center; margin:0; white-space:nowrap;"
+            title="The quantity usually bought: its price is the reference price when there is no newer invoice">
+            <input type="checkbox" class="quo-tier-usual"
+                ${usual ? "checked" : ""}
+                onchange="markUsualTier(this)">
+            usual purchase
+        </label>
+    `;
+
+    box.appendChild(row);
+}
+
+function removeQuotationLine(prefix) {
+
+    const element = document.getElementById(prefix);
+
+    if (element) {
+        element.remove();
+    }
+}
+
+async function saveQuotation(id) {
+
+    const lines = [];
+
+    for (const element of document.querySelectorAll("#quo-lines .quo-line")) {
+
+        const tiers = [];
+
+        let usualQuantity = 0;
+
+        for (const row of element.querySelectorAll(".quo-tier")) {
+
+            const qty = row.querySelector(".quo-tier-qty").value;
+
+            const price = row.querySelector(".quo-tier-price").value;
+
+            if (qty === "" && price === "") {
+                continue;
+            }
+
+            if (row.querySelector(".quo-tier-usual").checked &&
+                qty !== "") {
+
+                usualQuantity = Number(qty);
+            }
+
+            tiers.push({
+                minQuantity: qty === "" ? -1 : Number(qty),
+                unitPrice: price === "" ? -1 : Number(price)
+            });
+        }
+
+        const materialID =
+            document.getElementById(`${element.id}-material-id`).value;
+
+        lines.push({
+            materialID: materialID,
+            moq: Number(element.querySelector(".quo-moq").value || 0),
+            usualQuantity: usualQuantity,
+            tiers: tiers
+        });
+    }
+
+    const currency = document.getElementById("quo-currency").value;
+
+    const payload = {
+        id: id,
+        supplier: document.getElementById("quo-supplier").value,
+        supplierQuoteNumber: document.getElementById("quo-number").value.trim(),
+        issueDate: document.getElementById("quo-issue").value,
+        validUntil: document.getElementById("quo-valid").value,
+        currency: currency,
+        exchangeRate: currency === "USD" ?
+            Number(document.getElementById("quo-rate").value || 0) : 1,
+        incoterm: document.getElementById("quo-incoterm").value.trim(),
+        leadTimeWeeks: Number(document.getElementById("quo-lead").value || 0),
+        comment: document.getElementById("quo-comment").value.trim(),
+        lines: lines
+    };
+
+    try {
+
+        const response = await fetch(
+            id ? "/api/quotations/update" : "/api/quotations/create",
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+        if (!response.ok) {
+
+            setQuotationMessage(await response.text(), true);
+
+            return;
+        }
+
+        const data = await response.json();
+
+        await openQuotation(id || data.id);
+
+        setQuotationMessage(
+            id ? "Quotation saved." :
+                "Quotation created. You can attach its PDF now.",
+            false);
+    }
+    catch (error) {
+
+        console.error(error);
+
+        setQuotationMessage("Could not connect to the server.", true);
+    }
+}
+
+
+// ============================================================
+// COST SOURCE: invoice (real) or quotation (estimated)
+// ============================================================
+// Renders the price of one material as decided by the cost
+// estimator (see CostEstimator.h): the unit price, where it comes
+// from, the quotation breakdown (tier price + estimated import
+// increment) and the warnings. totalQuantity is the quantity the
+// price was looked up for.
+
+function renderCostSourceHtml(est, totalQuantity) {
+
+    if (!est || est.source === "None") {
+
+        return "No price yet";
+    }
+
+    const small = (text, color) =>
+        `<br><small${color ? ` style="color:${color};"` : ""}>${text}</small>`;
+
+    let html = formatMoney(est.unitPriceEUR);
+
+    if (est.source === "Invoice") {
+
+        html += small(
+            `Invoice ${escapeHtml(est.sourceRef)} &middot; ` +
+            `${escapeHtml(est.sourceDate)} (real)`);
+
+        if (est.hasQuoteInfo) {
+
+            html += small(
+                `Quotation ${escapeHtml(est.quoteRef)} ` +
+                `(${escapeHtml(est.quoteSupplier)}, ${escapeHtml(est.quoteDate)}) ` +
+                `offers ${formatMoney(est.quotePriceEUR)} EUR` +
+                (totalQuantity ? ` for ${totalQuantity}` : "") +
+                (est.quoteBelowFirstTier ?
+                    " (below its first tier)" : "") +
+                (est.quoteExpired ? " - expired" : "") +
+                " - information only", "#1d4ed8");
+        }
+
+        return html;
+    }
+
+    // Quotation governs: estimated
+    html += ` <span class="status-badge status-partial">Estimated</span>`;
+
+    html += small(
+        `Quotation ${escapeHtml(est.sourceRef)} &middot; ` +
+        `${escapeHtml(est.supplierName)} &middot; ${escapeHtml(est.sourceDate)}`);
+
+    if (est.hasImportIncrement) {
+
+        html += small(
+            `${formatMoney(est.basePriceEUR)} quoted + ` +
+            `${formatMoney(est.importIncrementEUR)} customs/freight ` +
+            `(estimated from ${escapeHtml(est.incrementRef)})`);
+    }
+    else {
+
+        html += small("no import costs registered for this material");
+    }
+
+    if (est.usedUsualTier) {
+
+        html += small(
+            `priced at the usual purchase quantity ` +
+            `(from ${est.tierMinQuantity})`, "#1d4ed8");
+    }
+    else if (est.usualMissing) {
+
+        html += small(
+            "no usual purchase quantity marked on the quotation - " +
+            "priced for the quantity needed", "#6b7280");
+    }
+
+    if (est.belowFirstTier) {
+
+        html += small(
+            "quantity is below the first quoted tier - first tier price shown",
+            "#b91c1c");
+    }
+
+    if (est.belowMoq) {
+
+        html += small("below the minimum order quantity", "#b91c1c");
+    }
+
+    if (est.quotationExpired) {
+
+        html += small("quotation expired - check with the supplier", "#b91c1c");
+    }
+
+    if (est.hasLastInvoice) {
+
+        html += small(
+            `last invoice ${escapeHtml(est.lastInvoiceRef)} ` +
+            `(${escapeHtml(est.lastInvoiceDate)}): ` +
+            `${formatMoney(est.lastInvoicePriceEUR)} EUR`, "#6b7280");
+    }
+
+    return html;
+}
+
+// ============================================================
+// QUOTATION LINK ON INVOICE LINES
+// ============================================================
+
+// Fills a <select> with the quotations that price this material
+// (newest first), each with the price its tier gives for quantity.
+async function loadQuoteOptions(selectId, materialID, quantity, selectedID) {
+
+    const select = document.getElementById(selectId);
+
+    if (!select) {
+        return;
+    }
+
+    select.dataset.loaded = "1";
+
+    try {
+
+        const response = await fetch(
+            `/api/materials/${encodeURIComponent(materialID)}/price-info` +
+            `?quantity=${encodeURIComponent(quantity)}&lite=1`);
+
+        if (!response.ok) {
+            return;
+        }
+
+        const info = await response.json();
+
+        let options = `<option value="" data-price-eur="">- no quotation -</option>`;
+
+        let found = false;
+
+        for (const q of (info.quotations || [])) {
+
+            const isSelected = q.id === selectedID;
+
+            if (isSelected) {
+                found = true;
+            }
+
+            options += `
+                <option value="${escapeHtml(q.id)}"
+                    data-price-eur="${q.tierPriceEUR}"
+                    ${isSelected ? "selected" : ""}>
+                    ${escapeHtml(q.id)} - ${escapeHtml(q.supplier)} -
+                    ${escapeHtml(q.issueDate)} - ${escapeHtml(q.status)} -
+                    ${quotationNumber(q.tierPrice)} ${escapeHtml(q.currency)}
+                </option>`;
+        }
+
+        if (selectedID && !found) {
+
+            options += `
+                <option value="${escapeHtml(selectedID)}"
+                    data-price-eur="" selected>
+                    ${escapeHtml(selectedID)}
+                </option>`;
+        }
+
+        select.innerHTML = options;
+    }
+    catch (error) {
+
+        console.error(error);
+    }
+}
+
+// Unit cost proposed by the chosen quotation, in the invoice's
+// currency (the user can still change it).
+function quotePriceForInvoice(select, currencyId, rateId) {
+
+    const option = select.options[select.selectedIndex];
+
+    const priceEUR = option ? Number(option.dataset.priceEur) : 0;
+
+    if (!option || !option.value || !(priceEUR > 0)) {
+        return null;
+    }
+
+    const currency = document.getElementById(currencyId).value;
+
+    const rate = Number(document.getElementById(rateId).value) || 1;
+
+    const value = currency === "USD" ? priceEUR / rate : priceEUR;
+
+    return Math.round(value * 10000) / 10000;
+}
+
+function applyPendingQuote(index) {
+
+    const select = document.getElementById(`purchpending-${index}-quote`);
+
+    const value = quotePriceForInvoice(
+        select, "purchpending-currency", "purchpending-rate");
+
+    if (value !== null) {
+
+        document.getElementById(`purchpending-${index}-cost`).value = value;
+    }
+}
+
+function applyInvoiceQuote(invoiceID, index) {
+
+    const select =
+        document.getElementById(`purchinv-${invoiceID}-line-${index}-quote`);
+
+    const value = quotePriceForInvoice(
+        select, `purchinv-${invoiceID}-currency`,
+        `purchinv-${invoiceID}-rate`);
+
+    if (value !== null) {
+
+        document.getElementById(
+            `purchinv-${invoiceID}-line-${index}-cost`).value = value;
+    }
+}
+
+// "Quote QUO-1: quoted 2.80 -> invoiced 3.00 (+0.20 / +7.1%)" under
+// the unit cost of an invoice line priced from a quotation
+function purchaseInvoiceQuoteNote(line) {
+
+    if (!line.quotationID) {
+        return "";
+    }
+
+    if (!(line.quotedUnitPriceEUR > 0)) {
+
+        return `<br><small>Quotation ${escapeHtml(line.quotationID)}</small>`;
+    }
+
+    const diff = line.deviationEUR;
+
+    const color = diff > 0.00005 ? "#b91c1c" :
+        diff < -0.00005 ? "#15803d" : "#6b7280";
+
+    const sign = diff > 0 ? "+" : "";
+
+    return `<br><small style="color:${color};">
+        Quotation ${escapeHtml(line.quotationID)}:
+        quoted ${formatMoney(line.quotedUnitPriceEUR)} EUR &rarr;
+        invoiced ${formatMoney(line.invoicedUnitCostEUR)} EUR
+        (${sign}${formatMoney(diff)} / ${sign}${line.deviationPct.toFixed(1)}%)
+    </small>`;
+}
+
+
+// ============================================================
+// MATERIAL DETAIL: PRICE & QUOTATIONS
+// ============================================================
+// Current cost (invoice or quotation estimate), the quotation price
+// tiers of every supplier for a typed quantity, and the timeline of
+// invoices and quotations of this material. A past date reconstructs
+// the cost as it was then.
+
+let materialPriceState = {
+    id: "", quantity: "", date: "", showPast: false, info: null
+};
+
+function openQuotationFromMaterial(quotationID) {
+
+    openModule("prices");
+
+    openQuotation(quotationID);
+}
+
+async function loadMaterialPriceInfo(materialID, quantity, date) {
+
+    const box = document.getElementById("material-price-info");
+
+    if (!box) {
+        return;
+    }
+
+    if (materialPriceState.id !== materialID) {
+
+        materialPriceState =
+            { id: materialID, quantity: "", date: "", showPast: false, info: null };
+    }
+
+    if (quantity !== undefined) {
+        materialPriceState.quantity = quantity;
+    }
+
+    if (date !== undefined) {
+        materialPriceState.date = date;
+    }
+
+    box.innerHTML = `<p>Loading prices...</p>`;
+
+    try {
+
+        const q = Number(materialPriceState.quantity);
+
+        let url = `/api/materials/${encodeURIComponent(materialID)}/price-info?`;
+
+        if (q > 0) {
+            url += `quantity=${encodeURIComponent(q)}&`;
+        }
+
+        if (materialPriceState.date) {
+            url += `date=${encodeURIComponent(materialPriceState.date)}&`;
+        }
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+
+            box.innerHTML = `<p>Error: ${escapeHtml(await response.text())}</p>`;
+
+            return;
+        }
+
+        materialPriceState.info = await response.json();
+
+        renderMaterialPriceInfo();
+    }
+    catch (error) {
+
+        console.error(error);
+
+        box.innerHTML = `<p>Could not connect to the server.</p>`;
+    }
+}
+
+function applyMaterialPriceControls() {
+
+    loadMaterialPriceInfo(
+        materialPriceState.id,
+        document.getElementById("mprice-qty").value,
+        document.getElementById("mprice-date").value || "");
+}
+
+function toggleMaterialPastQuotations(checked) {
+
+    materialPriceState.showPast = checked;
+
+    renderMaterialPriceInfo();
+}
+
+function renderMaterialPriceInfo() {
+
+    const box = document.getElementById("material-price-info");
+
+    const info = materialPriceState.info;
+
+    if (!box || !info) {
+        return;
+    }
+
+    const qty = Number(materialPriceState.quantity) > 0 ?
+        Number(materialPriceState.quantity) : 0;
+
+    const uom = info.uom || "";
+
+    // ---- quotations ------------------------------------------------
+    let quoteRows = "";
+
+    const quotes = (info.quotations || []).filter(
+        q => materialPriceState.showPast || q.current);
+
+    for (const q of quotes) {
+
+        const tiers = q.tiers.map(tier =>
+            `from ${quotationNumber(tier.minQuantity)}` +
+            (q.usualQuantity > 0 && q.usualQuantity === tier.minQuantity ?
+                " (usual)" : "") + `: ` +
+            `${quotationNumber(tier.unitPrice)} ${escapeHtml(q.currency)}` +
+            (q.currency === "EUR" ? "" :
+                ` (${quotationNumber(tier.unitPriceEUR)} EUR)`)).join("<br>");
+
+        let atQty = "-";
+
+        if (qty > 0) {
+
+            atQty = `<strong>${formatMoney(q.tierPriceEUR)} EUR</strong>` +
+                ` <small>(tier from ${quotationNumber(q.tierMinQuantity)})</small>` +
+                (q.belowFirstTier ?
+                    `<br><small style="color:#b91c1c;">below the first tier</small>` : "") +
+                (q.belowMoq ?
+                    `<br><small style="color:#b91c1c;">below the minimum order</small>` : "");
+        }
+
+        quoteRows += `
+            <tr${q.current ? "" : ` style="opacity:0.7;"`}>
+                <td>
+                    <a href="#"
+                        onclick="openQuotationFromMaterial('${escapeHtml(q.id)}'); return false;">
+                        ${escapeHtml(q.id)}</a>
+                    ${q.hasDocument ?
+                `<br><a href="/api/quotations/${encodeURIComponent(q.id)}/document/file"
+                            target="_blank"><small>PDF</small></a>` : ""}
+                </td>
+                <td>
+                    ${escapeHtml(q.supplier)}
+                    ${q.primarySupplier ? "<br><small>primary supplier</small>" : ""}
+                </td>
+                <td>${escapeHtml(q.issueDate)}</td>
+                <td>${escapeHtml(q.validUntil || "-")}</td>
+                <td>
+                    <span class="status-badge ${quotationStatusClass(q.status)}">
+                        ${escapeHtml(q.status)}
+                    </span>
+                </td>
+                <td>${q.leadTimeWeeks ? q.leadTimeWeeks + " wk" : "-"}
+                    ${q.moq ? `<br><small>MOQ ${quotationNumber(q.moq)}</small>` : ""}</td>
+                <td><small>${tiers}</small></td>
+                <td>${atQty}</td>
+            </tr>`;
+    }
+
+    if (quotes.length === 0) {
+
+        quoteRows = `
+            <tr><td colspan="8">No ${materialPriceState.showPast ? "" : "current "}quotations for this material.</td></tr>`;
+    }
+
+    // ---- timeline ---------------------------------------------------
+    let timelineRows = "";
+
+    for (const row of (info.timeline || [])) {
+
+        if (row.type === "Invoice") {
+
+            const diffNote = row.quotationID && row.quotedUnitPriceEUR > 0 ?
+                `<br><small>quoted ${formatMoney(row.quotedUnitPriceEUR)} EUR (${escapeHtml(row.quotationID)})</small>` : "";
+
+            timelineRows += `
+                <tr>
+                    <td>${escapeHtml(row.date)}</td>
+                    <td>${escapeHtml(row.ref)}</td>
+                    <td><strong>${formatMoney(row.unitPriceEUR)} EUR</strong></td>
+                    <td><small>
+                        ${formatMoney(row.basePriceEUR)} price +
+                        ${formatMoney(row.extraPerUnitEUR)} customs / freight / other
+                        &middot; qty ${row.quantity}${diffNote}
+                    </small></td>
+                </tr>`;
+        }
+    }
+
+    if (timelineRows === "") {
+
+        timelineRows = `<tr><td colspan="4">No invoices for this material yet.</td></tr>`;
+    }
+
+    box.innerHTML = `
+
+        <h3 style="margin-top: 28px;">Price &amp; Quotations</h3>
+
+        <div class="form-actions" style="gap: 12px; flex-wrap: wrap; align-items: end;">
+
+            <div>
+                <label>Quantity to buy (${escapeHtml(uom)})</label>
+                <input type="number" id="mprice-qty" min="0" step="any"
+                    style="width: 150px;"
+                    value="${materialPriceState.quantity}">
+            </div>
+
+            <div>
+                <label>Cost as of (optional)</label>
+                <input type="date" id="mprice-date"
+                    value="${escapeHtml(materialPriceState.date)}">
+            </div>
+
+            <button onclick="applyMaterialPriceControls()">Calculate</button>
+
+            <label style="display:flex; gap:6px; align-items:center;">
+                <input type="checkbox" ${materialPriceState.showPast ? "checked" : ""}
+                    onchange="toggleMaterialPastQuotations(this.checked)">
+                Show past (replaced) quotations
+            </label>
+
+        </div>
+
+        <p style="margin-top: 14px;">
+            <strong>Cost${materialPriceState.date ?
+                " as of " + escapeHtml(materialPriceState.date) : ""}${qty > 0 ?
+                " for " + qty + " " + escapeHtml(uom) : ""}:</strong><br>
+            ${renderCostSourceHtml(info.estimate, qty)}
+            ${info.estimate.source !== "None" ? " EUR" : ""}
+        </p>
+
+        <h4>Quotations <small style="font-weight:normal; color:#6b7280;">
+            &mdash; prices offered by suppliers (no customs / freight)</small></h4>
+
+        <div class="material-table-container">
+            <table class="material-table">
+                <thead>
+                    <tr>
+                        <th>Quotation</th>
+                        <th>Supplier</th>
+                        <th>Issued</th>
+                        <th>Valid until</th>
+                        <th>Status</th>
+                        <th>Lead time</th>
+                        <th>Price tiers</th>
+                        <th>Price for the quantity</th>
+                    </tr>
+                </thead>
+                <tbody>${quoteRows}</tbody>
+            </table>
+        </div>
+
+        <h4 style="margin-top: 20px;">Invoices <small style="font-weight:normal; color:#6b7280;">
+            &mdash; real prices paid (landed: price + customs / freight), by date</small></h4>
+
+        <div class="material-table-container">
+            <table class="material-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Invoice</th>
+                        <th>Price (EUR)</th>
+                        <th>Detail</th>
+                    </tr>
+                </thead>
+                <tbody>${timelineRows}</tbody>
+            </table>
+        </div>
+    `;
 }

@@ -28,6 +28,10 @@ WarehouseSystem::WarehouseSystem()
         &warehouseManager,
         &materialManager,
         &inventoryManager,
+        &movementLogger),
+    quotationManager(
+        &materialManager,
+        &supplierManager,
         &movementLogger)
 {
     dataManager.setMovementLogger(
@@ -158,6 +162,12 @@ InventoryCountManager&
 WarehouseSystem::getInventoryCountManager()
 {
     return inventoryCountManager;
+}
+
+QuotationManager&
+WarehouseSystem::getQuotationManager()
+{
+    return quotationManager;
 }
 
 

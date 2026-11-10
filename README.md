@@ -21,6 +21,7 @@ The application combines an object-oriented C++ backend with a web-based user in
   - [Projection Management](#projection-management)
   - [Procurement Management](#procurement-management)
   - [Purchase Management](#purchase-management)
+  - [Quotation Management](#quotation-management)
   - [User Accounts and Roles](#user-accounts-and-roles)
   - [Data Management](#data-management)
   - [Data Persistence](#data-persistence)
@@ -151,6 +152,22 @@ Procurement Management (above) places and receives orders; Purchase Management r
 - Material Price History, and the "current price" hints shown elsewhere in the app, are derived on demand from every Purchase Invoice line recorded for that material - editing an invoice's unit cost later (for when the supplier invoice and the customs bill arrive separately) updates history immediately, with nothing to migrate. The recorded price already includes any Other Cost addition on top of the customs/freight landed price
 - Product cost (heater cost evaluation) is computed from the current (latest by date) purchase price of every BOM material, multiplied by its BOM quantity
 
+### Quotation Management
+
+Supplier quotations document material prices in advance, so price changes can be followed over time next to the Purchase Invoices (which hold what was actually paid).
+
+- A quotation (`QUO-######`, own counter) belongs to one Supplier and has one line per Material, with the Supplier's own quote number, issue date, optional valid-until date, currency (EUR, or USD with its USD to EUR exchange rate as on invoices), Incoterm, lead time (always in weeks, one value for the whole quotation), comment and an attached PDF (saved in the Documents Folder as `QUO-000001 - quotation.pdf`, like the Procurement documents)
+- **Price tiers by quantity** are the core of a line: "from X units, unit price Y" - the quantity bought decides the price. A quantity below the first tier gets the first tier's price and is flagged as below the quoted minimum. Each line also stores the minimum order quantity
+- A quotation never includes customs or freight: those only appear once an import happens, on the Purchase Invoice
+- **Current and past quotations**: for one Supplier and Material, the quotation with the latest issue date is the current one and replaces the previous one automatically. Older quotations are never deleted or overwritten - they are shown as **Replaced** (with their PDF and tiers) and can be consulted at any time, and a price can be reconstructed for a past date from the quotation that was in force on that date
+- Status is calculated: **Valid**, **Expired** (past its valid-until date; it is still used for estimates and shown with a warning) or **Replaced**
+- The Pricing module (the former Purchase and Prices modules merged: Pending Pricing, Adjust Material Price, Invoices, Quotations, Material Price History and Settings; Product Cost and Cost by Category moved to the Product Manager) lists the quotations with filters (current, valid, expired, replaced, all; supplier; free text), a detail view with all tiers, create / edit / delete and export to Excel. Viewers can only read
+- Creating, changing, deleting a quotation and attaching a PDF are written to the Movement Ledger
+- **Link with invoices**: on each invoice line (Price Received Deliveries and Edit Invoice) the quotation it was priced from can be chosen. The unit cost is proposed from the price tier for the received quantity (converted to the invoice currency) and can be corrected. The tier price is stored frozen on the line, and the Invoices view shows the deviation between quoted and invoiced price (before customs / freight, since a quotation has none). A quotation linked to an invoice cannot be deleted
+- **Usual purchase quantity**: on each quotation line one tier can be checked as "usual purchase" - the quantity normally bought from that Supplier. When a quotation governs the price and no invoice exists, that tier is the reference price of the material (instead of the tier of the quantity a calculation happens to need, e.g. a small BOM quantity). Product Cost has a "Price basis" selector: usual purchase quantity (default) or quantity needed (BOM x heaters). Materials with no tier marked fall back to the quantity needed and say so. Projections and invoice lines keep using the real quantity
+- **Which price governs** (`CostEstimator.h`): the most recent record by date. If the last invoice is the same age or newer than the quotation (or there is no quotation), the invoice price is the real cost and the quotation tiers are shown as information only. If the quotation is newer (or there is no invoice), the cost is the quotation's price tier for the quantity, marked **estimated**; if an invoice of that material registered customs / freight, that invoice's customs / freight per unit is added as a separate estimated increment (a material that never had them gets nothing added). The quotation of the material's primary Supplier is used, otherwise the cheapest among its additional Suppliers
+- **Where it shows**: Product Cost (with a "Heaters to produce" quantity and a price basis that select each material's price tier, and a "Cost as of" date that rebuilds the cost on a past date from records dated on or before it; the Bill of Materials is always the current one), the Material detail (cost for a typed quantity, tiers of every supplier, a Quotations table and a separate Invoices table with the real prices paid, optional past quotations) and the Projection detail (price and total of each Qty to Order)
+
 ### User Accounts and Roles
 
 The web interface requires a login. Every request is checked on the server (not only hidden in the page), according to the role of the logged-in user:
@@ -222,6 +239,11 @@ WarehouseSystem
 │   └── PurchaseInvoice
 │       └── PurchaseInvoiceLine
 │
+├── QuotationManager
+│   └── Quotation
+│       └── QuotationLine
+│           └── QuotationTier
+│
 ├── DataManager
 │
 └── WebServer
@@ -255,7 +277,7 @@ Before changing the inventory, the system checks that all required components ar
 
 Excel (via XLNT) is used as the persistence layer for Materials, Suppliers, Warehouses, Inventory, Products and BOM (the Products sheet includes each Product's optional Main Warehouse ID).
 
-Procurement Orders, Procurement document attachments, Projections and Purchase Invoices use their own plain text files instead, so that every action (an order confirmed, a receipt logged, a projection registered, an invoice recorded) is saved immediately, without depending on a manual save to Excel.
+Procurement Orders, Procurement document attachments, Projections, Purchase Invoices and Quotations (`data/quotations.txt`) use their own plain text files instead, so that every action (an order confirmed, a receipt logged, a projection registered, an invoice recorded) is saved immediately, without depending on a manual save to Excel.
 
 The runtime system uses C++ objects and data structures either way; the persistence layer is only responsible for saving and restoring that state.
 
