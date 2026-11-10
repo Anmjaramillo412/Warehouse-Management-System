@@ -7848,7 +7848,8 @@ void WebServer::run()
                             PurchaseInvoiceOtherCost otherCost;
 
                             otherCost.supplierName =
-                                otherCostJson["supplierName"].s();
+                                otherCostJson.has("supplierName") ?
+                                string(otherCostJson["supplierName"].s()) : "";
 
                             otherCost.amountEUR =
                                 otherCostJson["amountEUR"].d();
@@ -8288,7 +8289,8 @@ void WebServer::run()
                             PurchaseInvoiceOtherCost otherCost;
 
                             otherCost.supplierName =
-                                otherCostJson["supplierName"].s();
+                                otherCostJson.has("supplierName") ?
+                                string(otherCostJson["supplierName"].s()) : "";
 
                             otherCost.amountEUR =
                                 otherCostJson["amountEUR"].d();
