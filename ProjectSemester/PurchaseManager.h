@@ -131,6 +131,13 @@ private:
     string getLineSupplierName(
         const PurchaseInvoiceLine& line) const;
 
+    // The one Supplier an invoice covers (every Supplier bills
+    // separately). mixed is set when its lines belong to different
+    // Suppliers; the result is "" when the materials have no Supplier.
+    string getInvoiceSupplierName(
+        const vector<PurchaseInvoiceLine>& lines,
+        bool& mixed) const;
+
 public:
 
     // Constructor

@@ -13042,6 +13042,41 @@ function togglePurchasePendingRow(index) {
             `purchpending-${index}-select`
         );
 
+    // One invoice = one Supplier (each Supplier bills separately):
+    // checking a delivery deselects the ones of any other Supplier
+    if (checkbox.checked) {
+
+        const supplier =
+            purchasePendingCache[index].supplierName || "";
+
+        let deselected = false;
+
+        for (let i = 0; i < purchasePendingCache.length; i++) {
+
+            const other =
+                document.getElementById(`purchpending-${i}-select`);
+
+            if (i !== index && other && other.checked &&
+                (purchasePendingCache[i].supplierName || "") !== supplier) {
+
+                other.checked = false;
+
+                togglePurchasePendingRow(i);
+
+                deselected = true;
+            }
+        }
+
+        const note = document.getElementById("purchpending-message");
+
+        if (note && deselected) {
+
+            note.textContent =
+                "An invoice covers one Supplier only - deliveries of " +
+                "other Suppliers were deselected.";
+        }
+    }
+
     const costInput =
         document.getElementById(
             `purchpending-${index}-cost`
@@ -13292,7 +13327,7 @@ function otherCostRowHtml(formPrefix, rowIndex, data, source) {
     return `
         <div class="line-item" id="${rowPrefix}-row">
 
-            <div class="line-item-field">
+            <div class="line-item-field" style="display:none;">
 
                 <label>
                     Supplier
@@ -13340,7 +13375,7 @@ function otherCostRowHtml(formPrefix, rowIndex, data, source) {
                 <div class="line-item-field">
 
                     <label>
-                        Quantity (this invoice)
+                        Units it is spread over
                     </label>
 
                     <div id="${rowPrefix}-qty" class="empty-message">
@@ -13412,9 +13447,12 @@ function addOtherCostRow(formPrefix, containerId, data, source) {
         otherCostRowSources[rowPrefix] = source;
     }
 
+    // The Supplier is filled in asynchronously - the quantity hint
+    // must be refreshed once it is there, not before
     initSupplierCombobox(
         rowPrefix,
-        (data && data.supplierName) || "");
+        (data && data.supplierName) || "")
+        .then(() => refreshOtherCostQuantity(rowPrefix));
 
     refreshOtherCostQuantity(rowPrefix);
 }
@@ -13440,16 +13478,82 @@ function refreshOtherCostQuantity(rowPrefix) {
     const supplierInput =
         document.getElementById(`${rowPrefix}-supplier`);
 
+    const source =
+        otherCostRowSources[rowPrefix];
+
+    // The Other Cost belongs to the Supplier of the deliveries on
+    // this invoice - when they all come from one Supplier it is taken
+    // from there and the Supplier field is not asked for at all (it
+    // only shows when the invoice mixes several Suppliers)
+    const invoiceSuppliers = [];
+
+    const addInvoiceSupplier = name => {
+        if (name && !invoiceSuppliers.includes(name)) {
+            invoiceSuppliers.push(name);
+        }
+    };
+
+    if (source === "pending") {
+
+        for (let i = 0; i < purchasePendingCache.length; i++) {
+
+            const checkbox =
+                document.getElementById(`purchpending-${i}-select`);
+
+            if (checkbox && checkbox.checked) {
+                addInvoiceSupplier(purchasePendingCache[i].supplierName);
+            }
+        }
+    }
+    else if (source && source.startsWith("invoice:")) {
+
+        const sourceInvoice =
+            purchaseInvoiceCache[source.slice("invoice:".length)];
+
+        if (sourceInvoice) {
+
+            for (const line of sourceInvoice.lines) {
+                addInvoiceSupplier(line.supplierName);
+            }
+        }
+    }
+
+    const supplierField =
+        supplierInput ? supplierInput.closest(".line-item-field") : null;
+
+    if (supplierInput && source) {
+
+        if (invoiceSuppliers.length === 1) {
+
+            const searchInput =
+                document.getElementById(`${rowPrefix}-supplier-search`);
+
+            supplierInput.value = invoiceSuppliers[0];
+
+            if (searchInput) {
+                searchInput.value = invoiceSuppliers[0];
+            }
+
+            if (supplierField) {
+                supplierField.style.display = "none";
+            }
+        }
+        else if (supplierField) {
+
+            supplierField.style.display = "";
+        }
+    }
+
     const supplierName =
         supplierInput ? supplierInput.value.trim() : "";
 
     if (!supplierName) {
-        hint.textContent = "Select a Supplier";
+        hint.textContent =
+            source && invoiceSuppliers.length === 0 ?
+            "Select the deliveries to price first" :
+            "Select a Supplier";
         return;
     }
-
-    const source =
-        otherCostRowSources[rowPrefix];
 
     let quantity = 0;
 
@@ -13488,7 +13592,7 @@ function refreshOtherCostQuantity(rowPrefix) {
 
     hint.textContent =
         quantity > 0 ?
-        `${quantity} unit(s) of ${supplierName} on this invoice` :
+        `${quantity} unit(s) from ${supplierName} on this invoice` :
         `No ${supplierName} deliveries selected on this invoice yet`;
 }
 
@@ -13543,14 +13647,8 @@ function collectOtherCostsFromForm(formPrefix, containerId) {
         const supplierName =
             supplierInput ? supplierInput.value.trim() : "";
 
-        if (!supplierName) {
-
-            return {
-                error:
-                    "Select a Supplier for every Other Cost row, " +
-                    "or remove the row."
-            };
-        }
+        // (empty is fine: an Other Cost belongs to the Supplier of
+        // the invoice, which the server fills in)
 
         const amountInput =
             document.getElementById(`${rowPrefix}-amount`);
@@ -13562,8 +13660,7 @@ function collectOtherCostsFromForm(formPrefix, containerId) {
 
             return {
                 error:
-                    `Enter a valid Amount (EUR) for the Other Cost ` +
-                    `on ${supplierName}.`
+                    `Enter a valid Amount (EUR) for the Other Cost.`
             };
         }
 
@@ -14180,6 +14277,8 @@ async function showPurchaseInvoices() {
             invoices.map(
                 invoice => renderPurchaseInvoiceCard(invoice, false)
             ).join("");
+
+        // (each invoice is one collapsed line - click to open)
     }
     catch (error) {
 
@@ -14196,7 +14295,12 @@ async function showPurchaseInvoices() {
 // id "purchinv-<invoiceID>", is swapped between the two in place, so
 // editing one invoice never disturbs the rest of the list.
 
-function renderPurchaseInvoiceCard(invoice, editing, previousPrices) {
+function renderPurchaseInvoiceCard(
+    invoice, editing, previousPrices, expanded) {
+
+    // Collapsed to one line in the list; editing (or coming back from
+    // it) keeps the invoice open
+    expanded = !!(editing || expanded);
 
     previousPrices = previousPrices || {};
 
@@ -14225,7 +14329,11 @@ function renderPurchaseInvoiceCard(invoice, editing, previousPrices) {
                         ? `<span class="status-badge status-inactive">Manual Adjustment</span>`
                         : escapeHtml(line.procurementOrderID)}
                 </td>
-                <td>${escapeHtml(line.materialID)}</td>
+                <td>
+                    ${escapeHtml(line.materialID)}
+                    ${line.supplierName ?
+                        `<br><small style="color:#6b7280;">${escapeHtml(line.supplierName)}</small>` : ""}
+                </td>
                 <td>${isManual ? "-" : line.receivedQuantity}</td>
                 ${editing
                     ? `<td>
@@ -14421,22 +14529,56 @@ function renderPurchaseInvoiceCard(invoice, editing, previousPrices) {
             </div>
         `;
 
+    const invoiceSupplier =
+        invoice.lines.length > 0 ? (invoice.lines[0].supplierName || "") : "";
+
+    const summaryExtra =
+        `Material ${formatMoney(invoice.totalMaterialCost)}` +
+        (invoice.customsCost > 0 ?
+            ` &middot; Customs ${formatMoney(invoice.customsCost)}` : "") +
+        (invoice.freightCost > 0 ?
+            ` &middot; Freight ${formatMoney(invoice.freightCost)}` : "") +
+        (otherCostGrandTotalEUR > 0 ?
+            ` &middot; Other ${formatMoney(otherCostGrandTotalEUR)} EUR` : "");
+
     return `
 
-        <div class="procurement-section" id="purchinv-${escapedID}">
+        <div class="procurement-card ${expanded ? "" : "collapsed"}"
+             id="purchinv-${escapedID}">
 
-            <h3>
-                ${escapedID}
-                &nbsp;&mdash;&nbsp;
-                ${escapeHtml(invoice.date)}
-                &nbsp;
+            <div class="procurement-summary"
+                 onclick="togglePurchaseInvoiceCard('${escapedID}')">
+
+                <span class="procurement-summary-id">${escapedID}</span>
+
+                <span class="procurement-summary-qty">
+                    ${escapeHtml(invoice.date)}
+                </span>
+
                 <span class="status-badge status-ordered">
                     ${escapeHtml(invoice.currency)}
                 </span>
+
+                <span class="procurement-summary-material">
+                    ${escapeHtml(invoiceSupplier)}
+                    &nbsp;&middot;&nbsp;
+                    ${invoice.lines.length} line${invoice.lines.length === 1 ? "" : "s"}
+                </span>
+
+                <span class="procurement-summary-qty">
+                    ${summaryExtra}
+                </span>
+
                 ${editing
                     ? `<span class="status-badge status-partial">Editing</span>`
                     : ""}
-            </h3>
+
+                <span class="procurement-summary-caret">&#9656;</span>
+
+            </div>
+
+            <div class="purchase-invoice-body" id="purchinv-${escapedID}-body"
+                 style="padding: 4px 16px 16px;" ${expanded ? "" : "hidden"}>
 
             ${header}
 
@@ -14471,8 +14613,25 @@ function renderPurchaseInvoiceCard(invoice, editing, previousPrices) {
 
             ${actions}
 
+            </div>
+
         </div>
     `;
+}
+
+function togglePurchaseInvoiceCard(id) {
+
+    const card = document.getElementById(`purchinv-${id}`);
+
+    const body = document.getElementById(`purchinv-${id}-body`);
+
+    if (!card || !body) {
+        return;
+    }
+
+    body.hidden = !body.hidden;
+
+    card.classList.toggle("collapsed", body.hidden);
 }
 
 function handlePurchaseInvoiceEditCurrencyChange(id) {
@@ -14619,7 +14778,7 @@ function cancelEditPurchaseInvoice(id) {
         document.createElement("div");
 
     wrapper.innerHTML =
-        renderPurchaseInvoiceCard(invoice, false).trim();
+        renderPurchaseInvoiceCard(invoice, false, null, true).trim();
 
     card.replaceWith(wrapper.firstElementChild);
 }
@@ -15037,19 +15196,14 @@ async function showPurchaseProductCost() {
 
     content.innerHTML = `
 
-        <div class="form-container form-container-wide"
-            style="max-width: 900px;">
+        <div style="max-width: 900px;">
 
             <h2>Product Cost</h2>
 
-            <p>
-                Real prices come from invoices; when a quotation is
-                newer than the last invoice (or there is no invoice),
-                its price tier for the quantity is used and marked as
-                an estimate.
-            </p>
-
-            <div class="form-actions" style="gap: 12px; flex-wrap: wrap; align-items: end;">
+            <!-- Quantity / date / Calculate are hidden for now (cost of
+                 1 heater, today); the controls stay in the page so they
+                 can be shown again by removing display:none -->
+            <div class="form-actions" style="display: none; gap: 12px; flex-wrap: wrap; align-items: end;">
 
                 <div>
                     <label>Heaters to produce</label>
@@ -15064,19 +15218,8 @@ async function showPurchaseProductCost() {
                         value="${escapeHtml(productCostDate)}">
                 </div>
 
-                <div>
-                    <label>Price basis (quotations)</label>
-                    <select id="pcost-basis">
-                        <option value="usual"
-                            ${productCostBasis === "usual" ? "selected" : ""}>
-                            Usual purchase quantity (marked on quotation)
-                        </option>
-                        <option value="quantity"
-                            ${productCostBasis === "quantity" ? "selected" : ""}>
-                            Quantity needed (BOM x heaters)
-                        </option>
-                    </select>
-                </div>
+                <!-- (the "Price basis" selector is hidden for now: the
+                     usual purchase quantity of the quotation is used) -->
 
                 <button onclick="applyProductCostControls()">
                     Calculate
@@ -15106,8 +15249,6 @@ function applyProductCostControls() {
 
     productCostDate = document.getElementById("pcost-date").value || "";
 
-    productCostBasis = document.getElementById("pcost-basis").value;
-
     loadPurchaseProductCostResults();
 }
 
@@ -15118,8 +15259,6 @@ function resetProductCostControls() {
     productCostDate = "";
 
     productCostBasis = "usual";
-
-    document.getElementById("pcost-basis").value = "usual";
 
     document.getElementById("pcost-qty").value = 1;
 

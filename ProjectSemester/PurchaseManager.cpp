@@ -140,6 +140,32 @@ string PurchaseManager::getLineSupplierName(
 }
 
 
+string PurchaseManager::getInvoiceSupplierName(
+    const vector<PurchaseInvoiceLine>& lines,
+    bool& mixed) const
+{
+    mixed = false;
+
+    string supplier;
+
+    for (size_t i = 0; i < lines.size(); i++)
+    {
+        string lineSupplier = getLineSupplierName(lines[i]);
+
+        if (i == 0)
+        {
+            supplier = lineSupplier;
+        }
+        else if (lineSupplier != supplier)
+        {
+            mixed = true;
+        }
+    }
+
+    return supplier;
+}
+
+
 // ================================================================
 // PENDING RECEIPTS
 // ================================================================
@@ -215,7 +241,7 @@ PurchaseInvoice* PurchaseManager::createInvoice(
     double freightCost,
     const string& comment,
     const vector<PurchaseInvoiceLine>& lines,
-    const vector<PurchaseInvoiceOtherCost>& otherCosts,
+    const vector<PurchaseInvoiceOtherCost>& otherCostsIn,
     string& errorMessage)
 {
     if (lines.empty())
@@ -226,12 +252,38 @@ PurchaseInvoice* PurchaseManager::createInvoice(
         return nullptr;
     }
 
+    // One invoice = one Supplier; its Other Costs belong to that
+    // Supplier, so they never need a Supplier of their own
+    bool mixedSuppliers = false;
+
+    string invoiceSupplier =
+        getInvoiceSupplierName(lines, mixedSuppliers);
+
+    if (mixedSuppliers)
+    {
+        errorMessage =
+            "An invoice can only cover one Supplier - price the "
+            "deliveries of each Supplier on its own invoice.";
+
+        return nullptr;
+    }
+
+    vector<PurchaseInvoiceOtherCost> otherCosts = otherCostsIn;
+
+    for (auto& otherCost : otherCosts)
+    {
+        if (!invoiceSupplier.empty())
+        {
+            otherCost.supplierName = invoiceSupplier;
+        }
+    }
+
     for (const auto& otherCost : otherCosts)
     {
         if (otherCost.supplierName.empty())
         {
             errorMessage =
-                "Each Other Cost needs a Supplier.";
+                "The materials on this invoice have no Supplier, so the Other Cost cannot be assigned.";
 
             return nullptr;
         }
@@ -458,11 +510,27 @@ bool PurchaseManager::updateInvoice(
     double freightCost,
     const string& comment,
     const vector<PurchaseInvoiceLine>& lines,
-    const vector<PurchaseInvoiceOtherCost>& otherCosts,
+    const vector<PurchaseInvoiceOtherCost>& otherCostsIn,
     string& errorMessage)
 {
     PurchaseInvoice* invoice =
         findInvoice(id);
+
+    // Other Costs belong to the invoice's Supplier (see createInvoice)
+    bool mixedSuppliers = false;
+
+    string invoiceSupplier =
+        getInvoiceSupplierName(lines, mixedSuppliers);
+
+    vector<PurchaseInvoiceOtherCost> otherCosts = otherCostsIn;
+
+    for (auto& otherCost : otherCosts)
+    {
+        if (!mixedSuppliers && !invoiceSupplier.empty())
+        {
+            otherCost.supplierName = invoiceSupplier;
+        }
+    }
 
     if (invoice == nullptr)
     {
@@ -551,7 +619,7 @@ bool PurchaseManager::updateInvoice(
         if (otherCost.supplierName.empty())
         {
             errorMessage =
-                "Each Other Cost needs a Supplier.";
+                "The materials on this invoice have no Supplier, so the Other Cost cannot be assigned.";
 
             return false;
         }

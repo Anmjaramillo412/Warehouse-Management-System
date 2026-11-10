@@ -1841,3 +1841,11 @@ footer {
 #module-content .product-bom-internal td a {
     color: #9ca3af;
 }
+
+#purchase-content > .procurement-card {
+    margin-bottom: 10px;
+}
+
+#purchase-content > .procurement-card:first-child {
+    margin-top: 20px;
+}
