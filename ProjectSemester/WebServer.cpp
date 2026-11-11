@@ -7718,6 +7718,43 @@ void WebServer::run()
                         std::move(otherCostList);
 
 
+                    // Supplier-wide Other Costs of earlier invoices
+                    // that also land on this one
+
+                    crow::json::wvalue::list inheritedList;
+
+                    for (const auto& inherited :
+                        purchaseManager.getInheritedOtherCosts(
+                            invoice.get()))
+                    {
+                        crow::json::wvalue inheritedItem;
+
+                        inheritedItem["sourceInvoiceID"] =
+                            inherited.sourceInvoiceID;
+
+                        inheritedItem["supplierName"] =
+                            inherited.supplierName;
+
+                        inheritedItem["amountEUR"] =
+                            inherited.amountEUR;
+
+                        inheritedItem["comment"] =
+                            inherited.comment;
+
+                        inheritedItem["quantityBasis"] =
+                            inherited.quantityBasis;
+
+                        inheritedItem["shareEUR"] =
+                            inherited.shareEUR;
+
+                        inheritedList.push_back(
+                            std::move(inheritedItem));
+                    }
+
+                    item["inheritedOtherCosts"] =
+                        std::move(inheritedList);
+
+
                     invoiceList.push_back(
                         std::move(item));
                 }

@@ -97,6 +97,20 @@ struct ProductCostResult
 // it never modifies a Procurement Order, so Procurement's own data
 // and behavior stay untouched by anything done here.
 
+// A Supplier-wide Other Cost entered on an EARLIER invoice that also
+// lands on this one (its amount is spread over the Supplier's
+// cumulative quantity, so every later invoice carries a share)
+struct InheritedOtherCost
+{
+    string sourceInvoiceID;
+    string supplierName;
+    double amountEUR = 0.0;
+    string comment;
+    double quantityBasis = 0.0;   // cumulative units it is divided by
+    double shareEUR = 0.0;        // part of it carried by this invoice
+};
+
+
 class PurchaseManager
 {
 private:
@@ -233,6 +247,12 @@ public:
     double getLineOtherCostAdditionEUR(
         const PurchaseInvoice* invoice,
         size_t lineIndex) const;
+
+    // The Supplier-wide Other Costs of OTHER (earlier) invoices that
+    // add to this invoice's price - what makes "Other Costs applied"
+    // larger than the Other Costs entered on the invoice itself
+    vector<InheritedOtherCost> getInheritedOtherCosts(
+        const PurchaseInvoice* invoice) const;
 
     // getLineUnitPriceEUR() plus getLineOtherCostAdditionEUR() - the
     // actual price recorded into history/current price/product
