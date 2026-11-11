@@ -14398,6 +14398,22 @@ function renderPurchaseInvoiceCard(
         `;
     }
 
+    // Supplier-wide Other Costs entered on EARLIER invoices also land
+    // here - listed so the total above is never a mystery number
+    for (const inherited of (invoice.inheritedOtherCosts || [])) {
+
+        otherCostsSummary += `
+            <br>Other Cost carried over from ${escapeHtml(inherited.sourceInvoiceID)}
+            (${escapeHtml(inherited.supplierName)}):
+            ${formatMoney(inherited.amountEUR)} EUR spread over
+            ${inherited.quantityBasis} units bought from this Supplier
+            up to this invoice -
+            ${formatMoney(inherited.shareEUR)} EUR on this invoice
+            ${inherited.comment ?
+                " (" + escapeHtml(inherited.comment) + ")" : ""}
+        `;
+    }
+
     if (otherCostGrandTotalEUR > 0) {
 
         otherCostsSummary += `

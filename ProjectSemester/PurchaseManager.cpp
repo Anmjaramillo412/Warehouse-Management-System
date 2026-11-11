@@ -779,7 +779,11 @@ double PurchaseManager::getLineOtherCostAdditionEUR(
     {
         for (const auto& otherCost : sourceInvoice->getOtherCosts())
         {
-            if (otherCost.supplierName != lineSupplierName)
+            // The stored name went through sanitizeField() (a comma in
+            // "Co., Ltd" becomes ";"), so compare it with the
+            // sanitized name of the line's Supplier - otherwise a
+            // Supplier whose name has a comma never matches
+            if (otherCost.supplierName != sanitizeField(lineSupplierName))
             {
                 continue;
             }
@@ -867,6 +871,91 @@ double PurchaseManager::getLineOtherCostAdditionEUR(
     }
 
     return totalAddition;
+}
+
+
+vector<InheritedOtherCost> PurchaseManager::getInheritedOtherCosts(
+    const PurchaseInvoice* invoice) const
+{
+    vector<InheritedOtherCost> result;
+
+    if (invoice == nullptr)
+    {
+        return result;
+    }
+
+    for (const auto& sourceInvoice : invoices)
+    {
+        if (sourceInvoice.get() == invoice ||
+            !invoiceIsAtOrBefore(sourceInvoice.get(), invoice))
+        {
+            continue;
+        }
+
+        for (const auto& otherCost : sourceInvoice->getOtherCosts())
+        {
+            if (!otherCost.supplierWide)
+            {
+                continue;
+            }
+
+            // Units of that Supplier on THIS invoice, and the
+            // cumulative units up to and including it
+            double thisInvoiceQty = 0.0;
+
+            for (const auto& line : invoice->getLines())
+            {
+                if (sanitizeField(getLineSupplierName(line)) ==
+                    otherCost.supplierName)
+                {
+                    thisInvoiceQty += line.receivedQuantity;
+                }
+            }
+
+            if (thisInvoiceQty <= 0.0)
+            {
+                continue;
+            }
+
+            double basis = 0.0;
+
+            for (const auto& qtyInvoice : invoices)
+            {
+                if (!invoiceIsAtOrBefore(qtyInvoice.get(), invoice))
+                {
+                    continue;
+                }
+
+                for (const auto& line : qtyInvoice->getLines())
+                {
+                    if (sanitizeField(getLineSupplierName(line)) ==
+                        otherCost.supplierName)
+                    {
+                        basis += line.receivedQuantity;
+                    }
+                }
+            }
+
+            if (basis <= 0.0)
+            {
+                continue;
+            }
+
+            InheritedOtherCost inherited;
+
+            inherited.sourceInvoiceID = sourceInvoice->getID();
+            inherited.supplierName = otherCost.supplierName;
+            inherited.amountEUR = otherCost.amountEUR;
+            inherited.comment = otherCost.comment;
+            inherited.quantityBasis = basis;
+            inherited.shareEUR =
+                otherCost.amountEUR / basis * thisInvoiceQty;
+
+            result.push_back(inherited);
+        }
+    }
+
+    return result;
 }
 
 
