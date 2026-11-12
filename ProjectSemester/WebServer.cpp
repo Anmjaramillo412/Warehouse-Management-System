@@ -457,6 +457,25 @@ string readFile(const string& filename)
 }
 
 
+// Same as readFile() but binary-safe (needed for the pdf.js files
+// served from web/lib: text mode would alter bytes on Windows)
+string readBinaryFile(const string& filename)
+{
+    ifstream file(filename, ios::binary);
+
+    if (!file.is_open())
+    {
+        return "";
+    }
+
+    stringstream buffer;
+
+    buffer << file.rdbuf();
+
+    return buffer.str();
+}
+
+
 // ================================================================
 // DATE HELPERS (plain "YYYY-MM-DD" strings, as used by <input
 // type="date">) - used to work out whether it is still on time to
@@ -893,6 +912,50 @@ void WebServer::run()
                 response.set_header(
                     "Content-Type",
                     "application/javascript");
+
+                return response;
+            });
+
+    // ============================================================
+    // LIBRARIES (quotation PDF reader + pdf.js, loaded on demand)
+    // Only these listed files are served - never an arbitrary path.
+    // ============================================================
+
+    CROW_ROUTE(app, "/lib/<string>")
+        ([](const string& name)
+            {
+                if (name != "pdf.min.js" &&
+                    name != "pdf.worker.min.js" &&
+                    name != "quotation-reader.js" &&
+                    name != "tesseract.min.js" &&
+                    name != "tesseract-worker.min.js" &&
+                    name != "tesseract-core-lstm.wasm.js" &&
+                    name != "tesseract-core-simd-lstm.wasm.js" &&
+                    name != "eng.traineddata.gz")
+                {
+                    return crow::response(404, "Not found");
+                }
+
+                string content =
+                    readBinaryFile("web/lib/" + name);
+
+                if (content.empty())
+                {
+                    return crow::response(
+                        404,
+                        "Could not load web/lib/" + name);
+                }
+
+                crow::response response(content);
+
+                const bool isData =
+                    name.size() > 3 &&
+                    name.compare(name.size() - 3, 3, ".gz") == 0;
+
+                response.set_header(
+                    "Content-Type",
+                    isData ? "application/octet-stream" :
+                             "application/javascript");
 
                 return response;
             });

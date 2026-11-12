@@ -18904,6 +18904,9 @@ async function renderQuotationForm(existing) {
 
     const content = document.getElementById("quotation-content");
 
+    // The PDF read for a NEW quotation is attached when it is created
+    quotationPendingPdf = null;
+
     const q = existing || {
         id: "", supplier: "", supplierQuoteNumber: "",
         issueDate: inventoryCountToday(), validUntil: "",
@@ -18917,6 +18920,21 @@ async function renderQuotationForm(existing) {
             style="max-width: 1000px;">
 
             <h2>${existing ? "Edit " + escapeHtml(q.id) : "New Quotation"}</h2>
+
+            ${existing ? "" : `
+            <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:12px; margin-bottom:14px;">
+                <strong>Fill in from the supplier's PDF</strong>
+                <p style="margin:6px 0;">
+                    Reads the quotation (German or English, PDFs with
+                    selectable text) and fills in this form. It is only
+                    a help: check everything - the yellow marks show
+                    what it was not sure about - before creating the
+                    quotation. The PDF is attached automatically.
+                </p>
+                <input type="file" id="quo-reader-file" accept="application/pdf"
+                    onchange="readQuotationPdf(this)">
+                <div id="quo-reader-status" style="margin-top:8px;"></div>
+            </div>`}
 
             <label>Supplier</label>
             <select id="quo-supplier"></select>
@@ -19074,6 +19092,35 @@ async function addQuotationLine(line) {
 
         <label>Price tiers</label>
         <div class="quo-tiers"></div>
+
+        <details style="margin:8px 0;"
+            onpaste="pastePriceTableImage(event, '${prefix}')">
+            <summary style="cursor:pointer; color:#1d4ed8;">
+                Read the price table of a web shop (RS, Mouser, ...)
+            </summary>
+            <p style="margin:6px 0;">
+                <strong>With a picture:</strong> take a screenshot of
+                the quantity / price table (Win+Shift+S), click in the
+                box below and press Ctrl+V - or choose an image file.
+                The quantities and unit prices are read from it and
+                replace the tiers below; the read text stays visible so
+                it can be corrected. <strong>With text:</strong> copy
+                the table from the page and paste it in the box, then
+                press "Read the tiers". Prices are taken in the
+                quotation's currency - check it.
+            </p>
+            <input type="file" class="quo-paste-file" accept="image/*"
+                onchange="readPriceTableImageFile(this, '${prefix}')">
+            <textarea class="quo-paste" rows="5" style="width:100%; margin-top:6px;"
+                placeholder="Paste the screenshot here (Ctrl+V) or text like:&#10;10 - 240   0,086&#10;250 - 990   0,062&#10;1000 - 4990   0,054"></textarea>
+            <div class="quo-paste-status" style="margin:6px 0;"></div>
+            <div class="form-actions">
+                <button class="button-muted" type="button"
+                    onclick="applyPastedTiers('${prefix}')">
+                    Read the tiers
+                </button>
+            </div>
+        </details>
 
         <div class="form-actions">
             <button class="button-muted" type="button"
@@ -19245,10 +19292,35 @@ async function saveQuotation(id) {
 
         const data = await response.json();
 
+        // A PDF that was read to fill the form is attached right away
+        let attached = false;
+
+        if (!id && quotationPendingPdf) {
+
+            try {
+
+                const attach = await fetch(
+                    `/api/quotations/${encodeURIComponent(data.id)}/document`,
+                    {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ fileData: quotationPendingPdf })
+                    });
+
+                attached = attach.ok;
+            }
+            catch (error) {
+                console.error(error);
+            }
+
+            quotationPendingPdf = null;
+        }
+
         await openQuotation(id || data.id);
 
         setQuotationMessage(
             id ? "Quotation saved." :
+                attached ? "Quotation created and its PDF attached." :
                 "Quotation created. You can attach its PDF now.",
             false);
     }
@@ -19260,6 +19332,515 @@ async function saveQuotation(id) {
     }
 }
 
+
+// ============================================================
+// QUOTATION READER (fills the form from the supplier's PDF)
+// ============================================================
+// The reading itself lives in /lib/quotation-reader.js (pure text
+// parsing, tested on real quotations); pdf.js (/lib) extracts the
+// text of the PDF in the browser - the file never leaves this
+// computer. It only PREPARES the form: the quotation is always
+// reviewed and created by the user.
+
+let quotationPendingPdf = null;
+
+let quotationReaderLoading = null;
+
+function loadQuotationReaderLibs() {
+
+    if (window.pdfjsLib && window.QuotationReader) {
+        return Promise.resolve();
+    }
+
+    if (quotationReaderLoading) {
+        return quotationReaderLoading;
+    }
+
+    const load = src => new Promise((resolve, reject) => {
+
+        const script = document.createElement("script");
+
+        script.src = src;
+
+        script.onload = resolve;
+
+        script.onerror = () => reject(new Error("Could not load " + src));
+
+        document.head.appendChild(script);
+    });
+
+    quotationReaderLoading = Promise.all([
+        window.pdfjsLib ? Promise.resolve() : load("/lib/pdf.min.js"),
+        window.QuotationReader ? Promise.resolve() : load("/lib/quotation-reader.js")
+    ]).then(() => {
+
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+            "/lib/pdf.worker.min.js";
+    });
+
+    quotationReaderLoading.catch(() => { quotationReaderLoading = null; });
+
+    return quotationReaderLoading;
+}
+
+function quotationReaderStatus(html, kind) {
+
+    const box = document.getElementById("quo-reader-status");
+
+    if (!box) {
+        return;
+    }
+
+    const color = kind === "error" ? "#b91c1c" :
+        kind === "warn" ? "#92400e" : "#166534";
+
+    box.innerHTML = `<div style="color:${color};">${html}</div>`;
+}
+
+function markQuotationField(id, note) {
+
+    const el = document.getElementById(id);
+
+    if (!el) {
+        return;
+    }
+
+    el.style.background = "#fef3c7";
+
+    el.title = note || "Check this value";
+}
+
+async function readQuotationPdf(input) {
+
+    const file = input.files[0];
+
+    if (!file) {
+        return;
+    }
+
+    quotationReaderStatus("Reading " + escapeHtml(file.name) + "...", "ok");
+
+    try {
+
+        await loadQuotationReaderLibs();
+
+        const buffer = await file.arrayBuffer();
+
+        const pdf = await window.pdfjsLib.getDocument(
+            { data: new Uint8Array(buffer.slice(0)) }).promise;
+
+        let lines = [];
+
+        for (let p = 1; p <= pdf.numPages; p++) {
+
+            const page = await pdf.getPage(p);
+
+            const text = await page.getTextContent();
+
+            lines = lines.concat(window.QuotationReader.buildLines(
+                text.items.map(i => ({
+                    s: i.str, x: i.transform[4],
+                    y: i.transform[5], w: i.width
+                }))));
+        }
+
+        if (lines.join("").length < 40) {
+
+            quotationReaderStatus(
+                "This PDF has no selectable text (a scan or a photo). " +
+                "Reading scans is not available yet - fill the form in " +
+                "by hand; the PDF will still be attached.", "warn");
+
+            quotationPendingPdf = await readFileAsBase64(file);
+
+            return;
+        }
+
+        const suppliersResponse = await fetch("/api/suppliers");
+
+        const suppliersData = await suppliersResponse.json();
+
+        const materials = await loadMaterialCache(true);
+
+        const context = {
+            fileName: file.name,
+            suppliers: (suppliersData.suppliers || [])
+                .map(s => ({ name: s.name })),
+            materials: materials.map(m => ({
+                id: m.id,
+                name: m.name,
+                partNumbers: [m.supplierPartNumber].concat(
+                    (m.additionalSuppliers || [])
+                        .map(link => link.supplierPartNumber))
+                    .filter(pn => pn)
+            }))
+        };
+
+        const draft = window.QuotationReader.parseQuotation(lines, context);
+
+        quotationPendingPdf = await readFileAsBase64(file);
+
+        await applyQuotationDraft(draft, file.name);
+    }
+    catch (error) {
+
+        console.error(error);
+
+        quotationReaderStatus(
+            "Could not read this PDF - fill the form in by hand.", "error");
+    }
+}
+
+async function applyQuotationDraft(draft, fileName) {
+
+    const set = (id, value) => {
+
+        const el = document.getElementById(id);
+
+        if (el && value !== undefined && value !== "") {
+            el.value = value;
+        }
+    };
+
+    const warnings = draft.warnings.slice();
+
+    // header fields
+    const supplierSelect = document.getElementById("quo-supplier");
+
+    if (draft.supplier && supplierSelect) {
+        supplierSelect.value = draft.supplier;
+    }
+    else {
+        markQuotationField("quo-supplier", "Choose the supplier");
+    }
+
+    set("quo-number", draft.supplierQuoteNumber);
+
+    set("quo-issue", draft.issueDate);
+
+    set("quo-valid", draft.validUntil);
+
+    set("quo-incoterm", draft.incoterm);
+
+    if (draft.leadTimeWeeks > 0) {
+        set("quo-lead", draft.leadTimeWeeks);
+    }
+
+    set("quo-currency", draft.currency);
+
+    updateQuotationCurrency();
+
+    const comment = document.getElementById("quo-comment");
+
+    if (comment && !comment.value && draft.notes.length > 0) {
+        comment.value = "From the PDF: " + draft.notes.join(" | ");
+    }
+
+    // what it was not sure about
+    for (const warning of draft.warnings) {
+
+        if (/number/i.test(warning)) {
+            markQuotationField("quo-number", warning);
+        }
+        else if (/issue date/i.test(warning)) {
+            markQuotationField("quo-issue", warning);
+        }
+        else if (/validity/i.test(warning)) {
+            markQuotationField("quo-valid", warning);
+        }
+        else if (/lead time/i.test(warning)) {
+            markQuotationField("quo-lead", warning);
+        }
+        else if (/currency/i.test(warning)) {
+            markQuotationField("quo-currency", warning);
+        }
+    }
+
+    // item lines
+    const container = document.getElementById("quo-lines");
+
+    container.innerHTML = "";
+
+    quotationLineSeq = 0;
+
+    let tierCount = 0;
+
+    if (draft.lines.length === 0) {
+
+        await addQuotationLine();
+    }
+
+    for (const line of draft.lines) {
+
+        const prefix = `quo-line-${quotationLineSeq}`;
+
+        await addQuotationLine({
+            materialID: line.materialID,
+            moq: line.moq,
+            usualQuantity: line.usualQuantity,
+            tiers: line.tiers
+        });
+
+        tierCount += line.tiers.length;
+
+        const box = document.getElementById(prefix);
+
+        if (box) {
+
+            const info = document.createElement("div");
+
+            info.style.cssText =
+                "font-size:13px; margin-bottom:8px; color:#374151;";
+
+            info.innerHTML =
+                "From the PDF: " +
+                escapeHtml(line.articleNumbers.join(" / ")) +
+                (line.description ? " - " + escapeHtml(line.description) : "");
+
+            box.insertBefore(info, box.firstChild);
+
+            if (line.warnings.length > 0) {
+
+                const warn = document.createElement("div");
+
+                warn.style.cssText =
+                    "background:#fef3c7; border-radius:6px; padding:6px 8px; " +
+                    "margin-bottom:8px; font-size:13px;";
+
+                warn.textContent = line.warnings.join(" ");
+
+                box.insertBefore(warn, info.nextSibling);
+
+                warnings.push(line.warnings[0]);
+            }
+        }
+    }
+
+    const summary =
+        `Read ${draft.lines.length} material line(s) and ${tierCount} ` +
+        `price tier(s) from ${escapeHtml(fileName)}. ` +
+        `<strong>Check everything before creating the quotation.</strong>`;
+
+    const hints = draft.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join("");
+
+    quotationReaderStatus(
+        summary + (hints ? `<ul style="margin:6px 0 0 18px;">${hints}</ul>` : ""),
+        draft.warnings.length > 0 ? "warn" : "ok");
+
+    // the tiers also say "usual purchase quantity" when the PDF
+    // quoted exactly one quantity
+}
+
+async function applyPastedTiers(prefix) {
+
+    const box = document.getElementById(prefix);
+
+    if (!box) {
+        return;
+    }
+
+    try {
+
+        await loadQuotationReaderLibs();
+    }
+    catch (error) {
+
+        setQuotationMessage("Could not load the reader.", true);
+
+        return;
+    }
+
+    const result = window.QuotationReader.analyzeTierTable(
+        box.querySelector(".quo-paste").value);
+
+    const status = box.querySelector(".quo-paste-status");
+
+    if (result.tiers.length === 0) {
+
+        status.innerHTML = `<span style="color:#b91c1c;">
+            No quantities and prices were found.</span>`;
+
+        return;
+    }
+
+    box.querySelector(".quo-tiers").innerHTML = "";
+
+    for (const tier of result.tiers) {
+        addQuotationTier(prefix, tier);
+    }
+
+    const hints = result.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join("");
+
+    status.innerHTML =
+        `<span style="color:${hints ? "#92400e" : "#166534"};">` +
+        `${result.tiers.length} price tier(s) read - check them.</span>` +
+        (hints ? `<ul style="margin:4px 0 0 18px; color:#92400e;">${hints}</ul>` : "");
+
+    if (hints) {
+
+        for (const input of box.querySelectorAll(".quo-tiers input")) {
+            input.style.background = "#fef3c7";
+        }
+    }
+}
+
+// ------------------------------------------------------------
+// Price table from a PICTURE (OCR, in the browser, no internet):
+// Tesseract.js + English data live in /lib. The picture is enlarged
+// first (small screenshots are not read otherwise), then only
+// digits and the signs , . - + EUR are accepted.
+// ------------------------------------------------------------
+
+let ocrWorker = null;
+
+let ocrLoading = null;
+
+function loadOcrLibs() {
+
+    if (window.Tesseract) {
+        return Promise.resolve();
+    }
+
+    if (!ocrLoading) {
+
+        ocrLoading = new Promise((resolve, reject) => {
+
+            const script = document.createElement("script");
+
+            script.src = "/lib/tesseract.min.js";
+
+            script.onload = resolve;
+
+            script.onerror = () => reject(new Error("Could not load OCR"));
+
+            document.head.appendChild(script);
+        });
+
+        ocrLoading.catch(() => { ocrLoading = null; });
+    }
+
+    return ocrLoading;
+}
+
+async function getOcrWorker() {
+
+    if (ocrWorker) {
+        return ocrWorker;
+    }
+
+    await loadOcrLibs();
+
+    const base = window.location.origin + "/lib";
+
+    const worker = await window.Tesseract.createWorker("eng", 1, {
+        workerPath: base + "/tesseract-worker.min.js",
+        corePath: base,
+        langPath: base,
+        gzip: true
+    });
+
+    await worker.setParameters({
+        tessedit_pageseg_mode: "6",
+        tessedit_char_whitelist: "0123456789,.€-+ "
+    });
+
+    ocrWorker = worker;
+
+    return ocrWorker;
+}
+
+async function preparePriceImage(file) {
+
+    const bitmap = await createImageBitmap(file);
+
+    // small pictures are enlarged to about 4x, big ones left alone
+    const scale = Math.max(1, Math.min(4, 1600 / bitmap.width));
+
+    const border = 50;
+
+    const canvas = document.createElement("canvas");
+
+    canvas.width = Math.round(bitmap.width * scale) + 2 * border;
+
+    canvas.height = Math.round(bitmap.height * scale) + 2 * border;
+
+    const context = canvas.getContext("2d");
+
+    context.fillStyle = "#ffffff";
+
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
+    context.imageSmoothingQuality = "high";
+
+    context.filter = "grayscale(1)";
+
+    context.drawImage(bitmap, border, border,
+        Math.round(bitmap.width * scale), Math.round(bitmap.height * scale));
+
+    return canvas;
+}
+
+async function readPriceTableImage(file, prefix) {
+
+    const box = document.getElementById(prefix);
+
+    if (!box || !file) {
+        return;
+    }
+
+    const status = box.querySelector(".quo-paste-status");
+
+    status.innerHTML = `<span style="color:#166534;">
+        Reading the picture (the first time can take a few seconds)...</span>`;
+
+    try {
+
+        const worker = await getOcrWorker();
+
+        const canvas = await preparePriceImage(file);
+
+        const result = await worker.recognize(canvas);
+
+        box.querySelector(".quo-paste").value =
+            result.data.text.split(/\r?\n/)
+                .map(line => line.trim()).filter(line => line).join("\n");
+
+        await applyPastedTiers(prefix);
+    }
+    catch (error) {
+
+        console.error(error);
+
+        status.innerHTML = `<span style="color:#b91c1c;">
+            Could not read the picture - type the tiers in by hand.</span>`;
+    }
+}
+
+function readPriceTableImageFile(input, prefix) {
+
+    const file = input.files[0];
+
+    input.value = "";
+
+    readPriceTableImage(file, prefix);
+}
+
+function pastePriceTableImage(event, prefix) {
+
+    const items = (event.clipboardData && event.clipboardData.items) || [];
+
+    for (const item of items) {
+
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+
+            event.preventDefault();
+
+            readPriceTableImage(item.getAsFile(), prefix);
+
+            return;
+        }
+    }
+}
 
 // ============================================================
 // COST SOURCE: invoice (real) or quotation (estimated)
