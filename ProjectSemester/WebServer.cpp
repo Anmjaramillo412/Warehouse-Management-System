@@ -7679,6 +7679,10 @@ void WebServer::run()
                             (lineSupplier != nullptr) ?
                             lineSupplier->getName() : "";
 
+                        lineItem["materialName"] =
+                            (lineMaterial != nullptr) ?
+                            lineMaterial->getName() : "";
+
                         lineItem["unitCost"] =
                             lines[i].unitCost;
 
@@ -8581,6 +8585,7 @@ void WebServer::run()
                         lineItem["estimate"] =
                             estimateToJson(line.estimate);
                         lineItem["hasPrice"] = line.hasPrice;
+                        lineItem["internal"] = line.internal;
                         lineItem["unitPriceEUR"] = line.unitPriceEUR;
                         lineItem["lineCostEUR"] = line.lineCostEUR;
 
@@ -8697,6 +8702,7 @@ void WebServer::run()
                     lineItem["estimate"] =
                         estimateToJson(line.estimate);
                     lineItem["hasPrice"] = line.hasPrice;
+                    lineItem["internal"] = line.internal;
                     lineItem["unitPriceEUR"] = line.unitPriceEUR;
                     lineItem["lineCostEUR"] = line.lineCostEUR;
 

@@ -414,6 +414,10 @@ struct EstimatedCostLine
     double unitPriceEUR = 0.0;
     double lineCostEUR = 0.0;
 
+    // Made by an Internal Supplier (4Tex itself): its cost is already
+    // inside other materials, so having no price is not "missing"
+    bool internal = false;
+
     MaterialCostEstimate estimate;
 };
 
@@ -467,9 +471,25 @@ static EstimatedProductCost computeEstimatedProductCost(
         line.unitPriceEUR = line.estimate.unitPriceEUR;
         line.lineCostEUR = line.unitPriceEUR * item.quantity;
 
+        {
+            Material* lineMaterial =
+                const_cast<MaterialManager&>(materials)
+                    .findMaterial(item.materialID);
+
+            line.internal =
+                lineMaterial != nullptr &&
+                lineMaterial->hasInternalSupplier();
+        }
+
         if (!line.hasPrice)
         {
-            result.complete = false;
+            // An internal material without a price does not make the
+            // Product incomplete (a quotation / invoice price, if it
+            // has one, is still counted like any other)
+            if (!line.internal)
+            {
+                result.complete = false;
+            }
         }
         else if (line.estimate.estimated)
         {
