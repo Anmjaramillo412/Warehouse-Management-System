@@ -31,6 +31,10 @@ let materialsReturnToList = false;
 // Modify Material is opened from the menu or the module changes.
 let materialModifyBackID = null;
 let lastMaterialsList = null;
+
+// Supplier chosen in the materials list filter ("" = all); kept when
+// coming back to the list from a material
+let materialsSupplierFilter = "";
 let materialsListScroll = 0;
 
 
@@ -3342,17 +3346,18 @@ async function displayArchivedMaterials() {
 // MATERIALS TABLE - SHARED RENDERING (active or archived)
 // ============================================================
 
-async function renderMaterialsList(filterFn, headingText, emptyText) {
+async function renderMaterialsList(filterFn, headingText, emptyText, targetID) {
 
     lastMaterialsList = {
         filterFn: filterFn,
         headingText: headingText,
-        emptyText: emptyText
+        emptyText: emptyText,
+        targetID: targetID
     };
 
     const content =
         document.getElementById(
-            "material-content"
+            targetID || "material-content"
         );
 
     content.innerHTML = `
@@ -3386,12 +3391,11 @@ async function renderMaterialsList(filterFn, headingText, emptyText) {
         const data =
             await response.json();
 
-        const materials =
+        const listed =
             sortMaterialsByID(
                 (data.materials || []).filter(filterFn));
 
-
-        if (materials.length === 0) {
+        if (listed.length === 0) {
 
             content.innerHTML = `
 
@@ -3405,14 +3409,87 @@ async function renderMaterialsList(filterFn, headingText, emptyText) {
             return;
         }
 
+        // Supplier filter: primary or additional supplier
+        const materialSuppliers = material =>
+            [material.supplier].concat(
+                (material.additionalSuppliers || [])
+                    .map(link => link.supplier))
+                .filter(name => name);
+
+        const supplierNames = Array.from(new Set(
+            listed.flatMap(materialSuppliers)))
+            .sort((a, b) => a.localeCompare(b));
+
+        if (materialsSupplierFilter &&
+            !supplierNames.includes(materialsSupplierFilter) &&
+            materialsSupplierFilter !== "__none__") {
+
+            materialsSupplierFilter = "";
+        }
+
+        const materials = listed.filter(material => {
+
+            if (!materialsSupplierFilter) {
+                return true;
+            }
+
+            if (materialsSupplierFilter === "__none__") {
+                return materialSuppliers(material).length === 0;
+            }
+
+            return materialSuppliers(material)
+                .includes(materialsSupplierFilter);
+        });
+
+        const filterHtml = `
+            <div style="margin:10px 0;">
+                <label for="materials-supplier-filter"
+                    style="display:inline; margin-right:8px;">
+                    <strong>Supplier</strong>
+                </label>
+                <select id="materials-supplier-filter"
+                    style="max-width:320px;"
+                    onchange="setMaterialsSupplierFilter(this.value)">
+                    <option value="">All suppliers (${listed.length})</option>
+                    ${supplierNames.map(name => `
+                        <option value="${escapeHtml(name)}"
+                            ${name === materialsSupplierFilter ? "selected" : ""}>
+                            ${escapeHtml(name)}
+                        </option>`).join("")}
+                    <option value="__none__"
+                        ${materialsSupplierFilter === "__none__" ? "selected" : ""}>
+                        No supplier
+                    </option>
+                </select>
+                ${materialsSupplierFilter ?
+                    `<span style="margin-left:10px; color:#6b7280;">
+                        ${materials.length} material(s)</span>` : ""}
+            </div>
+        `;
+
+        if (materials.length === 0) {
+
+            content.innerHTML = `
+                <h2>${escapeHtml(headingText)}</h2>
+                ${filterHtml}
+                <div class="empty-message">
+                    No materials for this supplier.
+                </div>
+            `;
+
+            return;
+        }
+
 
         let html = `
 
-            <div class="material-table-container material-table-container-fit">
+            <h2>
+                ${escapeHtml(headingText)}
+            </h2>
 
-                <h2>
-                    ${escapeHtml(headingText)}
-                </h2>
+            ${filterHtml}
+
+            <div class="material-table-container material-table-container-fit">
 
                 <table class="material-table material-table-clickable">
 
@@ -3488,6 +3565,8 @@ async function renderMaterialsList(filterFn, headingText, emptyText) {
 
                     <td class="material-name-cell">
                         ${escapeHtml(material.name)}
+                        ${material.active === false ?
+                            `<span class="status-badge status-inactive">Archived</span>` : ""}
                     </td>
 
                     <td>
@@ -3561,6 +3640,20 @@ async function renderMaterialsList(filterFn, headingText, emptyText) {
                 Could not connect to the server.
             </p>
         `;
+    }
+}
+
+function setMaterialsSupplierFilter(value) {
+
+    materialsSupplierFilter = value;
+
+    if (lastMaterialsList) {
+
+        renderMaterialsList(
+            lastMaterialsList.filterFn,
+            lastMaterialsList.headingText,
+            lastMaterialsList.emptyText,
+            lastMaterialsList.targetID);
     }
 }
 
@@ -3788,10 +3881,23 @@ function showSearchMaterial() {
             </h2>
 
             <label>
-                Material ID
+                Search
             </label>
 
-            ${materialComboboxHtml("search")}
+            <input
+                type="text"
+                id="search-material-query"
+                placeholder="ID, name, description, supplier, part number, drawing..."
+                autocomplete="off"
+                onkeydown="if (event.key === 'Enter') searchMaterial();"
+            >
+
+            <small>
+                Finds every material (active or archived) where all the
+                words typed appear in any of: ID, name, description,
+                category, drawing number, manufacturer, part numbers or
+                suppliers.
+            </small>
 
             <div class="form-actions">
 
@@ -3804,183 +3910,74 @@ function showSearchMaterial() {
 
             </div>
 
-            <div id="search-material-result">
-            </div>
+        </div>
 
+        <div id="search-material-result">
         </div>
     `;
 
-    initMaterialCombobox("search");
+    document.getElementById("search-material-query").focus();
 }
 
 
 // ============================================================
 // SEARCH MATERIAL
 // ============================================================
+// Any coincidence: every word typed must appear somewhere in the
+// material's fields. Results use the same table as Display Materials
+// (photo, clickable ID, supplier filter).
+
+function materialSearchText(material) {
+
+    return [
+        material.id, material.name, material.description,
+        material.uom, material.category, material.type,
+        material.drawingNumber, material.manufacturer,
+        material.manufacturerPartNumber, material.supplier,
+        material.supplierPartNumber
+    ].concat(
+        (material.additionalSuppliers || []).map(
+            link => (link.supplier || "") + " " +
+                (link.supplierPartNumber || ""))
+    ).join(" ").toLowerCase();
+}
 
 async function searchMaterial() {
 
-    const id =
+    const query =
         document.getElementById(
-            "search-material-id"
+            "search-material-query"
         ).value.trim();
-
 
     const result =
         document.getElementById(
             "search-material-result"
         );
 
-
-    const idPattern =
-        /^([0-9]{3}-[0-9]{6}|[0-9]{6}-00)$/;
-
-
-    if (!idPattern.test(id)) {
+    if (!query) {
 
         result.innerHTML = `
-            <p>
-                Invalid Material ID.
-                Expected format ###-###### or ######-00.
-            </p>
+            <p>Type something to search.</p>
         `;
 
         return;
     }
 
+    const words = query.toLowerCase().split(/\s+/).filter(w => w);
 
-    result.innerHTML = `
-        <p>
-            Searching...
-        </p>
-    `;
+    materialsSupplierFilter = "";
 
+    await renderMaterialsList(
+        material => {
 
-    try {
+            const text = materialSearchText(material);
 
-        const response =
-            await fetch(
-                `/api/materials/${encodeURIComponent(id)}`
-            );
-
-
-        const data =
-            await response.json();
-
-
-        if (!response.ok) {
-
-            result.innerHTML = `
-                <p>
-                    ${data.message}
-                </p>
-            `;
-
-            return;
-        }
-
-
-        result.innerHTML = `
-
-            <div class="search-result">
-
-                <h3>
-                    Material Found
-                </h3>
-
-                <p>
-                    <strong>ID:</strong>
-                    ${data.id}
-                </p>
-
-                <p>
-                    <strong>Name:</strong>
-                    ${data.name}
-                </p>
-
-                <p>
-                    <strong>Description:</strong>
-                    ${data.description}
-                </p>
-
-                <p>
-                    <strong>Unit of Measure:</strong>
-                    ${data.uom}
-                </p>
-
-                <p>
-                    <strong>Category:</strong>
-                    ${data.category}
-                </p>
-
-                <p>
-                    <strong>Type:</strong>
-                    ${data.type}
-                </p>
-
-                ${
-                    data.drawingNumber
-                    ? `<p>
-                        <strong>Drawing Number:</strong>
-                        ${data.drawingNumber}
-                    </p>
-                    <p>
-                        <strong>Drawing Version:</strong>
-                        ${data.drawingVersion || ""}
-                    </p>`
-                    : ""
-                }
-
-                <p>
-                    <strong>Manufacturer:</strong>
-                    ${data.manufacturer || ""}
-                </p>
-
-                <p>
-                    <strong>Manufacturer Part Number:</strong>
-                    ${data.manufacturerPartNumber || ""}
-                </p>
-
-                <p>
-                    <strong>Primary Supplier:</strong>
-                    ${data.supplier}
-                </p>
-
-                <p>
-                    <strong>Primary Supplier Part Number:</strong>
-                    ${data.supplierPartNumber || ""}
-                </p>
-
-                ${
-                    (data.additionalSuppliers || []).length > 0
-                    ? `<p>
-                        <strong>Additional Suppliers:</strong>
-                        ${data.additionalSuppliers
-                            .map(link => escapeHtml(link.supplier))
-                            .join(", ")}
-                    </p>`
-                    : ""
-                }
-
-                <p>
-                    <strong>Active:</strong>
-                    ${data.active ? "Yes" : "No"}
-                </p>
-
-            </div>
-        `;
-
-    }
-    catch (error) {
-
-        console.error(error);
-
-        result.innerHTML = `
-            <p>
-                Could not connect to the server.
-            </p>
-        `;
-    }
+            return words.every(word => text.includes(word));
+        },
+        `Results for "${query}"`,
+        `No materials match "${query}".`,
+        "search-material-result"
+    );
 }
 
 
@@ -4427,15 +4424,27 @@ async function loadMaterialForModify() {
 
             <div class="form-container">
 
-                <h2>
-                    Modify Material
-                </h2>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px;">
 
+                    <div>
+                        <h2>
+                            Modify Material
+                        </h2>
 
-                <p>
-                    Material ID:
-                    <strong>${data.id}</strong>
-                </p>
+                        <p>
+                            Material ID:
+                            <strong>${data.id}</strong>
+                        </p>
+                    </div>
+
+                    <img
+                        id="modify-photo-thumb"
+                        src="${data.photo ? "/" + escapeHtml(data.photo) : ""}"
+                        alt="Material photo"
+                        style="width:96px; height:96px; object-fit:cover; border-radius:8px; border:1px solid #d1d5db; background:#fff; flex-shrink:0; ${data.photo ? "" : "display:none;"}"
+                    >
+
+                </div>
 
 
                 <label>
@@ -4707,6 +4716,27 @@ async function loadMaterialForModify() {
         initSupplierCombobox(
             "modify",
             data.supplier);
+
+        // the thumbnail follows a newly chosen photo (before saving)
+        const modifyPhotoInput =
+            document.getElementById("modify-photo-input");
+
+        if (modifyPhotoInput) {
+
+            modifyPhotoInput.addEventListener("change", () => {
+
+                const file = modifyPhotoInput.files[0];
+
+                const thumb = document.getElementById("modify-photo-thumb");
+
+                if (file && thumb) {
+
+                    thumb.src = URL.createObjectURL(file);
+
+                    thumb.style.display = "block";
+                }
+            });
+        }
 
         additionalSupplierCounters["modify"] = 0;
 
@@ -13011,7 +13041,7 @@ function renderPurchasePendingForm(pending) {
     `;
 }
 
-function handlePurchaseCurrencyChange() {
+async function handlePurchaseCurrencyChange() {
 
     const currency =
         document.getElementById(
@@ -13030,7 +13060,8 @@ function handlePurchaseCurrencyChange() {
     }
     else {
 
-        rateInput.value = purchaseDefaultExchangeRate;
+        // always the rate saved in Settings (editable afterwards)
+        rateInput.value = await loadPurchaseDefaultExchangeRate();
         rateInput.disabled = false;
     }
 }
@@ -13325,9 +13356,9 @@ function otherCostRowHtml(formPrefix, rowIndex, data, source) {
         `${formPrefix}-othercost-${rowIndex}`;
 
     return `
-        <div class="line-item" id="${rowPrefix}-row">
+        <div class="line-item cost-row-wrap" id="${rowPrefix}-row">
 
-            <div class="line-item-field" style="display:none;">
+            <div class="line-item-field cost-supplier-field" style="display:none;">
 
                 <label>
                     Supplier
@@ -13337,78 +13368,62 @@ function otherCostRowHtml(formPrefix, rowIndex, data, source) {
 
             </div>
 
-            <div class="line-item-field line-item-field-qty">
+            <div class="cost-table-row cols-other">
 
-                <label>
-                    Amount (EUR)
-                </label>
+                <div class="cost-cell">
 
-                <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    id="${rowPrefix}-amount"
-                    placeholder="e.g. Setup fee"
-                    value="${data.amountEUR != null ? data.amountEUR : ""}"
-                >
-
-            </div>
-
-            <div class="line-item-field">
-
-                <label>
-                    Amortize across
-                </label>
-
-                <select id="${rowPrefix}-scope">
-                    <option value="invoice" ${!data.supplierWide ? "selected" : ""}>
-                        Only this invoice
-                    </option>
-                    <option value="supplier" ${data.supplierWide ? "selected" : ""}>
-                        All purchases to this Supplier
-                    </option>
-                </select>
-
-            </div>
-
-            ${source ? `
-                <div class="line-item-field">
-
-                    <label>
-                        Units it is spread over
-                    </label>
-
-                    <div id="${rowPrefix}-qty" class="empty-message">
-                        Select a Supplier
-                    </div>
+                    <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        id="${rowPrefix}-amount"
+                        placeholder="0.00"
+                        value="${data.amountEUR != null ? data.amountEUR : ""}"
+                    >
 
                 </div>
-            ` : ""}
 
-            <div class="line-item-field">
+                <div class="cost-cell">
 
-                <label>
-                    Comment (optional)
-                </label>
+                    <select id="${rowPrefix}-scope">
+                        <option value="invoice" ${!data.supplierWide ? "selected" : ""}>
+                            Only this invoice
+                        </option>
+                        <option value="supplier" ${data.supplierWide ? "selected" : ""}>
+                            All purchases to this Supplier
+                        </option>
+                    </select>
 
-                <input
-                    type="text"
-                    id="${rowPrefix}-comment"
-                    placeholder="e.g. Machinery setup fee"
-                    value="${escapeHtml(data.comment || "")}"
-                >
+                    ${source ? `
+                        <div id="${rowPrefix}-qty" class="empty-message">
+                            Select a Supplier
+                        </div>
+                    ` : ""}
+
+                </div>
+
+                <div class="cost-cell">
+
+                    <input
+                        type="text"
+                        id="${rowPrefix}-comment"
+                        placeholder="e.g. Machinery setup fee"
+                        value="${escapeHtml(data.comment || "")}"
+                    >
+
+                </div>
+
+                <button
+                    type="button"
+                    class="remove-line-button"
+                    title="Remove this Other Cost"
+                    onclick="document.getElementById('${rowPrefix}-row').remove()">
+
+                    &times;
+
+                </button>
 
             </div>
-
-            <button
-                type="button"
-                class="remove-line-button"
-                title="Remove this Other Cost"
-                onclick="document.getElementById('${rowPrefix}-row').remove()">
-
-                &times;
-
-            </button>
         </div>
     `;
 }
@@ -13427,6 +13442,23 @@ function addOtherCostRow(formPrefix, containerId, data, source) {
 
     if (!container) {
         return;
+    }
+
+    // Table look: one header row (hidden while there are no rows)
+    if (!container.querySelector(".cost-table-head")) {
+
+        container.classList.add("cost-table");
+
+        const head = document.createElement("div");
+
+        head.className =
+            "cost-table-head cols-other";
+
+        head.innerHTML =
+            "<div>Amount (EUR)</div><div>Amortize across</div>" +
+            "<div>Comment</div><div></div>";
+
+        container.insertBefore(head, container.firstChild);
     }
 
     const wrapper =
@@ -13851,7 +13883,18 @@ async function showPurchaseAdjust() {
                 cost (unit cost × quantity), same as a normal invoice.
             </small>
 
-            <div id="purchadjust-rows">
+            <div class="cost-table">
+
+                <div class="cost-table-head cols-adjust">
+                    <div>Material ID</div>
+                    <div>Quantity</div>
+                    <div>Unit Cost</div>
+                    <div></div>
+                </div>
+
+                <div id="purchadjust-rows">
+                </div>
+
             </div>
 
         </div>
@@ -13886,7 +13929,7 @@ function addPurchaseAdjustMaterialRow() {
         document.createElement("div");
 
     row.className =
-        "line-item";
+        "line-item cost-table-row cols-adjust";
 
     row.id =
         `${prefix}-row`;
@@ -13896,11 +13939,7 @@ function addPurchaseAdjustMaterialRow() {
 
     row.innerHTML = `
 
-        <div class="line-item-field">
-
-            <label>
-                Material ID
-            </label>
+        <div class="cost-cell">
 
             ${materialComboboxHtml(prefix, "Search by ID or name...")}
 
@@ -13909,11 +13948,7 @@ function addPurchaseAdjustMaterialRow() {
 
         </div>
 
-        <div class="line-item-field line-item-field-qty">
-
-            <label>
-                Quantity
-            </label>
+        <div class="cost-cell">
 
             <input
                 type="number"
@@ -13926,11 +13961,7 @@ function addPurchaseAdjustMaterialRow() {
 
         </div>
 
-        <div class="line-item-field line-item-field-qty">
-
-            <label>
-                Unit Cost
-            </label>
+        <div class="cost-cell">
 
             <input
                 type="number"
@@ -13958,7 +13989,7 @@ function addPurchaseAdjustMaterialRow() {
     initMaterialCombobox(prefix);
 }
 
-function handlePurchaseAdjustCurrencyChange() {
+async function handlePurchaseAdjustCurrencyChange() {
 
     const currency =
         document.getElementById(
@@ -13977,7 +14008,8 @@ function handlePurchaseAdjustCurrencyChange() {
     }
     else {
 
-        rateInput.value = purchaseDefaultExchangeRate;
+        // always the rate saved in Settings (editable afterwards)
+        rateInput.value = await loadPurchaseDefaultExchangeRate();
         rateInput.disabled = false;
     }
 }
@@ -14326,15 +14358,15 @@ function renderPurchaseInvoiceCard(
             <tr>
                 <td>
                     ${isManual
-                        ? `<span class="status-badge status-inactive">Manual Adjustment</span>`
+                        ? `<span class="status-badge status-inactive invoice-manual-badge">Manual adj.</span>`
                         : escapeHtml(line.procurementOrderID)}
                 </td>
                 <td>
-                    ${escapeHtml(line.materialID)}
-                    ${line.supplierName ?
-                        `<br><small style="color:#6b7280;">${escapeHtml(line.supplierName)}</small>` : ""}
+                    <span style="white-space:nowrap;">${escapeHtml(line.materialID)}</span>
+                    ${line.materialName ?
+                        `<br><small style="color:#6b7280;">${escapeHtml(line.materialName)}</small>` : ""}
                 </td>
-                <td>${isManual ? "-" : line.receivedQuantity}</td>
+                <td>${line.receivedQuantity}</td>
                 ${editing
                     ? `<td>
                             ${previous
@@ -14548,6 +14580,17 @@ function renderPurchaseInvoiceCard(
     const invoiceSupplier =
         invoice.lines.length > 0 ? (invoice.lines[0].supplierName || "") : "";
 
+    // Total of the invoice (material + customs + freight, in the
+    // invoice currency; the EUR equivalent when it is USD)
+    const invoiceTotal =
+        invoice.totalMaterialCost + invoice.customsCost + invoice.freightCost;
+
+    const summaryTotal =
+        `<strong>Total ${formatMoney(invoiceTotal)} ${escapeHtml(invoice.currency)}` +
+        (invoice.currency === "USD" ?
+            ` (${formatMoney(invoiceTotal * invoice.exchangeRate)} EUR)` : "") +
+        `</strong>`;
+
     const summaryExtra =
         `Material ${formatMoney(invoice.totalMaterialCost)}` +
         (invoice.customsCost > 0 ?
@@ -14585,6 +14628,10 @@ function renderPurchaseInvoiceCard(
                     ${summaryExtra}
                 </span>
 
+                <span class="procurement-summary-qty" style="color:#111827;">
+                    ${summaryTotal}
+                </span>
+
                 ${editing
                     ? `<span class="status-badge status-partial">Editing</span>`
                     : ""}
@@ -14600,22 +14647,22 @@ function renderPurchaseInvoiceCard(
 
             <div class="material-table-container">
 
-                <table class="material-table">
+                <table class="material-table invoice-lines-table">
 
                     <thead>
                         <tr>
                             <th>Order</th>
                             <th>Material</th>
                             <th>Qty</th>
-                            ${editing ? `<th>Previous Price (EUR)</th>` : ""}
-                            <th>Unit Cost</th>
-                            <th>Material Cost</th>
-                            <th>Allocated Customs/Freight</th>
-                            <th>Unit Price</th>
-                            <th>Unit Price (EUR)</th>
-                            <th>Other Cost /unit (EUR)</th>
-                            <th>Other Cost Total (EUR)</th>
-                            <th>Landed Price (EUR)</th>
+                            ${editing ? `<th title="Previous Price (EUR)">Prev. EUR</th>` : ""}
+                            <th title="Unit Cost">Unit Cost</th>
+                            <th title="Material Cost (unit cost x quantity)">Cost</th>
+                            <th title="Allocated Customs/Freight">Cust./Frt.</th>
+                            <th title="Unit Price">Price</th>
+                            <th title="Unit Price (EUR)">Price EUR</th>
+                            <th title="Other Cost per unit (EUR)">Other/unit</th>
+                            <th title="Other Cost Total (EUR)">Other tot.</th>
+                            <th title="Landed Price (EUR)">Landed EUR</th>
                         </tr>
                     </thead>
 
@@ -14650,7 +14697,7 @@ function togglePurchaseInvoiceCard(id) {
     card.classList.toggle("collapsed", body.hidden);
 }
 
-function handlePurchaseInvoiceEditCurrencyChange(id) {
+async function handlePurchaseInvoiceEditCurrencyChange(id) {
 
     const currency =
         document.getElementById(
@@ -14668,6 +14715,13 @@ function handlePurchaseInvoiceEditCurrencyChange(id) {
         rateInput.disabled = true;
     }
     else {
+
+        // coming from EUR (rate fixed at 1): propose the rate saved
+        // in Settings; a rate already typed for a USD invoice stays
+        if (rateInput.disabled || Number(rateInput.value) === 1) {
+            rateInput.value = await loadPurchaseDefaultExchangeRate();
+        }
+
         rateInput.disabled = false;
     }
 }
@@ -15363,8 +15417,12 @@ function renderPurchaseProductCostCard(product) {
 
     for (const line of product.lines) {
 
+        // Internal Supplier material (made by 4Tex): grey, and not
+        // "missing" a price - its cost is inside other materials
+        const internalOnly = line.internal && !line.hasPrice;
+
         lineRows += `
-            <tr>
+            <tr class="${line.internal ? "internal-row" : ""}">
                 <td>
                     <a href="#"
                         onclick="openMaterialFromQuotation('${escapeHtml(line.materialID)}'); return false;">
@@ -15378,10 +15436,12 @@ function renderPurchaseProductCostCard(product) {
                         `<br><small>priced for ${line.totalQuantity}</small>` : ""}
                 </td>
                 <td>
-                    ${renderCostSourceHtml(line.estimate, line.totalQuantity)}
+                    ${internalOnly ?
+                        "<small>Internal - cost is in other materials</small>" :
+                        renderCostSourceHtml(line.estimate, line.totalQuantity)}
                 </td>
                 <td>
-                    ${formatMoney(line.lineCostEUR)}
+                    ${internalOnly ? "-" : formatMoney(line.lineCostEUR)}
                     ${line.estimate && line.estimate.estimated ?
                         `<br><small style="color:#b45309;">estimated</small>` : ""}
                 </td>
@@ -19055,13 +19115,21 @@ async function renderQuotationForm(existing) {
     }
 }
 
-function updateQuotationCurrency() {
+async function updateQuotationCurrency() {
 
     const usd =
         document.getElementById("quo-currency").value === "USD";
 
     document.getElementById("quo-rate-box").style.display =
         usd ? "" : "none";
+
+    // No rate yet (or the 1 of an EUR quotation): the one in Settings
+    const rate = document.getElementById("quo-rate");
+
+    if (usd && rate && (rate.value === "" || Number(rate.value) === 1)) {
+
+        rate.value = await loadPurchaseDefaultExchangeRate();
+    }
 }
 
 async function addQuotationLine(line) {

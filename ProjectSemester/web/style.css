@@ -1849,3 +1849,136 @@ footer {
 #purchase-content > .procurement-card:first-child {
     margin-top: 20px;
 }
+
+/* Internal Supplier materials: grey rows */
+.internal-row td,
+.internal-row a,
+.internal-row small {
+    color: #9ca3af !important;
+}
+
+/* Invoice lines: compact table */
+.invoice-lines-table th {
+    padding: 6px 8px;
+    font-size: 12px;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.invoice-lines-table td {
+    padding: 6px 8px;
+    font-size: 13px;
+}
+
+.invoice-manual-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    white-space: nowrap;
+}
+
+/* ============================================================
+   COST TABLES (Adjust Material Price lines, Other Costs)
+============================================================ */
+
+.cost-table {
+    margin-top: 12px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+}
+
+.cost-table-head,
+.cost-table-row {
+    display: grid;
+    align-items: center;
+    column-gap: 12px;
+    padding: 0 14px;
+}
+
+.cols-adjust {
+    grid-template-columns: minmax(200px, 1fr) 110px 130px 40px;
+}
+
+.cols-other {
+    grid-template-columns: 120px minmax(190px, 1.2fr) minmax(130px, 1fr) 40px;
+}
+
+.cost-table-head {
+    background: #eef2f7;
+    border-radius: 10px 10px 0 0;
+    border-bottom: 1px solid #cbd5e1;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    font-size: 15px;
+    font-weight: bold;
+    color: #1f2937;
+}
+
+.cost-table-head:only-child {
+    display: none;
+}
+
+.cost-table-row.line-item,
+.cost-row-wrap.line-item {
+    display: block;
+    margin: 0;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: 0;
+}
+
+.cost-table-row.line-item {
+    display: grid;
+    padding: 10px 14px;
+}
+
+.cost-row-wrap .cost-table-row {
+    padding: 10px 14px;
+}
+
+.cost-table .line-item + .line-item {
+    border-top: 1px solid #e5e7eb;
+}
+
+.cost-supplier-field {
+    padding: 10px 14px 0;
+}
+
+.cost-cell {
+    min-width: 0;
+}
+
+.cost-table .cost-cell input,
+.cost-table .cost-cell select {
+    width: 100%;
+    box-sizing: border-box;
+    height: 46px;
+    padding: 8px 12px;
+    font-size: 16px;
+    font-family: Arial, Helvetica, sans-serif;
+    border: 1px solid #94a3b8;
+    border-radius: 8px;
+    background: #ffffff;
+    margin: 0;
+}
+
+.cost-table .cost-cell input:focus,
+.cost-table .cost-cell select:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.cost-table .cost-cell .empty-message {
+    font-size: 14px;
+    padding: 0;
+    margin-top: 4px;
+}
+
+.cost-table .remove-line-button {
+    width: 40px;
+    height: 40px;
+    font-size: 22px;
+    border-radius: 8px;
+}
