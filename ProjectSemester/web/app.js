@@ -2730,6 +2730,53 @@ async function initMaterialCombobox(prefix, selectedID) {
     searchInput.value =
         selectedID ?
         materialComboboxLabel(selectedID) : "";
+
+    updateMaterialPartNumberHint(prefix, selectedID || "");
+}
+
+// Optional: a form that has an element "<prefix>-material-id-pn" next
+// to its Material box gets the selected material's supplier part
+// number(s) there - the chosen Supplier's first (quotations).
+function updateMaterialPartNumberHint(prefix, materialID) {
+
+    const hint =
+        document.getElementById(prefix + "-material-id-pn");
+
+    if (!hint) {
+        return;
+    }
+
+    const material = materialID ?
+        (materialCache || []).find(m => m.id === materialID) : null;
+
+    if (!material) {
+
+        hint.innerHTML = "";
+
+        return;
+    }
+
+    const preferred = materialComboboxPreferredSupplier(prefix);
+
+    const links = materialPartNumbers(material)
+        .filter(link => link.kind === "supplier")
+        .sort((a, b) =>
+            (b.supplier === preferred ? 1 : 0) -
+            (a.supplier === preferred ? 1 : 0));
+
+    if (links.length === 0) {
+
+        hint.innerHTML =
+            `<small style="color:#b45309;">No supplier part number saved for this material</small>`;
+
+        return;
+    }
+
+    hint.innerHTML = links.map((link, index) =>
+        `<span style="${index === 0 ? "font-weight:bold; color:#1f2937;" : "color:#6b7280;"}">` +
+        `Supplier part # ${escapeHtml(link.pn)}` +
+        (link.supplier ? ` &middot; ${escapeHtml(link.supplier)}` : "") +
+        `</span>`).join("<br>");
 }
 
 // Returns "ID - Name" for a Material already in materialCache, or
@@ -2749,6 +2796,146 @@ function materialComboboxLabel(materialID) {
         materialID;
 }
 
+// Part numbers are compared ignoring case, hyphens, spaces, dots and
+// slashes ("5001.3856.030" = "5001 3856-030")
+function normalizeMaterialKey(text) {
+
+    return String(text || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+// Supplier a form wants its materials matched against first: the
+// quotation lines use the Supplier chosen at the top of the form
+function materialComboboxPreferredSupplier(prefix) {
+
+    if (prefix.startsWith("quo-line-")) {
+
+        const select = document.getElementById("quo-supplier");
+
+        return select ? select.value : "";
+    }
+
+    return "";
+}
+
+// All part numbers of a material: [{ pn, supplier, kind }]
+function materialPartNumbers(material) {
+
+    const list = [];
+
+    if (material.supplierPartNumber) {
+        list.push({ pn: material.supplierPartNumber,
+            supplier: material.supplier || "", kind: "supplier" });
+    }
+
+    for (const link of (material.additionalSuppliers || [])) {
+
+        if (link.supplierPartNumber) {
+            list.push({ pn: link.supplierPartNumber,
+                supplier: link.supplier || "", kind: "supplier" });
+        }
+    }
+
+    if (material.manufacturerPartNumber) {
+        list.push({ pn: material.manufacturerPartNumber,
+            supplier: material.manufacturer || "", kind: "manufacturer" });
+    }
+
+    return list;
+}
+
+// Scores one material against what was typed: null = no match.
+// Exact part number > exact ID > part number / ID start > name or
+// part number contains. Materials of the preferred Supplier come first.
+function matchMaterialForSearch(material, text, preferredSupplier) {
+
+    const plain = text.toLowerCase();
+
+    const key = normalizeMaterialKey(text);
+
+    const supplierLinks = materialPartNumbers(material);
+
+    const supplierMaterial = !!preferredSupplier && (
+        material.supplier === preferredSupplier ||
+        (material.additionalSuppliers || []).some(
+            link => link.supplier === preferredSupplier));
+
+    let score = null;
+
+    let matchedPN = null;
+
+    if (!plain) {
+
+        score = 0;
+    }
+    else {
+
+        const idKey = normalizeMaterialKey(material.id);
+
+        if (key && idKey === key) {
+            score = 90;
+        }
+        else if (key && idKey.startsWith(key)) {
+            score = 55;
+        }
+        else if (key && idKey.includes(key)) {
+            score = 40;
+        }
+
+        if ((material.name || "").toLowerCase().includes(plain)) {
+            score = Math.max(score === null ? 0 : score, 40);
+        }
+
+        for (const link of supplierLinks) {
+
+            const pnKey = normalizeMaterialKey(link.pn);
+
+            let pnScore = null;
+
+            if (key.length >= 3 && pnKey === key) {
+                pnScore = 100;
+            }
+            else if (key.length >= 3 && pnKey.startsWith(key)) {
+                pnScore = 60;
+            }
+            else if (key.length >= 3 && pnKey.includes(key)) {
+                pnScore = 35;
+            }
+
+            if (pnScore !== null && (score === null || pnScore > score ||
+                matchedPN === null)) {
+
+                if (score === null || pnScore >= score) {
+                    matchedPN = link;
+                }
+
+                score = Math.max(score === null ? 0 : score, pnScore);
+            }
+        }
+    }
+
+    if (score === null) {
+        return null;
+    }
+
+    return {
+        material: material,
+        score: score + (supplierMaterial ? 20 : 0),
+        supplierMaterial: supplierMaterial,
+        matchedPN: matchedPN
+    };
+}
+
+function findMaterialMatches(prefix, text) {
+
+    const preferred = materialComboboxPreferredSupplier(prefix);
+
+    return (materialCache || [])
+        .map(material => matchMaterialForSearch(material, text.trim(), preferred))
+        .filter(match => match)
+        .sort((x, y) => y.score - x.score ||
+            x.material.id.localeCompare(y.material.id));
+}
+
 function renderMaterialOptions(prefix) {
 
     const searchInput =
@@ -2761,17 +2948,11 @@ function renderMaterialOptions(prefix) {
         return;
     }
 
-    const filterText =
-        searchInput.value.trim().toLowerCase();
-
-    const materials =
-        materialCache || [];
+    const preferred =
+        materialComboboxPreferredSupplier(prefix);
 
     const matches =
-        materials.filter(material =>
-            material.id.toLowerCase().includes(filterText) ||
-            (material.name || "").toLowerCase().includes(filterText)
-        );
+        findMaterialMatches(prefix, searchInput.value);
 
     if (matches.length === 0) {
 
@@ -2787,13 +2968,34 @@ function renderMaterialOptions(prefix) {
             matches.slice(0, 30);
 
         optionsBox.innerHTML =
-            limited.map(material => `
+            limited.map(match => {
+
+                const material = match.material;
+
+                // part number shown: the one that matched, else the
+                // preferred Supplier's own
+                let link = match.matchedPN;
+
+                if (!link && preferred) {
+
+                    link = materialPartNumbers(material).find(
+                        entry => entry.kind === "supplier" &&
+                            entry.supplier === preferred) || null;
+                }
+
+                return `
                 <div class="combobox-option"
                     onmousedown="selectMaterialOption('${prefix}', '${escapeHtml(material.id)}')">
                     <strong>${escapeHtml(material.id)}</strong>
                     &nbsp;&mdash;&nbsp;${escapeHtml(material.name)}
-                </div>
-            `).join("") +
+                    ${link ?
+                        `<br><small style="color:#6b7280;">${
+                            link.kind === "manufacturer" ? "Mfr" : "Part #"
+                        } ${escapeHtml(link.pn)}${
+                            link.supplier ? " &middot; " + escapeHtml(link.supplier) : ""
+                        }</small>` : ""}
+                </div>`;
+            }).join("") +
             (matches.length > limited.length
                 ? `<div class="combobox-option combobox-empty">
                         ${matches.length - limited.length} more - keep typing to narrow down
@@ -2828,7 +3030,56 @@ function handleMaterialSearchInput(prefix) {
     hiddenInput.value =
         exactMatch ? exactMatch.id : "";
 
+    // A part number typed in full (any format) that points to ONE
+    // material selects it right away
+    if (!exactMatch && normalizeMaterialKey(typedText).length >= 4) {
+
+        const exactPN = findMaterialMatches(prefix, typedText)
+            .filter(match => match.score >= 100);
+
+        const best = exactPN.length > 0 ? exactPN[0] : null;
+
+        const unique = best && (
+            exactPN.length === 1 ||
+            (best.supplierMaterial &&
+                exactPN.filter(match => match.supplierMaterial).length === 1));
+
+        if (unique) {
+
+            selectMaterialOption(prefix, best.material.id);
+
+            return;
+        }
+    }
+
+    updateMaterialPartNumberHint(prefix, hiddenInput.value);
+
     updateMaterialCurrentPriceHint(prefix, hiddenInput.value);
+}
+
+// Enter picks the first suggestion
+function handleMaterialSearchKey(event, prefix) {
+
+    if (event.key !== "Enter") {
+        return;
+    }
+
+    const optionsBox =
+        document.getElementById(prefix + "-material-id-options");
+
+    if (!optionsBox || optionsBox.classList.contains("hidden")) {
+        return;
+    }
+
+    const first = optionsBox.querySelector(
+        ".combobox-option:not(.combobox-empty)");
+
+    if (first) {
+
+        event.preventDefault();
+
+        first.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    }
 }
 
 function selectMaterialOption(prefix, id) {
@@ -2849,6 +3100,8 @@ function selectMaterialOption(prefix, id) {
     document.getElementById(
         prefix + "-material-id-options"
     ).classList.add("hidden");
+
+    updateMaterialPartNumberHint(prefix, id);
 
     updateMaterialCurrentPriceHint(prefix, id);
 }
@@ -2956,6 +3209,7 @@ function materialComboboxHtml(prefix, placeholder) {
                 autocomplete="off"
                 placeholder="${placeholder || "Search by ID or name..."}"
                 oninput="handleMaterialSearchInput('${prefix}')"
+                onkeydown="handleMaterialSearchKey(event, '${prefix}')"
                 onfocus="this.select(); renderMaterialOptions('${prefix}')"
                 onblur="hideMaterialOptionsDelayed('${prefix}')"
             >
@@ -18997,7 +19251,7 @@ async function renderQuotationForm(existing) {
             </div>`}
 
             <label>Supplier</label>
-            <select id="quo-supplier"></select>
+            <select id="quo-supplier" onchange="refreshQuotationPartNumbers()"></select>
 
             <label>Supplier quote number</label>
             <input type="text" id="quo-number"
@@ -19132,6 +19386,17 @@ async function updateQuotationCurrency() {
     }
 }
 
+// The Supplier of the quotation decides which part number is shown first
+function refreshQuotationPartNumbers() {
+
+    for (const box of document.querySelectorAll("#quo-lines .quo-line")) {
+
+        const hidden = document.getElementById(box.id + "-material-id");
+
+        updateMaterialPartNumberHint(box.id, hidden ? hidden.value : "");
+    }
+}
+
 async function addQuotationLine(line) {
 
     const container = document.getElementById("quo-lines");
@@ -19151,7 +19416,9 @@ async function addQuotationLine(line) {
 
     wrapper.innerHTML = `
         <label>Material</label>
-        ${materialComboboxHtml(prefix, "Search by ID or name...")}
+        ${materialComboboxHtml(prefix, "Search by ID, name or part number...")}
+        <div id="${prefix}-material-id-pn"
+            style="margin:6px 2px 0; font-size:14px;"></div>
 
         <label>Minimum order qty (optional)</label>
         <input type="number" min="0" step="any"
