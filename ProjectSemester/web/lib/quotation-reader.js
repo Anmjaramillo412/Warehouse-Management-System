@@ -34,6 +34,8 @@
     function buildLines(items) {
 
         const sorted = items
+            // icon-font glyphs (private use area) are not text
+            .map(i => Object.assign({}, i, { s: String(i.s || "").replace(/[\ue000-\uf8ff]/g, "") }))
             .filter(i => i.s && i.s.trim() !== "")
             .slice()
             .sort((a, b) => (b.y - a.y) || (a.x - b.x));
@@ -311,11 +313,14 @@
 
         let validUntil = "";
 
+        // delivery dates are not the quotation date
+        const deliveryDate = /delivery date|lieferdatum|liefertermin|desired delivery|wunschlieferdatum/i;
+
         for (let i = 0; i < lines.length; i++) {
 
             const line = lines[i];
 
-            const dates = findDates(line);
+            const dates = deliveryDate.test(line) ? [] : findDates(line);
 
             // Label line with several columns (Datum | Gültigkeitsfrist),
             // dates on the next line in the same order
@@ -371,10 +376,32 @@
 
         if (!issue) {
 
+            // Page printed from a web shop: "11/13/26, 10:42 AM  Shop"
+            // in the page header = the day the cart / quote was saved
+            for (const line of lines.slice(0, 3)) {
+
+                const us = line.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4}),?\s+\d{1,2}:\d{2}\s*(?:AM|PM)/i);
+
+                if (us) {
+
+                    const year = us[3].length === 2 ? "20" + us[3] : us[3];
+
+                    issue = year + "-" + us[1].padStart(2, "0") + "-" + us[2].padStart(2, "0");
+
+                    result.warnings.push(
+                        "Date taken from the page header (the day the page was saved) - check it.");
+
+                    break;
+                }
+            }
+        }
+
+        if (!issue) {
+
             // first date that is not an enquiry / validity date
             for (const line of lines) {
 
-                if (enquiry.test(line) || validRe.test(line)) {
+                if (enquiry.test(line) || validRe.test(line) || deliveryDate.test(line)) {
                     continue;
                 }
 
@@ -440,6 +467,35 @@
                 }
 
                 weeks = Math.max(weeks, value);
+            }
+        }
+
+        // "Earliest possible delivery date: 19.11.2026" (web shop carts):
+        // weeks from the quotation date, the longest of the items
+        if (weeks === 0 && result.issueDate) {
+
+            const start = Date.parse(result.issueDate + "T00:00:00Z");
+
+            for (const line of lines) {
+
+                if (!/earliest|fr\u00fchest|delivery date|liefertermin/i.test(line) ||
+                    /desired|wunsch/i.test(line)) {
+                    continue;
+                }
+
+                for (const d of findDates(line)) {
+
+                    const days = (Date.parse(d.iso + "T00:00:00Z") - start) / 86400000;
+
+                    if (days > 0) {
+                        weeks = Math.max(weeks, Math.ceil(days / 7));
+                    }
+                }
+            }
+
+            if (weeks > 0) {
+                result.warnings.push(
+                    "Lead time worked out from the delivery dates of the cart - check it.");
             }
         }
 
@@ -855,6 +911,104 @@
     }
 
     // ------------------------------------------------------------
+    // Shopping cart saved as PDF (SERTO, ...): per item a description,
+    // a type code, "Art. no.: 1032826" and "100 pcs   10,33 EUR" where
+    // the amount is the LINE TOTAL for that quantity
+    // ------------------------------------------------------------
+
+    function parseCartItems(lines, context, result) {
+
+        const items = [];
+
+        let sum = 0;
+
+        for (let i = 0; i < lines.length; i++) {
+
+            const art = lines[i].match(/^\s*(?:Art(?:icle)?\.?\s*(?:no\.?|nr\.?|number)|Artikel-?\s*(?:nr\.?|nummer)|Item\s*(?:no\.?|number))\s*:?\s*([A-Za-z0-9.\-\/]{3,})/i);
+
+            if (!art) {
+                continue;
+            }
+
+            // quantity + total within the next lines (page breaks and
+            // notes can sit in between)
+            let q = null;
+
+            for (let j = i + 1; j <= i + 8 && j < lines.length; j++) {
+
+                if (/^\s*(?:Art(?:icle)?\.?\s*(?:no|nr)|Artikel)/i.test(lines[j])) {
+                    break;
+                }
+
+                q = lines[j].match(new RegExp("^\\s*(" + NUM + ")\\s*(" + UNIT + ")\\s+(?:EUR|\\u20ac)?\\s*(" + NUM + ")\\s*(?:EUR|\\u20ac)?\\s*$"));
+
+                if (q) {
+                    break;
+                }
+            }
+
+            if (!q) {
+                continue;
+            }
+
+            const quantity = parseNumber(q[1]);
+
+            const total = parseNumber(q[3]);
+
+            if (!(quantity > 0) || !(total > 0)) {
+                continue;
+            }
+
+            const designation = (lines[i - 1] || "").trim();
+
+            const description = (lines[i - 2] || "").trim();
+
+            const tokens = [art[1]];
+
+            if (designation && /\d/.test(designation) && designation.length <= 40 &&
+                !tokens.includes(designation)) {
+
+                tokens.push(designation);
+            }
+
+            const unitPrice = total / quantity;
+
+            sum += total;
+
+            const item = {
+                articleNumbers: tokens,
+                description: description || designation,
+                moq: 0,
+                usualQuantity: quantity,
+                tiers: [{ minQuantity: quantity, unitPrice: Math.round(unitPrice * 100000) / 100000 }],
+                warnings: []
+            };
+
+            matchMaterial(item, context, result);
+
+            items.push(item);
+        }
+
+        if (items.length > 0) {
+
+            result.warnings.push(
+                "Shopping cart: each price is the line total divided by its quantity " +
+                "(only the quantity in the cart is priced) - add other price tiers by hand if needed.");
+
+            const grand = (lines.join("\n").match(new RegExp("Grand total\\s*:?\\s*(" + NUM + ")", "i")) || [])[1];
+
+            if (grand && Math.abs(parseNumber(grand) - sum) > 0.02) {
+
+                result.warnings.push(
+                    "The lines add up to " + sum.toFixed(2) + " but the cart total is " +
+                    parseNumber(grand).toFixed(2) + " - a line may be missing.");
+            }
+        }
+
+        return items;
+    }
+
+    // ------------------------------------------------------------
     // Price table pasted from a web shop (RS, Mouser, ...)
     // ------------------------------------------------------------
 
@@ -1009,6 +1163,10 @@
         findIncoterm(lines, result);
 
         result.lines = parseItems(lines, context, result);
+
+        if (result.lines.length === 0) {
+            result.lines = parseCartItems(lines, context, result);
+        }
 
         if (result.lines.length === 0) {
             result.warnings.push(
