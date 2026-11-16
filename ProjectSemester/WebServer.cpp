@@ -669,6 +669,54 @@ WebServer::WebServer(
 }
 
 // ============================================================
+// PRODUCT PHOTO FILES
+// ============================================================
+// One photo per Product, kept as web/images/products/<ID>.jpg (the
+// Product itself stores nothing). The ID is reduced to safe file-name
+// characters.
+
+static string productPhotoFileName(const string& productID)
+{
+    string safe;
+
+    for (char c : productID)
+    {
+        if ((c >= '0' && c <= '9') ||
+            (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            c == '-' || c == '_')
+        {
+            safe += c;
+        }
+        else
+        {
+            safe += '_';
+        }
+    }
+
+    return "web/images/products/" + safe + ".jpg";
+}
+
+// URL of the Product photo (with a version so a new photo shows
+// immediately), or "" when the Product has none.
+static string productPhotoUrl(const string& productID)
+{
+    const string path = productPhotoFileName(productID);
+
+    std::error_code ec;
+
+    if (!fs::exists(path, ec))
+    {
+        return "";
+    }
+
+    auto stamp = fs::last_write_time(path, ec)
+        .time_since_epoch().count();
+
+    return "/" + path + "?v=" + std::to_string(stamp);
+}
+
+// ============================================================
 // BASE64 DECODER
 // ============================================================
 
@@ -7416,6 +7464,101 @@ void WebServer::run()
             });
 
 // ============================================================
+// PRODUCT PHOTOS
+// ============================================================
+
+    CROW_ROUTE(app, "/web/images/products/<string>")
+        ([]
+        (string filename)
+            {
+                for (char c : filename)
+                {
+                    if (c == '/' || c == '\\')
+                    {
+                        return crow::response(404, "Image not found.");
+                    }
+                }
+
+                ifstream imageFile(
+                    "web/images/products/" + filename,
+                    ios::binary);
+
+                if (!imageFile)
+                {
+                    return crow::response(404, "Image not found.");
+                }
+
+                string imageData(
+                    (istreambuf_iterator<char>(imageFile)),
+                    istreambuf_iterator<char>());
+
+                crow::response response(imageData);
+
+                response.set_header("Content-Type", "image/jpeg");
+
+                return response;
+            });
+
+
+    CROW_ROUTE(app, "/api/products/<string>/photo")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem]
+        (const crow::request& req, string productID)
+            {
+                if (warehouseSystem->getProductManager()
+                        .findProduct(productID) == nullptr)
+                {
+                    return crow::response(404, "Product not found.");
+                }
+
+                auto body = crow::json::load(req.body);
+
+                if (!body || !body.has("photoData"))
+                {
+                    return crow::response(400, "Invalid JSON data.");
+                }
+
+                string photoData = body["photoData"].s();
+
+                size_t commaPosition = photoData.find(',');
+
+                if (commaPosition == string::npos)
+                {
+                    return crow::response(400, "Invalid photo data.");
+                }
+
+                string imageData =
+                    decodeBase64(photoData.substr(commaPosition + 1));
+
+                if (imageData.empty())
+                {
+                    return crow::response(400, "Invalid photo data.");
+                }
+
+                fs::create_directories("web/images/products");
+
+                ofstream imageFile(
+                    productPhotoFileName(productID),
+                    ios::binary);
+
+                if (!imageFile)
+                {
+                    return crow::response(
+                        500, "Could not create image file.");
+                }
+
+                imageFile.write(imageData.data(), imageData.size());
+
+                imageFile.close();
+
+                crow::json::wvalue response;
+
+                response["photo"] = productPhotoUrl(productID);
+
+                return crow::response(response);
+            });
+
+// ============================================================
 // SET DATA LOGGING
 // ============================================================
 
@@ -8557,6 +8700,8 @@ void WebServer::run()
 
                     crow::json::wvalue item;
 
+                    item["photo"] = productPhotoUrl(product->getID());
+
                     item["realCostEUR"] = cost.realCostEUR;
 
                     item["estimatedCostEUR"] = cost.estimatedCostEUR;
@@ -8684,6 +8829,8 @@ void WebServer::run()
 
                 response["productName"] =
                     product->getName();
+
+                response["photo"] = productPhotoUrl(product->getID());
 
                 response["totalCostEUR"] = cost.totalCostEUR;
 

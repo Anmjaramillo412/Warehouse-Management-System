@@ -15652,8 +15652,9 @@ async function loadPurchaseProductCostResults() {
             return;
         }
 
-        content.innerHTML =
-            products.map(renderPurchaseProductCostCard).join("");
+        productCostList = products;
+
+        renderProductCostTiles();
     }
     catch (error) {
 
@@ -15662,6 +15663,110 @@ async function loadPurchaseProductCostResults() {
         content.innerHTML = `
             <p>Could not connect to the server.</p>
         `;
+    }
+}
+
+// Products as photo tiles (same look as the main menu); a click opens
+// the material list of that Product (Product Cost card), "Back" returns.
+let productCostList = [];
+
+function renderProductCostTiles() {
+
+    const content = document.getElementById("pcost-results");
+
+    if (!content) {
+        return;
+    }
+
+    content.innerHTML = `
+        <div class="product-tiles">
+            ${productCostList.map((product, index) => `
+                <div class="product-tile" onclick="openProductCostDetail(${index})">
+                    <div class="product-tile-photo">
+                        ${product.photo ?
+                            `<img src="${escapeHtml(product.photo)}" alt="">` :
+                            `<span class="product-tile-noimg">No photo</span>`}
+                    </div>
+                    <div class="product-tile-body">
+                        <h3>${escapeHtml(product.productName)}</h3>
+                        <p>${escapeHtml(product.productID)}</p>
+                        <p>
+                            <strong>${formatMoney(product.totalCostEUR)} EUR</strong>
+                            <span class="status-badge ${product.complete ? "status-active" : "status-inactive"}">
+                                ${product.complete ? "Complete" : "Incomplete"}
+                            </span>
+                        </p>
+                        <label class="product-tile-upload" onclick="event.stopPropagation()">
+                            ${product.photo ? "Change photo" : "Add photo"}
+                            <input type="file" accept="image/*" style="display:none;"
+                                onchange="uploadProductPhoto(${index}, this)">
+                        </label>
+                    </div>
+                </div>
+            `).join("")}
+        </div>
+    `;
+}
+
+function openProductCostDetail(index) {
+
+    const content = document.getElementById("pcost-results");
+
+    const product = productCostList[index];
+
+    if (!content || !product) {
+        return;
+    }
+
+    content.innerHTML = `
+        <button class="button-muted" style="margin-bottom: 12px;"
+            onclick="renderProductCostTiles()">&larr; All Products</button>
+        ${product.photo ?
+            `<img class="product-detail-photo" src="${escapeHtml(product.photo)}" alt="">` : ""}
+        ${renderPurchaseProductCostCard(product)}
+    `;
+}
+
+async function uploadProductPhoto(index, input) {
+
+    const file = input.files[0];
+
+    const product = productCostList[index];
+
+    if (!file || !product) {
+        return;
+    }
+
+    try {
+
+        const photoData = await readFileAsBase64(file);
+
+        const response = await fetch(
+            `/api/products/${encodeURIComponent(product.productID)}/photo`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ photoData: photoData })
+            });
+
+        if (!response.ok) {
+
+            alert("Could not save photo: " + await response.text());
+
+            return;
+        }
+
+        const data = await response.json();
+
+        product.photo = data.photo;
+
+        renderProductCostTiles();
+    }
+    catch (error) {
+
+        console.error(error);
+
+        alert("Could not save photo.");
     }
 }
 
@@ -15733,9 +15838,9 @@ function renderPurchaseProductCostCard(product) {
                     : ""}
             </p>
 
-            <div class="material-table-container">
+            <div class="material-table-container material-table-container-fit">
 
-                <table class="material-table">
+                <table class="material-table material-table-sticky">
 
                     <thead>
                         <tr>
