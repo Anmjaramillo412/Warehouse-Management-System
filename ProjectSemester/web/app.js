@@ -15875,7 +15875,93 @@ const PURCHASE_CATEGORY_COLORS = [
     "#0891b2", "#db2777", "#65a30d", "#ea580c", "#4f46e5"
 ];
 
+// Lines of the Product shown in the breakdown and the Category of
+// each legend row, so a click can list the materials of that Category
+let purchaseCategoryLines = [];
+
+let purchaseCategoryNames = [];
+
+function togglePurchaseCategoryDetail(index) {
+
+    const row = document.getElementById(`purchcat-row-${index}`);
+
+    if (!row) {
+        return;
+    }
+
+    const existing = document.getElementById(`purchcat-detail-${index}`);
+
+    if (existing) {
+
+        existing.remove();
+
+        row.classList.remove("category-open");
+
+        return;
+    }
+
+    const category = purchaseCategoryNames[index];
+
+    const lines = purchaseCategoryLines.filter(
+        line => (line.category || "Other") === category);
+
+    const categoryTotal = lines.reduce(
+        (sum, line) => sum + (line.hasPrice ? line.lineCostEUR : 0), 0);
+
+    const body = lines
+        .slice()
+        .sort((a, b) => (b.lineCostEUR || 0) - (a.lineCostEUR || 0))
+        .map(line => `
+            <tr class="${line.internal ? "internal-row" : ""}">
+                <td>
+                    <a href="#"
+                        onclick="openMaterialFromQuotation('${escapeHtml(line.materialID)}'); return false;">
+                        ${escapeHtml(line.materialID)}</a>
+                    ${line.materialName ? "<br><small>" + escapeHtml(line.materialName) + "</small>" : ""}
+                </td>
+                <td>${line.quantity}</td>
+                <td>${line.hasPrice ? formatMoney(line.unitPriceEUR) : "<small>No price yet</small>"}
+                    ${line.hasPrice && line.estimate && line.estimate.estimated ?
+                        `<br><small style="color:#b45309;">estimated</small>` : ""}</td>
+                <td>${line.hasPrice ? formatMoney(line.lineCostEUR) : "-"}</td>
+                <td>${line.hasPrice && categoryTotal > 0 ?
+                    (line.lineCostEUR / categoryTotal * 100).toFixed(1) + "%" : "-"}</td>
+            </tr>
+        `).join("");
+
+    const detail = document.createElement("tr");
+
+    detail.id = `purchcat-detail-${index}`;
+
+    detail.className = "category-detail-row";
+
+    detail.innerHTML = `
+        <td colspan="3">
+            <table class="material-table category-detail-table">
+                <thead>
+                    <tr>
+                        <th>Material</th>
+                        <th>Qty</th>
+                        <th>Unit price (EUR)</th>
+                        <th>Cost (EUR)</th>
+                        <th>% of category</th>
+                    </tr>
+                </thead>
+                <tbody>${body}</tbody>
+            </table>
+        </td>
+    `;
+
+    row.after(detail);
+
+    row.classList.add("category-open");
+}
+
 function renderPurchaseCostByCategory(product) {
+
+    purchaseCategoryLines = product.lines || [];
+
+    purchaseCategoryNames = [];
 
     const categoryTotals = {};
 
@@ -15970,7 +16056,8 @@ function renderPurchaseCostByCategory(product) {
 
             slicesHtml = `
                 <circle cx="${centerX}" cy="${centerY}" r="${radius}"
-                    fill="${color}">
+                    fill="${color}" style="cursor:pointer;"
+                    onclick="togglePurchaseCategoryDetail(${index})">
                 </circle>
             `;
         }
@@ -15999,18 +16086,24 @@ function renderPurchaseCostByCategory(product) {
                        L ${startPoint.x} ${startPoint.y}
                        A ${radius} ${radius} 0 ${largeArcFlag} 1 ${endPoint.x} ${endPoint.y}
                        Z"
-                    fill="${color}">
+                    fill="${color}" style="cursor:pointer;"
+                    onclick="togglePurchaseCategoryDetail(${index})">
                 </path>
             `;
 
             cumulativeAngle = endAngle;
         }
 
+        purchaseCategoryNames[index] = category;
+
         legendHtml += `
-            <tr>
+            <tr id="purchcat-row-${index}" class="category-row"
+                title="Click to see the materials of this category"
+                onclick="togglePurchaseCategoryDetail(${index})">
                 <td>
                     <span class="category-swatch" style="background: ${color};"></span>
                     ${escapeHtml(category)}
+                    <small style="color:#6b7280;">&#9662;</small>
                 </td>
                 <td>${percentage.toFixed(1)}%</td>
                 <td>${formatMoney(amount)}</td>
@@ -20701,3 +20794,550 @@ function renderMaterialPriceInfo() {
         </div>
     `;
 }
+
+// ============================================================
+// EXPORT TO EXCEL (every view that shows tables)
+// ============================================================
+// A floating "Export to Excel" button appears whenever the open
+// module shows at least one table. It writes a real .xlsx file (no
+// library: a minimal OOXML + zip writer) with one sheet per table -
+// the tables exactly as they are on screen, including every invoice /
+// order card of a list even when collapsed.
+
+const xlsxCrcTable = (() => {
+
+    const table = [];
+
+    for (let n = 0; n < 256; n++) {
+
+        let c = n;
+
+        for (let k = 0; k < 8; k++) {
+            c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        }
+
+        table.push(c >>> 0);
+    }
+
+    return table;
+})();
+
+function xlsxCrc32(bytes) {
+
+    let crc = 0xFFFFFFFF;
+
+    for (let i = 0; i < bytes.length; i++) {
+        crc = xlsxCrcTable[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+    }
+
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+// Zip with "stored" (uncompressed) entries: files = [{ name, text }]
+function xlsxZip(files) {
+
+    const encoder = new TextEncoder();
+
+    const chunks = [];
+
+    const central = [];
+
+    let offset = 0;
+
+    const u16 = v => [v & 0xFF, (v >>> 8) & 0xFF];
+
+    const u32 = v => [v & 0xFF, (v >>> 8) & 0xFF, (v >>> 16) & 0xFF, (v >>> 24) & 0xFF];
+
+    for (const file of files) {
+
+        const name = encoder.encode(file.name);
+
+        const data = encoder.encode(file.text);
+
+        const crc = xlsxCrc32(data);
+
+        const local = new Uint8Array([
+            ...u32(0x04034b50), ...u16(20), ...u16(0x0800), ...u16(0),
+            ...u16(0), ...u16(0x21), ...u32(crc), ...u32(data.length),
+            ...u32(data.length), ...u16(name.length), ...u16(0)
+        ]);
+
+        chunks.push(local, name, data);
+
+        central.push(new Uint8Array([
+            ...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0x0800),
+            ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc),
+            ...u32(data.length), ...u32(data.length), ...u16(name.length),
+            ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0),
+            ...u32(offset)
+        ]), name);
+
+        offset += local.length + name.length + data.length;
+    }
+
+    let centralSize = 0;
+
+    for (const part of central) {
+        centralSize += part.length;
+    }
+
+    const end = new Uint8Array([
+        ...u32(0x06054b50), ...u16(0), ...u16(0),
+        ...u16(files.length), ...u16(files.length),
+        ...u32(centralSize), ...u32(offset), ...u16(0)
+    ]);
+
+    const all = chunks.concat(central, [end]);
+
+    let total = 0;
+
+    for (const part of all) {
+        total += part.length;
+    }
+
+    const out = new Uint8Array(total);
+
+    let position = 0;
+
+    for (const part of all) {
+
+        out.set(part, position);
+
+        position += part.length;
+    }
+
+    return out;
+}
+
+function xlsxEscape(text) {
+
+    return String(text)
+        .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+}
+
+function xlsxColumnName(index) {
+
+    let name = "";
+
+    for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) {
+        name = String.fromCharCode(65 + ((n - 1) % 26)) + name;
+    }
+
+    return name;
+}
+
+// sheets = [{ name, title, header: [..], rows: [[..]] }]
+// numbers stay numbers, everything else is text
+function buildXlsx(sheets) {
+
+    const used = {};
+
+    const sheetNames = sheets.map((sheet, index) => {
+
+        let base = String(sheet.name || ("Sheet " + (index + 1)))
+            .replace(/[\\\/\?\*\[\]:]/g, " ").trim().slice(0, 28) || ("Sheet " + (index + 1));
+
+        let name = base;
+
+        for (let n = 2; used[name.toLowerCase()]; n++) {
+            name = base.slice(0, 26) + " " + n;
+        }
+
+        used[name.toLowerCase()] = true;
+
+        return name;
+    });
+
+    const files = [];
+
+    files.push({
+        name: "[Content_Types].xml",
+        text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+            '<Default Extension="xml" ContentType="application/xml"/>' +
+            '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+            '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+            sheets.map((s, i) =>
+                `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("") +
+            '</Types>'
+    });
+
+    files.push({
+        name: "_rels/.rels",
+        text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+            '</Relationships>'
+    });
+
+    files.push({
+        name: "xl/workbook.xml",
+        text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' +
+            sheetNames.map((name, i) =>
+                `<sheet name="${xlsxEscape(name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("") +
+            '</sheets></workbook>'
+    });
+
+    files.push({
+        name: "xl/_rels/workbook.xml.rels",
+        text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+            sheets.map((s, i) =>
+                `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("") +
+            `<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` +
+            '</Relationships>'
+    });
+
+    // 0 normal, 1 bold, 2 bold on grey (table header)
+    files.push({
+        name: "xl/styles.xml",
+        text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+            '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+            '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font>' +
+            '<font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
+            '<fills count="3"><fill><patternFill patternType="none"/></fill>' +
+            '<fill><patternFill patternType="gray125"/></fill>' +
+            '<fill><patternFill patternType="solid"><fgColor rgb="FFD9E1F2"/><bgColor indexed="64"/></patternFill></fill></fills>' +
+            '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+            '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+            '<cellXfs count="3">' +
+            '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+            '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
+            '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>' +
+            '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'
+    });
+
+    sheets.forEach((sheet, index) => {
+
+        const allRows = [];
+
+        if (sheet.title) {
+            allRows.push({ cells: [sheet.title], style: 1 });
+        }
+
+        const headerRowNumber = allRows.length + 1;
+
+        allRows.push({ cells: sheet.header, style: 2 });
+
+        for (const row of sheet.rows) {
+            allRows.push({ cells: row, style: 0 });
+        }
+
+        const columnCount = Math.max(...allRows.map(r => r.cells.length), 1);
+
+        const widths = new Array(columnCount).fill(8);
+
+        allRows.forEach((row, rowIndex) => {
+
+            if (sheet.title && rowIndex === 0) {
+                return;
+            }
+
+            row.cells.forEach((value, c) => {
+                widths[c] = Math.max(widths[c], Math.min(String(value).length + 2, 60));
+            });
+        });
+
+        let xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+            `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${headerRowNumber}" topLeftCell="A${headerRowNumber + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` +
+            '<cols>' + widths.map((w, c) =>
+                `<col min="${c + 1}" max="${c + 1}" width="${w}" customWidth="1"/>`).join("") + '</cols>' +
+            '<sheetData>';
+
+        allRows.forEach((row, rowIndex) => {
+
+            xml += `<row r="${rowIndex + 1}">`;
+
+            row.cells.forEach((value, c) => {
+
+                const ref = xlsxColumnName(c) + (rowIndex + 1);
+
+                const text = String(value === null || value === undefined ? "" : value);
+
+                if (text === "") {
+                    return;
+                }
+
+                const isNumber = row.style === 0 &&
+                    /^-?\d{1,15}(\.\d+)?$/.test(text) && !/^-?0\d/.test(text);
+
+                xml += isNumber ?
+                    `<c r="${ref}"><v>${text}</v></c>` :
+                    `<c r="${ref}" t="inlineStr"${row.style ? ` s="${row.style}"` : ""}><is><t xml:space="preserve">${xlsxEscape(text)}</t></is></c>`;
+            });
+
+            xml += '</row>';
+        });
+
+        xml += '</sheetData>';
+
+        if (sheet.rows.length > 0) {
+
+            xml += `<autoFilter ref="A${headerRowNumber}:${xlsxColumnName(columnCount - 1)}${allRows.length}"/>`;
+        }
+
+        xml += '</worksheet>';
+
+        files.push({ name: `xl/worksheets/sheet${index + 1}.xml`, text: xml });
+    });
+
+    return xlsxZip(files);
+}
+
+
+// --- reading the tables of the open module ----------------------
+
+function exportCellText(cell) {
+
+    const field = cell.querySelector("input:not([type=hidden]):not([type=checkbox]), textarea, select");
+
+    if (field) {
+
+        if (field.tagName === "SELECT") {
+
+            const option = field.options[field.selectedIndex];
+
+            return option ? option.textContent.trim() : "";
+        }
+
+        return field.value;
+    }
+
+    const box = cell.querySelector("input[type=checkbox]");
+
+    if (box && cell.textContent.trim() === "") {
+        return box.checked ? "Yes" : "No";
+    }
+
+    return cell.textContent.replace(/\s+/g, " ").trim();
+}
+
+function exportTitleOf(table) {
+
+    const card = table.closest(".procurement-card, .procurement-section");
+
+    if (card) {
+
+        const summary = card.querySelector(".procurement-summary");
+
+        if (summary) {
+
+            return {
+                name: (summary.querySelector(".procurement-summary-id") || summary)
+                    .textContent.replace(/\s+/g, " ").trim(),
+                title: summary.textContent.replace(/\s+/g, " ").trim()
+            };
+        }
+
+        const heading = card.querySelector("h2, h3");
+
+        if (heading) {
+
+            const text = heading.textContent.replace(/\s+/g, " ").trim();
+
+            return { name: text, title: text };
+        }
+    }
+
+    // nearest heading before the table
+    let node = table;
+
+    while (node && node.id !== "module-content") {
+
+        let sibling = node.previousElementSibling;
+
+        while (sibling) {
+
+            const heading = /^H[1-4]$/.test(sibling.tagName) ? sibling :
+                sibling.querySelector && sibling.querySelector("h2, h3, h4");
+
+            if (heading) {
+
+                const text = heading.textContent.replace(/\s+/g, " ").trim();
+
+                return { name: text, title: text };
+            }
+
+            sibling = sibling.previousElementSibling;
+        }
+
+        node = node.parentElement;
+    }
+
+    return { name: "", title: "" };
+}
+
+function collectExportSheets() {
+
+    const root = document.getElementById("module-content");
+
+    const sheets = [];
+
+    if (!root) {
+        return sheets;
+    }
+
+    for (const table of root.querySelectorAll("table")) {
+
+        const headerCells = Array.from(
+            table.querySelectorAll("thead tr:last-child th"));
+
+        let bodyRows = Array.from(table.querySelectorAll("tbody tr"));
+
+        if (bodyRows.length === 0) {
+            bodyRows = Array.from(table.querySelectorAll("tr")).slice(headerCells.length ? 1 : 0);
+        }
+
+        const rows = bodyRows
+            .map(tr => Array.from(tr.children).map(exportCellText))
+            .filter(cells => cells.some(text => text !== ""));
+
+        if (rows.length === 0) {
+            continue;
+        }
+
+        let header = headerCells.map(th =>
+            th.getAttribute("title") && th.textContent.trim().length < 12 ?
+                th.getAttribute("title") : th.textContent.replace(/\s+/g, " ").trim());
+
+        if (header.length === 0) {
+
+            const first = table.querySelector("tr");
+
+            header = first ? Array.from(first.children).map(exportCellText) : [];
+
+            rows.shift();
+        }
+
+        const title = exportTitleOf(table);
+
+        sheets.push({
+            name: title.name,
+            title: title.title,
+            header: header,
+            rows: rows
+        });
+    }
+
+    return sheets;
+}
+
+function exportCurrentViewToExcel() {
+
+    const sheets = collectExportSheets();
+
+    if (sheets.length === 0) {
+
+        alert("There is no table to export in this view.");
+
+        return;
+    }
+
+    const heading = document.querySelector("#module-content h1, #module-content h2");
+
+    const base = (heading ? heading.textContent : "export")
+        .replace(/\s+/g, " ").trim().replace(/[^A-Za-z0-9 _-]/g, "").trim() || "export";
+
+    const bytes = buildXlsx(sheets);
+
+    const blob = new Blob([bytes], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    });
+
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+
+    link.href = url;
+
+    link.download = base.replace(/ /g, "_") + "_" +
+        new Date().toISOString().slice(0, 10) + ".xlsx";
+
+    document.body.appendChild(link);
+
+    link.click();
+
+    document.body.removeChild(link);
+
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+// --- the floating button ----------------------------------------
+
+(function setupExportButton() {
+
+    let timer = null;
+
+    function refresh() {
+
+        const button = document.getElementById("export-excel-button");
+
+        const view = document.getElementById("module-view");
+
+        if (!button || !view) {
+            return;
+        }
+
+        const visible = !view.classList.contains("hidden") &&
+            collectExportSheets().length > 0;
+
+        button.style.display = visible ? "block" : "none";
+    }
+
+    function start() {
+
+        if (document.getElementById("export-excel-button")) {
+            return;
+        }
+
+        const button = document.createElement("button");
+
+        button.id = "export-excel-button";
+
+        button.type = "button";
+
+        button.textContent = "Export to Excel";
+
+        button.title = "Download the tables of this view as an Excel file";
+
+        button.style.display = "none";
+
+        button.onclick = exportCurrentViewToExcel;
+
+        document.body.appendChild(button);
+
+        const content = document.getElementById("module-content");
+
+        const view = document.getElementById("module-view");
+
+        const observer = new MutationObserver(() => {
+
+            clearTimeout(timer);
+
+            timer = setTimeout(refresh, 250);
+        });
+
+        if (content) {
+            observer.observe(content, { childList: true, subtree: true });
+        }
+
+        if (view) {
+            observer.observe(view, { attributes: true, attributeFilter: ["class"] });
+        }
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", start);
+    }
+    else {
+        start();
+    }
+})();
