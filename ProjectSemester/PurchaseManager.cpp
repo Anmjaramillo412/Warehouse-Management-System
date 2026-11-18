@@ -288,14 +288,8 @@ PurchaseInvoice* PurchaseManager::createInvoice(
             return nullptr;
         }
 
-        if (otherCost.amountEUR < 0.0)
-        {
-            errorMessage =
-                "Other Cost amount cannot be negative (" +
-                otherCost.supplierName + ").";
-
-            return nullptr;
-        }
+        // (a negative amount is allowed: a discount granted by the
+        // Supplier, e.g. a 10% Rabatt)
     }
 
     // Validate every line against Procurement and against every
@@ -624,14 +618,7 @@ bool PurchaseManager::updateInvoice(
             return false;
         }
 
-        if (otherCost.amountEUR < 0.0)
-        {
-            errorMessage =
-                "Other Cost amount cannot be negative (" +
-                otherCost.supplierName + ").";
-
-            return false;
-        }
+        // (a negative amount is allowed: a discount)
     }
 
     // Same EUR -> rate 1.0 guard as createInvoice() above - this is
