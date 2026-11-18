@@ -2304,3 +2304,44 @@ th.filterable-th {
     #column-filter-menu .cf-all {
         font-weight: bold;
     }
+
+/* Display Products: each product collapses to one line */
+.product-heading {
+    cursor: pointer;
+    user-select: none;
+    margin: 0;
+}
+
+    .product-heading:hover {
+        color: #2563eb;
+    }
+
+.product-block.collapsed .product-display-photo,
+.product-block.collapsed .product-extra,
+.product-block.collapsed .product-body {
+    display: none;
+}
+
+.product-block.collapsed .warehouse-caret {
+    transform: rotate(-90deg);
+}
+
+.product-block.collapsed .product-display-head {
+    margin-bottom: 0;
+    align-items: center;
+}
+
+.product-block {
+    border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+}
+
+/* Order edit mode: one "Edit" button per order */
+.procurement-card:not(.editing) .order-edit-only { display: none !important; }
+.procurement-card.editing .order-view-only { display: none !important; }
+.procurement-receipt-row .receipt-edit-qty { width: 90px; }
+#app-confirm-message { white-space: pre-line; }
+.order-edit-bar { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.order-edit-bar .order-edit-btn { background: #6b7280; color: #fff; border: none; }
+.order-edit-bar .order-edit-btn:hover { background: #4b5563; }

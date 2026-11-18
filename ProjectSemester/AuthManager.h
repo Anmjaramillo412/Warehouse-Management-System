@@ -702,6 +702,7 @@ public:
             startsWith(path, "/api/users") ||
             path == "/api/data/load" ||
             path == "/api/data/reset-numbering" ||
+            path == "/api/procurement/correct-receipts" ||
             (!isRead && path == "/api/data/config") ||
             (!isRead && path == "/api/data/logging") ||
             (!isRead && startsWith(path, "/api/settings/"));

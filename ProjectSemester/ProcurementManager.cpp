@@ -398,6 +398,234 @@ bool ProcurementManager::confirmOrder(
 
 
 // ================================================================
+// CHANGE CONFIRMED QUANTITY (confirmed orders only)
+// ================================================================
+
+bool ProcurementManager::changeConfirmedQuantity(
+    const string& id,
+    const string& materialID,
+    double newQuantity,
+    string& error,
+    bool apply)
+{
+    ProcurementOrder* order =
+        findOrder(id, materialID);
+
+    if (order == nullptr)
+    {
+        error = "Procurement Order not found.";
+        return false;
+    }
+
+    if (order->isCancelled() || order->isClosed())
+    {
+        error = "This order is cancelled or closed and cannot be modified.";
+        return false;
+    }
+
+    if (order->getConfirmationDate().empty())
+    {
+        error = "This order is not confirmed yet - change its Qty in Open Orders.";
+        return false;
+    }
+
+    newQuantity = roundQty(newQuantity);
+
+    if (newQuantity <= 0)
+    {
+        error = "Confirmed Quantity must be greater than zero.";
+        return false;
+    }
+
+    if (newQuantity < order->getTotalReceivedQuantity())
+    {
+        error =
+            "Confirmed Quantity cannot be lower than what was already "
+            "received (" + formatQty(order->getTotalReceivedQuantity()) + ").";
+        return false;
+    }
+
+    double oldQuantity = order->getTargetQuantity();
+
+    if (newQuantity == oldQuantity)
+    {
+        error = "The Confirmed Quantity is already " + formatQty(newQuantity) + ".";
+        return false;
+    }
+
+    if (!apply)
+    {
+        return true;
+    }
+
+    order->setConfirmedQuantity(newQuantity);
+
+    save();
+
+    if (movementLogger != nullptr)
+    {
+        movementLogger->log(
+            "PROCUREMENT QUANTITY CHANGED",
+            "ID: " + id +
+            " | " + describeLineForHistory(*order) +
+            " | Confirmed Qty: " + formatQty(oldQuantity) +
+            " -> " + formatQty(newQuantity) +
+            " | Received: " + formatQty(order->getTotalReceivedQuantity()) +
+            " | Status: " + order->getStatus());
+    }
+
+    return true;
+}
+
+
+// ================================================================
+// CORRECT RECEIPT (Admin)
+// ================================================================
+
+bool ProcurementManager::correctReceipt(
+    const string& id,
+    const string& materialID,
+    int receiptIndex,
+    double newQuantity,
+    bool removeAllowed,
+    string& error,
+    bool apply)
+{
+    ProcurementOrder* order =
+        findOrder(id, materialID);
+
+    if (order == nullptr)
+    {
+        error = "Procurement Order not found.";
+        return false;
+    }
+
+    vector<ProcurementReceipt> receipts =
+        order->getReceipts();
+
+    if (receiptIndex < 0 ||
+        receiptIndex >= (int)receipts.size())
+    {
+        error = "Receipt not found.";
+        return false;
+    }
+
+    double oldQuantity =
+        receipts[receiptIndex].receivedQuantity;
+
+    newQuantity = roundQty(newQuantity);
+
+    if (newQuantity < 0)
+    {
+        error = "Quantity cannot be negative.";
+        return false;
+    }
+
+    if (newQuantity >= oldQuantity)
+    {
+        error =
+            "A receipt can only be reduced (it is " +
+            formatQty(oldQuantity) + ").";
+        return false;
+    }
+
+    if (newQuantity == 0 && !removeAllowed)
+    {
+        error =
+            "This receipt cannot be removed because a later receipt of "
+            "the same material is already on an invoice. Enter a "
+            "quantity above 0, or correct the invoice first.";
+        return false;
+    }
+
+    if (inventoryManager == nullptr)
+    {
+        error = "Inventory is not available.";
+        return false;
+    }
+
+    int warehouseID = order->getWarehouseID();
+
+    if (inventoryManager->isWarehouseLocked(warehouseID))
+    {
+        error = "The Warehouse has an open inventory count - finish it first.";
+        return false;
+    }
+
+    double difference = roundQty(oldQuantity - newQuantity);
+
+    double stock =
+        inventoryManager->stockOf(warehouseID, materialID);
+
+    if (qtyLess(stock, difference))
+    {
+        error =
+            "Only " + formatQty(stock) + " of " + materialID +
+            " is in stock, but " + formatQty(difference) +
+            " would have to be taken out - part of it was already used "
+            "or moved.";
+        return false;
+    }
+
+    if (!apply)
+    {
+        return true;
+    }
+
+    string receiptDate = receipts[receiptIndex].receiptDate;
+
+    double totalBefore = order->getTotalReceivedQuantity();
+
+    bool issued =
+        inventoryManager->goodsIssue(
+            warehouseID,
+            materialID,
+            difference,
+            "Correction of " + id + ": receipt " + receiptDate + " " +
+                formatQty(oldQuantity) + " -> " + formatQty(newQuantity),
+            id,
+            "RECEIPT CORRECTION");
+
+    if (!issued)
+    {
+        error = "The stock could not be reduced.";
+        return false;
+    }
+
+    if (newQuantity == 0)
+    {
+        receipts.erase(receipts.begin() + receiptIndex);
+    }
+    else
+    {
+        receipts[receiptIndex].receivedQuantity = newQuantity;
+    }
+
+    order->setReceipts(receipts);
+
+    save();
+
+    if (movementLogger != nullptr)
+    {
+        movementLogger->log(
+            "PROCUREMENT RECEIPT CORRECTED",
+            "ID: " + id +
+            " | " + describeLineForHistory(*order) +
+            " | Receipt Date: " + receiptDate +
+            " | Received Qty: " + formatQty(oldQuantity) +
+            " -> " + formatQty(newQuantity) +
+            " | Total Received: " + formatQty(totalBefore) +
+            " -> " + formatQty(order->getTotalReceivedQuantity()) +
+            " / " + formatQty(order->getTargetQuantity()) +
+            " | Status: " + order->getStatus(),
+            "Admin correction");
+    }
+
+    return true;
+}
+
+
+// ================================================================
 // RECEIVE ORDER
 // ================================================================
 // Adds a (possibly partial) receipt to the order and performs the

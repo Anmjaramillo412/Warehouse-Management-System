@@ -6965,6 +6965,19 @@ async function displayInventory() {
     }
 }
 
+// Display Products: collapse a product to one line / open it (click its title)
+function toggleProductBlock(heading) {
+
+    heading.closest(".product-block").classList.toggle("collapsed");
+}
+
+function setAllProductsCollapsed(collapsed) {
+
+    for (const block of document.querySelectorAll(".product-block")) {
+        block.classList.toggle("collapsed", collapsed);
+    }
+}
+
 // Collapse / expand the inventory of one warehouse (click on its title)
 function toggleWarehouseBlock(heading) {
 
@@ -8014,7 +8027,7 @@ async function showDisplayProducts() {
 
             html += `
 
-                <div class="material-table-container material-table-container-fit">
+                <div class="material-table-container material-table-container-fit product-block collapsed">
 
                     <div class="product-display-head">
 
@@ -8025,11 +8038,17 @@ async function showDisplayProducts() {
                         </div>
 
                         <div>
-                    <h2>
+                    <h2 class="product-heading" onclick="toggleProductBlock(this)">
+                        <span class="warehouse-caret">&#9660;</span>
                         ${escapeHtml(product.id)}
                         -
                         ${escapeHtml(product.name)}
+                        <small class="warehouse-count">
+                            (${(product.bom || []).length} component(s))
+                        </small>
                     </h2>
+
+                    <div class="product-extra">
 
                     <p>
                         ${escapeHtml(
@@ -8053,8 +8072,13 @@ async function showDisplayProducts() {
                         <input type="file" accept="image/*" style="display:none;"
                             onchange="uploadProductPhotoById('${escapeHtml(product.id)}', this, showDisplayProducts)">
                     </label>
+
+                    </div>
+
                         </div>
                     </div>
+
+                    <div class="product-body">
             `;
 
 
@@ -8216,12 +8240,22 @@ async function showDisplayProducts() {
 
 
             html += `
+                    </div>
                 </div>
             `;
         }
 
 
-        content.innerHTML = html;
+        content.innerHTML = `
+            <div class="warehouse-toggle-all">
+                <button class="button-muted" onclick="setAllProductsCollapsed(true)">
+                    Collapse all
+                </button>
+                <button class="button-muted" onclick="setAllProductsCollapsed(false)">
+                    Expand all
+                </button>
+            </div>
+        ` + html;
 
         enableColumnFilters(content, { skip: /^(photo|stock by)/i });
 
@@ -11956,6 +11990,29 @@ function renderProcurementCard(group, cardMode = "open") {
             `
             : "";
 
+        // Confirmed orders: the confirmed quantity can still be changed
+        // (e.g. the supplier delivers more than confirmed) - only
+        // shown after the order's single "Edit" button was clicked.
+        const changeQtyFieldHtml =
+            (cardMode === "confirmed" &&
+             line.status !== "Cancelled" &&
+             line.status !== "Closed (Incomplete)")
+            ? `
+                <div class="detail-field order-edit-only">
+                    <div class="detail-label">Confirmed Qty</div>
+                    <input
+                        type="number"
+                        min="0.001"
+                        step="any"
+                        class="procurement-qty-input order-edit-qty"
+                        data-material="${escapeHtml(line.materialID)}"
+                        data-original="${line.confirmedQuantity > 0 ? line.confirmedQuantity : line.orderedQuantity}"
+                        value="${line.confirmedQuantity > 0 ? line.confirmedQuantity : line.orderedQuantity}"
+                    >
+                </div>
+            `
+            : "";
+
         let addReceiptHtml = "";
 
         if (cardMode === "confirmed" && line.pendingQuantity > 0) {
@@ -12009,11 +12066,25 @@ function renderProcurementCard(group, cardMode = "open") {
                         Receipt History
                     </div>
 
-                    ${line.receipts.map(receipt => `
+                    ${line.receipts.map((receipt, receiptIdx) => `
                         <div class="procurement-receipt-row">
                             ${escapeHtml(receipt.receiptDate)}
                             &mdash;
-                            ${receipt.receivedQuantity}
+                            ${currentUser && currentUser.role === "admin" ? `
+                                <span class="order-view-only">${receipt.receivedQuantity}</span>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    class="procurement-qty-input order-edit-only receipt-edit-qty"
+                                    data-material="${escapeHtml(line.materialID)}"
+                                    data-index="${receiptIdx}"
+                                    data-date="${escapeHtml(receipt.receiptDate)}"
+                                    data-original="${receipt.receivedQuantity}"
+                                    value="${receipt.receivedQuantity}"
+                                    title="Admin: reduce this receipt (0 = remove it)"
+                                >
+                            ` : receipt.receivedQuantity}
                             ${receipt.comment
                                 ? "(" + escapeHtml(receipt.comment) + ")"
                                 : ""}
@@ -12060,6 +12131,8 @@ function renderProcurementCard(group, cardMode = "open") {
                     ${receivedPendingFieldHtml}
 
                     ${confirmQtyFieldHtml}
+
+                    ${changeQtyFieldHtml}
 
                     ${lines.length === 1 ? estimatedReceiptFieldHtml : ""}
 
@@ -12234,6 +12307,54 @@ function renderProcurementCard(group, cardMode = "open") {
         `;
     }
 
+    // Single "Edit" button for the whole order: confirmed orders can
+    // change their Confirmed Qty (Editor / Admin); received quantities
+    // can be corrected afterwards by an Admin only.
+
+    const isAdminUser =
+        currentUser && currentUser.role === "admin";
+
+    const canEditOrder =
+        cardMode === "confirmed"
+            ? true
+            : (cardMode === "archived" && isAdminUser &&
+               lines.some(line =>
+                   line.receipts && line.receipts.length > 0));
+
+    const editBarHtml = canEditOrder ? `
+
+        <div class="order-edit-bar">
+
+            <button
+                type="button"
+                class="order-edit-btn order-view-only"
+                onclick="modifyOrderStart('${id}')">
+
+                Edit Order
+
+            </button>
+
+            <button
+                type="button"
+                class="order-edit-btn order-edit-only"
+                onclick="modifyOrderSave('${id}', '${cardMode}')">
+
+                Save changes
+
+            </button>
+
+            <button
+                type="button"
+                class="order-edit-btn order-edit-only"
+                onclick="modifyOrderCancel('${id}')">
+
+                Cancel
+
+            </button>
+
+        </div>
+    ` : "";
+
     // Documents (Order Confirmation / Lieferschein): shared across
     // every line of the whole "PRC-######" - see
     // ProcurementManager::setOrderConfirmationPath(). Order
@@ -12331,6 +12452,8 @@ function renderProcurementCard(group, cardMode = "open") {
 
                 <div id="${id}-message" class="procurement-card-message">
                 </div>
+
+                ${editBarHtml}
 
             </div>
 
@@ -12927,7 +13050,226 @@ async function addMaterialToOrder(id) {
 // only now the operator does not need to click a separate button
 // per material.
 
+// ============================================================
+// PROCUREMENT ORDERS - EDIT (one button for the whole order)
+// ============================================================
+// Confirmed Qty of every material line (Editor / Admin) and, for an
+// Admin, the already booked receipts (to fix e.g. a receipt saved
+// twice). Every change is checked by the server and written to the
+// movement record with the material and "from -> to".
+
+function modifyOrderStart(id) {
+
+    const card = document.getElementById(`order-${id}`);
+
+    if (card) {
+        card.classList.add("editing");
+    }
+}
+
+function modifyOrderCancel(id) {
+
+    const card = document.getElementById(`order-${id}`);
+
+    if (!card) {
+        return;
+    }
+
+    for (const input of card.querySelectorAll(
+        ".order-edit-qty, .receipt-edit-qty")) {
+
+        input.value = input.dataset.original;
+    }
+
+    card.classList.remove("editing");
+
+    const message = document.getElementById(`${id}-message`);
+
+    if (message) {
+        message.textContent = "";
+    }
+}
+
+async function modifyOrderSave(id, cardMode) {
+
+    const card = document.getElementById(`order-${id}`);
+
+    const message = document.getElementById(`${id}-message`);
+
+    if (!card) {
+        return;
+    }
+
+    const quantityChanges = [];
+
+    const receiptCorrections = [];
+
+    const summary = [];
+
+    for (const input of card.querySelectorAll(".order-edit-qty")) {
+
+        const original = Number(input.dataset.original);
+
+        const value = Number(input.value);
+
+        if (input.value === "" || !(value > 0)) {
+
+            if (message) {
+                message.textContent =
+                    `Confirmed Qty of ${input.dataset.material} must be greater than zero.`;
+            }
+
+            return;
+        }
+
+        if (value !== original) {
+
+            quantityChanges.push({
+                materialID: input.dataset.material,
+                confirmedQuantity: value
+            });
+
+            summary.push(
+                `${input.dataset.material}: Confirmed Qty ${original} \u2192 ${value}`);
+        }
+    }
+
+    for (const input of card.querySelectorAll(".receipt-edit-qty")) {
+
+        const original = Number(input.dataset.original);
+
+        const value = Number(input.value);
+
+        if (input.value === "" || value < 0) {
+
+            if (message) {
+                message.textContent =
+                    `Enter a valid quantity for the receipt of ${input.dataset.material}.`;
+            }
+
+            return;
+        }
+
+        if (value !== original) {
+
+            receiptCorrections.push({
+                materialID: input.dataset.material,
+                receiptIndex: Number(input.dataset.index),
+                quantity: value
+            });
+
+            summary.push(
+                `${input.dataset.material}: receipt of ${input.dataset.date} ` +
+                `${original} \u2192 ${value}` +
+                ` (stock ${roundQty3(value - original)})`);
+        }
+    }
+
+    if (summary.length === 0) {
+
+        if (message) {
+            message.textContent = "Nothing was changed.";
+        }
+
+        return;
+    }
+
+    const confirmed =
+        await showConfirmDialog(
+            `Save these changes to ${id}?\n\n` + summary.join("\n"));
+
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+
+        if (quantityChanges.length > 0) {
+
+            const response =
+                await fetch("/api/procurement/edit-quantities", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        id: id,
+                        changes: quantityChanges
+                    })
+                });
+
+            if (!response.ok) {
+
+                if (message) {
+                    message.textContent =
+                        "Error: " + await response.text();
+                }
+
+                return;
+            }
+        }
+
+        if (receiptCorrections.length > 0) {
+
+            const response =
+                await fetch("/api/procurement/correct-receipts", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        id: id,
+                        corrections: receiptCorrections
+                    })
+                });
+
+            if (!response.ok) {
+
+                if (message) {
+                    message.textContent =
+                        "Error: " + await response.text();
+                }
+
+                return;
+            }
+        }
+
+        if (cardMode === "archived") {
+            await displayArchivedOrders();
+        }
+        else {
+            await displayProcurementOrders();
+        }
+    }
+    catch (error) {
+
+        console.error(error);
+
+        if (message) {
+            message.textContent =
+                "Could not connect to the server.";
+        }
+    }
+}
+
+const receiptSavesRunning = new Set();
+
 async function saveGroupReceipts(id) {
+
+    // One save at a time per order: the receipt is sent material by
+    // material, so a second click while the first is still running
+    // would receive every material twice.
+    if (receiptSavesRunning.has(id)) {
+        return;
+    }
+
+    receiptSavesRunning.add(id);
+
+    try {
+        await saveGroupReceiptsInner(id);
+    }
+    finally {
+        receiptSavesRunning.delete(id);
+    }
+}
+
+async function saveGroupReceiptsInner(id) {
 
     const message =
         document.getElementById(
@@ -16774,9 +17116,13 @@ let pendingRequests = 0;
 
 let busyTimer = null;
 
+let busyHideTimer = null;
+
 function busyStart() {
 
     pendingRequests++;
+
+    clearTimeout(busyHideTimer);
 
     if (pendingRequests === 1) {
 
@@ -16810,14 +17156,23 @@ function busyEnd() {
     pendingRequests = Math.max(0, pendingRequests - 1);
 
     if (pendingRequests === 0) {
-
         clearTimeout(busyTimer);
 
-        const layer = document.getElementById("busy-overlay");
+        // Short grace period: sequential requests (one per material)
+        // must not flash the overlay off between them - that gap was
+        // enough to click the same button again.
+        busyHideTimer = setTimeout(() => {
 
-        if (layer) {
-            layer.style.display = "none";
-        }
+            if (pendingRequests !== 0) {
+                return;
+            }
+
+            const layer = document.getElementById("busy-overlay");
+
+            if (layer) {
+                layer.style.display = "none";
+            }
+        }, 250);
     }
 }
 
