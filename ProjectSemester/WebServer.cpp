@@ -101,6 +101,7 @@ static crow::json::wvalue estimateToJson(const MaterialCostEstimate& e)
     j["supplierName"] = e.supplierName;
     j["basePriceEUR"] = e.basePriceEUR;
     j["importIncrementEUR"] = e.importIncrementEUR;
+    j["freightIncrementEUR"] = e.freightIncrementEUR;
     j["hasImportIncrement"] = e.hasImportIncrement;
     j["incrementRef"] = e.incrementRef;
     j["belowFirstTier"] = e.belowFirstTier;
@@ -236,6 +237,8 @@ static crow::json::wvalue quotationToJson(
 
     item["leadTimeWeeks"] = q.leadTimeWeeks;
 
+    item["freightCost"] = q.freightCost;
+
     item["comment"] = q.comment;
 
     item["status"] = quotationManager.status(q);
@@ -348,6 +351,11 @@ static string quotationFromJson(
         body.has("leadTimeWeeks") &&
         body["leadTimeWeeks"].t() == crow::json::type::Number ?
         (int)body["leadTimeWeeks"].d() : 0;
+
+    q.freightCost =
+        body.has("freightCost") &&
+        body["freightCost"].t() == crow::json::type::Number ?
+        body["freightCost"].d() : 0.0;
 
     q.exchangeRate =
         body.has("exchangeRate") ?
@@ -4399,6 +4407,9 @@ void WebServer::run()
 
                     item["description"] =
                         product->getDescription();
+
+                    item["photo"] =
+                        productPhotoUrl(product->getID());
 
                     int mainWarehouseID =
                         product->getMainWarehouseID();
@@ -8752,6 +8763,10 @@ void WebServer::run()
                             lineMaterial != nullptr ?
                             lineMaterial->getName() : "";
 
+                        lineItem["uom"] =
+                            lineMaterial != nullptr ?
+                            lineMaterial->getUoM() : "";
+
                         lineList.push_back(
                             std::move(lineItem));
                     }
@@ -8871,6 +8886,10 @@ void WebServer::run()
                     lineItem["materialName"] =
                         lineMaterial != nullptr ?
                         lineMaterial->getName() : "";
+
+                    lineItem["uom"] =
+                        lineMaterial != nullptr ?
+                        lineMaterial->getUoM() : "";
 
                     lineList.push_back(
                         std::move(lineItem));

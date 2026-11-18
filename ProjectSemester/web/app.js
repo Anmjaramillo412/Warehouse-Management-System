@@ -180,6 +180,23 @@ function openModule(module) {
             </div>
 
         `;
+
+        // Product views and cost views live in two containers; only one
+        // of them may show at a time, so filling one empties the other
+        const productPane = document.getElementById("product-content");
+
+        const costPane = document.getElementById("purchase-content");
+
+        const clearOther = (self, other) =>
+            new MutationObserver(() => {
+                if (self.childNodes.length > 0) {
+                    other.innerHTML = "";
+                }
+            }).observe(self, { childList: true });
+
+        clearOther(productPane, costPane);
+
+        clearOther(costPane, productPane);
     }
 
     // ========================================================
@@ -1331,6 +1348,12 @@ async function displaySuppliers() {
                     Suppliers
                 </h2>
 
+                <input type="text" class="product-cost-search"
+                    placeholder="Search supplier (name, country, contact, email...)"
+                    oninput="filterSupplierRows(this)">
+
+                <small class="supplier-search-count"></small>
+
                 <table class="material-table">
 
                     <thead>
@@ -1388,6 +1411,8 @@ async function displaySuppliers() {
 
         content.innerHTML = html;
 
+        enableColumnFilters(content);
+
     }
     catch (error) {
 
@@ -1398,6 +1423,45 @@ async function displaySuppliers() {
                 Could not connect to the server.
             </p>
         `;
+    }
+}
+
+// Search box of the supplier list: hides the rows that do not match
+// any of their cells (name, country, contact, email, ordering...)
+function filterSupplierRows(input) {
+
+    const text = input.value.trim().toLowerCase();
+
+    const key = normalizeMaterialKey(text);
+
+    const container = input.closest(".material-table-container");
+
+    const rows = container.querySelectorAll("tbody tr");
+
+    let shown = 0;
+
+    for (const row of rows) {
+
+        const haystack = row.textContent.toLowerCase();
+
+        const match = text === "" ||
+            haystack.includes(text) ||
+            (key !== "" && normalizeMaterialKey(haystack).includes(key));
+
+        row.dataset.searchHidden = match ? "" : "1";
+
+        applyRowVisibility(row);
+
+        if (match) {
+            shown++;
+        }
+    }
+
+    const count = container.querySelector(".supplier-search-count");
+
+    if (count) {
+        count.textContent = text === "" ? "" :
+            `${shown} of ${rows.length} suppliers`;
     }
 }
 
@@ -3877,6 +3941,8 @@ async function renderMaterialsList(filterFn, headingText, emptyText, targetID) {
 
         content.innerHTML = html;
 
+        enableColumnFilters(content);
+
         const tableContainer =
             content.querySelector(".material-table-container");
 
@@ -4094,14 +4160,10 @@ async function showMaterialDetail(id) {
 
                 <div id="material-movements"></div>
 
-                <div id="material-price-info"></div>
-
             </div>
         `;
 
         loadMaterialMovements(data.id);
-
-        loadMaterialPriceInfo(data.id);
     }
     catch (error) {
 
@@ -6739,7 +6801,16 @@ async function displayInventory() {
         }
 
 
-        let html = "";
+        let html = `
+            <div class="warehouse-toggle-all">
+                <button class="button-muted" onclick="setAllWarehousesCollapsed(true)">
+                    Collapse all
+                </button>
+                <button class="button-muted" onclick="setAllWarehousesCollapsed(false)">
+                    Expand all
+                </button>
+            </div>
+        `;
 
 
         for (
@@ -6748,16 +6819,22 @@ async function displayInventory() {
 
             html += `
 
-                <div class="material-table-container">
+                <div class="material-table-container warehouse-block">
 
-                    <h2>
+                    <h2 class="warehouse-heading" onclick="toggleWarehouseBlock(this)">
+                        <span class="warehouse-caret">&#9660;</span>
                         Warehouse
                         ${warehouse.id}
                         -
                         ${escapeHtml(
                             warehouse.name
                         )}
+                        <small class="warehouse-count">
+                            (${(warehouse.inventory || []).length} material(s))
+                        </small>
                     </h2>
+
+                    <div class="warehouse-body">
             `;
 
 
@@ -6859,6 +6936,8 @@ async function displayInventory() {
 
             html += `
 
+                    </div>
+
                 </div>
 
             `;
@@ -6879,6 +6958,21 @@ async function displayInventory() {
             </p>
 
         `;
+    }
+}
+
+// Collapse / expand the inventory of one warehouse (click on its title)
+function toggleWarehouseBlock(heading) {
+
+    const block = heading.closest(".warehouse-block");
+
+    block.classList.toggle("collapsed");
+}
+
+function setAllWarehousesCollapsed(collapsed) {
+
+    for (const block of document.querySelectorAll(".warehouse-block")) {
+        block.classList.toggle("collapsed", collapsed);
     }
 }
 
@@ -7918,6 +8012,15 @@ async function showDisplayProducts() {
 
                 <div class="material-table-container material-table-container-fit">
 
+                    <div class="product-display-head">
+
+                        <div class="product-display-photo">
+                            ${product.photo ?
+                                `<img src="${escapeHtml(product.photo)}" alt="">` :
+                                `<span class="product-tile-noimg">No photo</span>`}
+                        </div>
+
+                        <div>
                     <h2>
                         ${escapeHtml(product.id)}
                         -
@@ -7941,6 +8044,13 @@ async function showDisplayProducts() {
                                 Set one from Modify Product.
                            </p>`
                     }
+                    <label class="product-tile-upload">
+                        ${product.photo ? "Change photo" : "Add photo"}
+                        <input type="file" accept="image/*" style="display:none;"
+                            onchange="uploadProductPhotoById('${escapeHtml(product.id)}', this, showDisplayProducts)">
+                    </label>
+                        </div>
+                    </div>
             `;
 
 
@@ -8108,6 +8218,8 @@ async function showDisplayProducts() {
 
 
         content.innerHTML = html;
+
+        enableColumnFilters(content, { skip: /^(photo|stock by)/i });
 
     }
     catch (error) {
@@ -10177,7 +10289,7 @@ async function fillProjectionPrices(projection, readOnly) {
             grandTotal += total;
 
             cell.innerHTML =
-                renderCostSourceHtml(est, entry.quantity) +
+                renderCostSourceHtml(est, entry.quantity, "", true) +
                 `<br><strong>Total ${formatMoney(total)} EUR` +
                 `${est.estimated ? " (est.)" : ""}</strong>` +
                 `<br><small><a href="#" onclick="event.preventDefault(); ` +
@@ -13295,6 +13407,30 @@ function renderPurchasePendingForm(pending) {
     `;
 }
 
+// Red marking + warning when an amount is negative (a discount)
+function flagNegativeAmount(input) {
+
+    const negative = Number(input.value) < 0;
+
+    input.classList.toggle("negative-input", negative);
+
+    const warning = input.parentElement.querySelector(".negative-warning");
+
+    if (warning) {
+        warning.style.display = negative ? "" : "none";
+    }
+}
+
+// Money text that turns red (with a minus-discount hint) when negative
+function moneyWithSign(value, suffix) {
+
+    const text = formatMoney(value) + (suffix || "");
+
+    return Number(value) < 0 ?
+        `<span class="negative-amount" title="Negative amount (discount)">&#9888; ${text}</span>` :
+        text;
+}
+
 async function handlePurchaseCurrencyChange() {
 
     const currency =
@@ -13628,12 +13764,19 @@ function otherCostRowHtml(formPrefix, rowIndex, data, source) {
 
                     <input
                         type="number"
-                        min="0"
                         step="0.01"
                         id="${rowPrefix}-amount"
                         placeholder="0.00"
                         value="${data.amountEUR != null ? data.amountEUR : ""}"
+                        class="${data.amountEUR < 0 ? "negative-input" : ""}"
+                        oninput="flagNegativeAmount(this)"
                     >
+
+                    <div class="negative-warning"
+                         style="${data.amountEUR < 0 ? "" : "display:none;"}">
+                        &#9888; Negative amount: a discount / credit that
+                        lowers the cost
+                    </div>
 
                 </div>
 
@@ -13942,7 +14085,7 @@ function collectOtherCostsFromForm(formPrefix, containerId) {
         const amountEUR =
             Number(amountInput.value);
 
-        if (!amountInput.value || amountEUR < 0) {
+        if (!amountInput.value || !isFinite(amountEUR)) {
 
             return {
                 error:
@@ -14660,7 +14803,7 @@ function renderPurchaseInvoiceCard(
                 <td>${formatMoney(line.unitPrice)}</td>
                 <td>${formatMoney(line.unitPriceEUR)}</td>
                 <td>${formatMoney(line.otherCostAdditionEUR || 0)}</td>
-                <td>${formatMoney(line.otherCostTotalEUR || 0)}</td>
+                <td>${moneyWithSign(line.otherCostTotalEUR || 0)}</td>
                 <td>${formatMoney(line.landedUnitPriceEUR != null ?
                         line.landedUnitPriceEUR : line.unitPriceEUR)}</td>
             </tr>
@@ -14674,8 +14817,8 @@ function renderPurchaseInvoiceCard(
     for (const otherCost of (invoice.otherCosts || [])) {
 
         otherCostsSummary += `
-            <br>Other Cost (${escapeHtml(otherCost.supplierName)}):
-            ${formatMoney(otherCost.amountEUR)} EUR -
+            <br>${otherCost.amountEUR < 0 ? "Discount / credit" : "Other Cost"} (${escapeHtml(otherCost.supplierName)}):
+            ${moneyWithSign(otherCost.amountEUR, " EUR")} -
             ${otherCost.supplierWide ?
                 "amortized across all purchases to this Supplier" :
                 "amortized on this invoice only"}
@@ -14691,7 +14834,7 @@ function renderPurchaseInvoiceCard(
         otherCostsSummary += `
             <br>Other Cost carried over from ${escapeHtml(inherited.sourceInvoiceID)}
             (${escapeHtml(inherited.supplierName)}):
-            ${formatMoney(inherited.amountEUR)} EUR spread over
+            ${moneyWithSign(inherited.amountEUR, " EUR")} spread over
             ${inherited.quantityBasis} units bought from this Supplier
             up to this invoice -
             ${formatMoney(inherited.shareEUR)} EUR on this invoice
@@ -14700,11 +14843,11 @@ function renderPurchaseInvoiceCard(
         `;
     }
 
-    if (otherCostGrandTotalEUR > 0) {
+    if (otherCostGrandTotalEUR !== 0) {
 
         otherCostsSummary += `
             <br>Total Other Costs applied to this invoice:
-            ${formatMoney(otherCostGrandTotalEUR)} EUR
+            ${moneyWithSign(otherCostGrandTotalEUR, " EUR")}
         `;
     }
 
@@ -14798,7 +14941,7 @@ function renderPurchaseInvoiceCard(
                 &nbsp;|&nbsp;
                 Total Material Cost: ${formatMoney(invoice.totalMaterialCost)}
                 ${invoice.comment
-                    ? `<br>Comment: ${escapeHtml(invoice.comment)}`
+                    ? `<br><strong>Comment: ${escapeHtml(invoice.comment)}</strong>`
                     : ""}
                 ${otherCostsSummary}
             </p>
@@ -14851,8 +14994,8 @@ function renderPurchaseInvoiceCard(
             ` &middot; Customs ${formatMoney(invoice.customsCost)}` : "") +
         (invoice.freightCost > 0 ?
             ` &middot; Freight ${formatMoney(invoice.freightCost)}` : "") +
-        (otherCostGrandTotalEUR > 0 ?
-            ` &middot; Other ${formatMoney(otherCostGrandTotalEUR)} EUR` : "");
+        (otherCostGrandTotalEUR !== 0 ?
+            ` &middot; ${otherCostGrandTotalEUR < 0 ? "Discount" : "Other"} ${moneyWithSign(otherCostGrandTotalEUR, " EUR")}` : "");
 
     return `
 
@@ -15708,6 +15851,60 @@ function renderProductCostTiles() {
     `;
 }
 
+// Search box of the Product Cost detail: hides the material rows that
+// do not match (ID, name, category, supplier / part numbers...)
+async function filterProductCostRows(input) {
+
+    const section = input.closest(".procurement-section");
+
+    if (!section) {
+        return;
+    }
+
+    const text = input.value.trim().toLowerCase();
+
+    const key = normalizeMaterialKey(text);
+
+    const materials = await loadMaterialCache();
+
+    const byID = {};
+
+    for (const material of (materials || [])) {
+        byID[material.id] = material;
+    }
+
+    let shown = 0;
+
+    const rows = section.querySelectorAll("tbody tr[data-mid]");
+
+    for (const row of rows) {
+
+        const material = byID[row.dataset.mid];
+
+        const haystack = row.textContent.toLowerCase() + " " +
+            (material ? materialSearchText(material) : "");
+
+        const match = text === "" ||
+            haystack.includes(text) ||
+            (key !== "" && normalizeMaterialKey(haystack).includes(key));
+
+        row.dataset.searchHidden = match ? "" : "1";
+
+        applyRowVisibility(row);
+
+        if (match) {
+            shown++;
+        }
+    }
+
+    const count = section.querySelector(".product-cost-search-count");
+
+    if (count) {
+        count.textContent = text === "" ? "" :
+            `${shown} of ${rows.length} materials`;
+    }
+}
+
 function openProductCostDetail(index) {
 
     const content = document.getElementById("pcost-results");
@@ -15725,6 +15922,46 @@ function openProductCostDetail(index) {
             `<img class="product-detail-photo" src="${escapeHtml(product.photo)}" alt="">` : ""}
         ${renderPurchaseProductCostCard(product)}
     `;
+}
+
+// Saves a photo for the Product with this ID, then calls onDone().
+async function uploadProductPhotoById(productID, input, onDone) {
+
+    const file = input.files[0];
+
+    if (!file) {
+        return;
+    }
+
+    try {
+
+        const photoData = await readFileAsBase64(file);
+
+        const response = await fetch(
+            `/api/products/${encodeURIComponent(productID)}/photo`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ photoData: photoData })
+            });
+
+        if (!response.ok) {
+
+            alert("Could not save photo: " + await response.text());
+
+            return;
+        }
+
+        if (onDone) {
+            onDone();
+        }
+    }
+    catch (error) {
+
+        console.error(error);
+
+        alert("Could not save photo.");
+    }
 }
 
 async function uploadProductPhoto(index, input) {
@@ -15781,7 +16018,8 @@ function renderPurchaseProductCostCard(product) {
         const internalOnly = line.internal && !line.hasPrice;
 
         lineRows += `
-            <tr class="${line.internal ? "internal-row" : ""}">
+            <tr class="${line.internal ? "internal-row" : ""}"
+                data-mid="${escapeHtml(line.materialID)}">
                 <td>
                     <a href="#"
                         onclick="openMaterialFromQuotation('${escapeHtml(line.materialID)}'); return false;">
@@ -15790,14 +16028,14 @@ function renderPurchaseProductCostCard(product) {
                         "&mdash; " + escapeHtml(line.materialName) : ""}
                 </td>
                 <td>
-                    ${line.quantity}
+                    ${line.quantity}${line.uom ? " <strong>" + escapeHtml(line.uom) + "</strong>" : ""}
                     ${line.totalQuantity !== line.quantity ?
-                        `<br><small>priced for ${line.totalQuantity}</small>` : ""}
+                        `<br><small>priced for ${line.totalQuantity}${line.uom ? " " + escapeHtml(line.uom) : ""}</small>` : ""}
                 </td>
                 <td>
                     ${internalOnly ?
                         "<small>Internal - cost is in other materials</small>" :
-                        renderCostSourceHtml(line.estimate, line.totalQuantity)}
+                        renderCostSourceHtml(line.estimate, line.totalQuantity, line.uom)}
                 </td>
                 <td>
                     ${internalOnly ? "-" : formatMoney(line.lineCostEUR)}
@@ -15837,6 +16075,12 @@ function renderPurchaseProductCostCard(product) {
                         has no price history yet.</small>`
                     : ""}
             </p>
+
+            <input type="text" class="product-cost-search"
+                placeholder="Search material (ID, name, part number...)"
+                oninput="filterProductCostRows(this)">
+
+            <small class="product-cost-search-count"></small>
 
             <div class="material-table-container material-table-container-fit">
 
@@ -16024,8 +16268,9 @@ function togglePurchaseCategoryDetail(index) {
                         ${escapeHtml(line.materialID)}</a>
                     ${line.materialName ? "<br><small>" + escapeHtml(line.materialName) + "</small>" : ""}
                 </td>
-                <td>${line.quantity}</td>
-                <td>${line.hasPrice ? formatMoney(line.unitPriceEUR) : "<small>No price yet</small>"}
+                <td>${line.quantity}${line.uom ? " " + escapeHtml(line.uom) : ""}</td>
+                <td>${line.hasPrice ? formatMoney(line.unitPriceEUR) +
+                        (line.uom ? ` <small>EUR / ${escapeHtml(line.uom)}</small>` : "") : "<small>No price yet</small>"}
                     ${line.hasPrice && line.estimate && line.estimate.estimated ?
                         `<br><small style="color:#b45309;">estimated</small>` : ""}</td>
                 <td>${line.hasPrice ? formatMoney(line.lineCostEUR) : "-"}</td>
@@ -16405,9 +16650,74 @@ let currentUser = null;
 
 const nativeFetch = window.fetch.bind(window);
 
+// Busy indicator: while any request is running longer than a moment, a
+// "Loading..." layer covers the page, so the same button is not
+// clicked again and again.
+let pendingRequests = 0;
+
+let busyTimer = null;
+
+function busyStart() {
+
+    pendingRequests++;
+
+    if (pendingRequests === 1) {
+
+        busyTimer = setTimeout(() => {
+
+            let layer = document.getElementById("busy-overlay");
+
+            if (!layer) {
+
+                layer = document.createElement("div");
+
+                layer.id = "busy-overlay";
+
+                layer.innerHTML = `
+                    <div class="busy-box">
+                        <div class="busy-spinner"></div>
+                        <span>Loading, please wait...</span>
+                    </div>`;
+
+                document.body.appendChild(layer);
+            }
+
+            layer.style.display = "flex";
+
+        }, 350);
+    }
+}
+
+function busyEnd() {
+
+    pendingRequests = Math.max(0, pendingRequests - 1);
+
+    if (pendingRequests === 0) {
+
+        clearTimeout(busyTimer);
+
+        const layer = document.getElementById("busy-overlay");
+
+        if (layer) {
+            layer.style.display = "none";
+        }
+    }
+}
+
 window.fetch = async function (...args) {
 
-    const response = await nativeFetch(...args);
+    busyStart();
+
+    let response;
+
+    try {
+
+        response = await nativeFetch(...args);
+    }
+    finally {
+
+        busyEnd();
+    }
 
     if (response.status === 401) {
 
@@ -16765,9 +17075,14 @@ function applyRoleRestrictions() {
         const handler =
             (element.getAttribute("onclick") || "").trim();
 
+        // A handler can hold several statements ("x = null; showModify...()"):
+        // each one is checked, not just the first
+        const statements = handler.split(";").map(part => part.trim());
+
         const hide =
-            ADMIN_ACTION_PATTERN.test(handler) ||
-            (role === "viewer" && EDIT_ACTION_PATTERN.test(handler));
+            statements.some(part => ADMIN_ACTION_PATTERN.test(part)) ||
+            (role === "viewer" &&
+                statements.some(part => EDIT_ACTION_PATTERN.test(part)));
 
         if (hide) {
             element.style.display = "none";
@@ -19265,6 +19580,9 @@ function renderQuotationDetail() {
             ` (1 USD = ${quotationNumber(q.exchangeRate)} EUR)` : ""}<br>
                 <strong>Incoterm:</strong> ${escapeHtml(q.incoterm || "-")}<br>
                 <strong>Lead time:</strong> ${q.leadTimeWeeks ? q.leadTimeWeeks + " weeks" : "-"}<br>
+                <strong>Transport:</strong> ${q.freightCost > 0 ?
+            quotationNumber(q.freightCost) + " " + escapeHtml(q.currency) +
+            " (whole quotation)" : "-"}<br>
                 <strong>Comment:</strong> ${escapeHtml(q.comment || "-")}
             </p>
 
@@ -19483,6 +19801,15 @@ async function renderQuotationForm(existing) {
                 style="width: 160px;"
                 value="${q.leadTimeWeeks ? q.leadTimeWeeks : ""}">
 
+            <label>Transport cost (optional)</label>
+            <input type="number" id="quo-freight" min="0" step="any"
+                style="width: 160px;"
+                value="${q.freightCost ? q.freightCost : ""}"
+                placeholder="0.00">
+            <small>Transport quoted for the whole quotation, in the
+                quotation's currency. It is spread over the usual
+                quantities of all its materials in the estimated cost.</small>
+
             <label>Comment (optional)</label>
             <textarea id="quo-comment" rows="2">${escapeHtml(q.comment)}</textarea>
 
@@ -19490,8 +19817,9 @@ async function renderQuotationForm(existing) {
 
             <p>
                 A tier applies from its quantity up to the next tier:
-                the quantity bought decides the price. Customs and
-                freight are not part of a quotation.
+                the quantity bought decides the price. Customs are not
+                part of a quotation; transport is one amount for the
+                whole quotation (above).
             </p>
 
             <div id="quo-lines"></div>
@@ -19802,6 +20130,7 @@ async function saveQuotation(id) {
             Number(document.getElementById("quo-rate").value || 0) : 1,
         incoterm: document.getElementById("quo-incoterm").value.trim(),
         leadTimeWeeks: Number(document.getElementById("quo-lead").value || 0),
+        freightCost: Number(document.getElementById("quo-freight").value || 0),
         comment: document.getElementById("quo-comment").value.trim(),
         lines: lines
     };
@@ -20384,7 +20713,7 @@ function pastePriceTableImage(event, prefix) {
 // increment) and the warnings. totalQuantity is the quantity the
 // price was looked up for.
 
-function renderCostSourceHtml(est, totalQuantity) {
+function renderCostSourceHtml(est, totalQuantity, uom, compact) {
 
     if (!est || est.source === "None") {
 
@@ -20394,7 +20723,40 @@ function renderCostSourceHtml(est, totalQuantity) {
     const small = (text, color) =>
         `<br><small${color ? ` style="color:${color};"` : ""}>${text}</small>`;
 
-    let html = formatMoney(est.unitPriceEUR);
+    // Price per unit of measure, so the size of the number is clear
+    let html = formatMoney(est.unitPriceEUR) +
+        ` <small>EUR${uom ? " / " + escapeHtml(uom) : ""}</small>`;
+
+    // Dense version (Procurement tables): the price and where it comes
+    // from, nothing else; the quotation warnings shrink to a tooltip
+    if (compact) {
+
+        if (est.source === "Invoice") {
+
+            return html + small(`Invoice ${escapeHtml(est.sourceRef)}`);
+        }
+
+        const warnings = [];
+
+        if (est.belowFirstTier) {
+            warnings.push("quantity is below the first quoted tier");
+        }
+
+        if (est.belowMoq) {
+            warnings.push("below the minimum order quantity");
+        }
+
+        if (est.quotationExpired) {
+            warnings.push("quotation expired");
+        }
+
+        return html +
+            ` <span class="status-badge status-partial">Estimated</span>` +
+            small(`Quotation ${escapeHtml(est.sourceRef)}` +
+                (warnings.length > 0 ?
+                    ` <span style="color:#b91c1c; cursor:help;" ` +
+                    `title="${escapeHtml(warnings.join("; "))}">&#9888;</span>` : ""));
+    }
 
     if (est.source === "Invoice") {
 
@@ -20425,7 +20787,16 @@ function renderCostSourceHtml(est, totalQuantity) {
         `Quotation ${escapeHtml(est.sourceRef)} &middot; ` +
         `${escapeHtml(est.supplierName)} &middot; ${escapeHtml(est.sourceDate)}`);
 
-    if (est.hasImportIncrement) {
+    if (est.freightIncrementEUR > 0) {
+
+        html += small(
+            `${formatMoney(est.basePriceEUR)} quoted + ` +
+            `${formatMoney(est.freightIncrementEUR)} transport quoted` +
+            (est.hasImportIncrement ?
+                ` + ${formatMoney(est.importIncrementEUR)} customs/freight ` +
+                `(estimated from ${escapeHtml(est.incrementRef)})` : ""));
+    }
+    else if (est.hasImportIncrement) {
 
         html += small(
             `${formatMoney(est.basePriceEUR)} quoted + ` +
@@ -20625,279 +20996,355 @@ function purchaseInvoiceQuoteNote(line) {
 
 
 // ============================================================
-// MATERIAL DETAIL: PRICE & QUOTATIONS
+// COLUMN FILTERS (click a table title: sort + value list like Excel)
 // ============================================================
-// Current cost (invoice or quotation estimate), the quotation price
-// tiers of every supplier for a typed quantity, and the timeline of
-// invoices and quotations of this material. A past date reconstructs
-// the cost as it was then.
+// enableColumnFilters(root) turns the titles of every table inside
+// root into filter buttons. A click opens a small menu: sort A-Z /
+// Z-A, a search box and the list of values of that column to tick.
+// Several columns can be combined. Rows hidden here are marked
+// data-filtered, so the Excel export leaves them out too.
 
-let materialPriceState = {
-    id: "", quantity: "", date: "", showPast: false, info: null
-};
+// A row is hidden when a search box or a column filter hides it
+function applyRowVisibility(row) {
 
-function openQuotationFromMaterial(quotationID) {
+    const hidden =
+        row.dataset.searchHidden === "1" || row.dataset.colHidden === "1";
 
-    openModule("prices");
+    row.style.display = hidden ? "none" : "";
 
-    openQuotation(quotationID);
+    if (hidden) {
+        row.setAttribute("data-filtered", "1");
+    }
+    else {
+        row.removeAttribute("data-filtered");
+    }
 }
 
-async function loadMaterialPriceInfo(materialID, quantity, date) {
+function columnFilterCellText(row, index) {
 
-    const box = document.getElementById("material-price-info");
+    const cell = row.cells[index];
 
-    if (!box) {
+    return cell ? cell.textContent.replace(/\s+/g, " ").trim() : "";
+}
+
+function enableColumnFilters(root, options) {
+
+    const skip = options && options.skip;
+
+    for (const table of root.querySelectorAll("table")) {
+
+        const headRow = table.querySelector("thead tr:last-child");
+
+        if (!headRow || table.dataset.colFilters === "1") {
+            continue;
+        }
+
+        table.dataset.colFilters = "1";
+
+        table.classList.add("col-filter-table");
+
+        table._colFilters = new Map();
+
+        Array.from(headRow.children).forEach((th, index) => {
+
+            const label = th.textContent.replace(/\s+/g, " ").trim();
+
+            if (label === "" || (skip && skip.test(label))) {
+                return;
+            }
+
+            th.classList.add("filterable-th");
+
+            th.insertAdjacentHTML("beforeend",
+                `<span class="col-filter-caret">&#9662;</span>`);
+
+            th.addEventListener("click", event => {
+
+                event.stopPropagation();
+
+                openColumnFilterMenu(table, index, th);
+            });
+        });
+    }
+}
+
+function closeColumnFilterMenu() {
+
+    const menu = document.getElementById("column-filter-menu");
+
+    if (menu) {
+        menu.remove();
+    }
+}
+
+document.addEventListener("click", event => {
+
+    const menu = document.getElementById("column-filter-menu");
+
+    if (menu && !menu.contains(event.target)) {
+        closeColumnFilterMenu();
+    }
+});
+
+document.addEventListener("keydown", event => {
+
+    if (event.key === "Escape") {
+        closeColumnFilterMenu();
+    }
+});
+
+function columnFilterRows(table) {
+
+    return Array.from(table.querySelectorAll("tbody tr")).filter(
+        row => row.cells.length === table.querySelector("thead tr:last-child").children.length);
+}
+
+function applyColumnFilters(table) {
+
+    const rows = columnFilterRows(table);
+
+    let shown = 0;
+
+    for (const row of rows) {
+
+        let visible = true;
+
+        for (const [index, allowed] of table._colFilters) {
+
+            if (!allowed.has(columnFilterCellText(row, index))) {
+                visible = false;
+
+                break;
+            }
+        }
+
+        row.dataset.colHidden = visible ? "" : "1";
+
+        applyRowVisibility(row);
+
+        if (visible) {
+            shown++;
+        }
+    }
+
+    // header marks + status line
+    const headRow = table.querySelector("thead tr:last-child");
+
+    Array.from(headRow.children).forEach((th, index) => {
+        th.classList.toggle("has-filter", table._colFilters.has(index));
+    });
+
+    const container = table.closest(".material-table-container") || table.parentElement;
+
+    let status = container.querySelector(".col-filter-status");
+
+    if (table._colFilters.size === 0) {
+
+        if (status) {
+            status.remove();
+        }
+
         return;
     }
 
-    if (materialPriceState.id !== materialID) {
+    if (!status) {
 
-        materialPriceState =
-            { id: materialID, quantity: "", date: "", showPast: false, info: null };
+        status = document.createElement("div");
+
+        status.className = "col-filter-status";
+
+        container.insertBefore(status, container.querySelector("table"));
     }
 
-    if (quantity !== undefined) {
-        materialPriceState.quantity = quantity;
-    }
+    status.innerHTML = `
+        Filtered: ${shown} of ${rows.length} rows
+        <a href="#" onclick="event.preventDefault(); clearColumnFilters(this);">
+            Clear all filters</a>`;
 
-    if (date !== undefined) {
-        materialPriceState.date = date;
-    }
-
-    box.innerHTML = `<p>Loading prices...</p>`;
-
-    try {
-
-        const q = Number(materialPriceState.quantity);
-
-        let url = `/api/materials/${encodeURIComponent(materialID)}/price-info?`;
-
-        if (q > 0) {
-            url += `quantity=${encodeURIComponent(q)}&`;
-        }
-
-        if (materialPriceState.date) {
-            url += `date=${encodeURIComponent(materialPriceState.date)}&`;
-        }
-
-        const response = await fetch(url);
-
-        if (!response.ok) {
-
-            box.innerHTML = `<p>Error: ${escapeHtml(await response.text())}</p>`;
-
-            return;
-        }
-
-        materialPriceState.info = await response.json();
-
-        renderMaterialPriceInfo();
-    }
-    catch (error) {
-
-        console.error(error);
-
-        box.innerHTML = `<p>Could not connect to the server.</p>`;
-    }
+    status._table = table;
 }
 
-function applyMaterialPriceControls() {
+function clearColumnFilters(link) {
 
-    loadMaterialPriceInfo(
-        materialPriceState.id,
-        document.getElementById("mprice-qty").value,
-        document.getElementById("mprice-date").value || "");
+    const status = link.closest(".col-filter-status");
+
+    const table = status._table;
+
+    table._colFilters.clear();
+
+    applyColumnFilters(table);
 }
 
-function toggleMaterialPastQuotations(checked) {
+function sortTableByColumn(table, index, descending) {
 
-    materialPriceState.showPast = checked;
+    const body = table.tBodies[0];
 
-    renderMaterialPriceInfo();
+    const rows = columnFilterRows(table);
+
+    const collator = new Intl.Collator(undefined,
+        { numeric: true, sensitivity: "base" });
+
+    rows.sort((a, b) => {
+
+        const result = collator.compare(
+            columnFilterCellText(a, index), columnFilterCellText(b, index));
+
+        return descending ? -result : result;
+    });
+
+    for (const row of rows) {
+        body.appendChild(row);
+    }
+
+    const headRow = table.querySelector("thead tr:last-child");
+
+    Array.from(headRow.children).forEach((th, i) => {
+
+        const caret = th.querySelector(".col-filter-caret");
+
+        if (caret) {
+            caret.innerHTML = i === index ?
+                (descending ? "&#9650;" : "&#9660;") : "&#9662;";
+        }
+    });
 }
 
-function renderMaterialPriceInfo() {
+function openColumnFilterMenu(table, index, th) {
 
-    const box = document.getElementById("material-price-info");
+    closeColumnFilterMenu();
 
-    const info = materialPriceState.info;
+    const rows = columnFilterRows(table);
 
-    if (!box || !info) {
-        return;
-    }
+    const values = [...new Set(rows.map(
+        row => columnFilterCellText(row, index)))].sort(
+            new Intl.Collator(undefined, { numeric: true, sensitivity: "base" }).compare);
 
-    const qty = Number(materialPriceState.quantity) > 0 ?
-        Number(materialPriceState.quantity) : 0;
+    const current = table._colFilters.get(index);
 
-    const uom = info.uom || "";
+    const selected = new Set(current || values);
 
-    // ---- quotations ------------------------------------------------
-    let quoteRows = "";
+    const menu = document.createElement("div");
 
-    const quotes = (info.quotations || []).filter(
-        q => materialPriceState.showPast || q.current);
+    menu.id = "column-filter-menu";
 
-    for (const q of quotes) {
-
-        const tiers = q.tiers.map(tier =>
-            `from ${quotationNumber(tier.minQuantity)}` +
-            (q.usualQuantity > 0 && q.usualQuantity === tier.minQuantity ?
-                " (usual)" : "") + `: ` +
-            `${quotationNumber(tier.unitPrice)} ${escapeHtml(q.currency)}` +
-            (q.currency === "EUR" ? "" :
-                ` (${quotationNumber(tier.unitPriceEUR)} EUR)`)).join("<br>");
-
-        let atQty = "-";
-
-        if (qty > 0) {
-
-            atQty = `<strong>${formatMoney(q.tierPriceEUR)} EUR</strong>` +
-                ` <small>(tier from ${quotationNumber(q.tierMinQuantity)})</small>` +
-                (q.belowFirstTier ?
-                    `<br><small style="color:#b91c1c;">below the first tier</small>` : "") +
-                (q.belowMoq ?
-                    `<br><small style="color:#b91c1c;">below the minimum order</small>` : "");
-        }
-
-        quoteRows += `
-            <tr${q.current ? "" : ` style="opacity:0.7;"`}>
-                <td>
-                    <a href="#"
-                        onclick="openQuotationFromMaterial('${escapeHtml(q.id)}'); return false;">
-                        ${escapeHtml(q.id)}</a>
-                    ${q.hasDocument ?
-                `<br><a href="/api/quotations/${encodeURIComponent(q.id)}/document/file"
-                            target="_blank"><small>PDF</small></a>` : ""}
-                </td>
-                <td>
-                    ${escapeHtml(q.supplier)}
-                    ${q.primarySupplier ? "<br><small>primary supplier</small>" : ""}
-                </td>
-                <td>${escapeHtml(q.issueDate)}</td>
-                <td>${escapeHtml(q.validUntil || "-")}</td>
-                <td>
-                    <span class="status-badge ${quotationStatusClass(q.status)}">
-                        ${escapeHtml(q.status)}
-                    </span>
-                </td>
-                <td>${q.leadTimeWeeks ? q.leadTimeWeeks + " wk" : "-"}
-                    ${q.moq ? `<br><small>MOQ ${quotationNumber(q.moq)}</small>` : ""}</td>
-                <td><small>${tiers}</small></td>
-                <td>${atQty}</td>
-            </tr>`;
-    }
-
-    if (quotes.length === 0) {
-
-        quoteRows = `
-            <tr><td colspan="8">No ${materialPriceState.showPast ? "" : "current "}quotations for this material.</td></tr>`;
-    }
-
-    // ---- timeline ---------------------------------------------------
-    let timelineRows = "";
-
-    for (const row of (info.timeline || [])) {
-
-        if (row.type === "Invoice") {
-
-            const diffNote = row.quotationID && row.quotedUnitPriceEUR > 0 ?
-                `<br><small>quoted ${formatMoney(row.quotedUnitPriceEUR)} EUR (${escapeHtml(row.quotationID)})</small>` : "";
-
-            timelineRows += `
-                <tr>
-                    <td>${escapeHtml(row.date)}</td>
-                    <td>${escapeHtml(row.ref)}</td>
-                    <td><strong>${formatMoney(row.unitPriceEUR)} EUR</strong></td>
-                    <td><small>
-                        ${formatMoney(row.basePriceEUR)} price +
-                        ${formatMoney(row.extraPerUnitEUR)} customs / freight / other
-                        &middot; qty ${row.quantity}${diffNote}
-                    </small></td>
-                </tr>`;
-        }
-    }
-
-    if (timelineRows === "") {
-
-        timelineRows = `<tr><td colspan="4">No invoices for this material yet.</td></tr>`;
-    }
-
-    box.innerHTML = `
-
-        <h3 style="margin-top: 28px;">Price &amp; Quotations</h3>
-
-        <div class="form-actions" style="gap: 12px; flex-wrap: wrap; align-items: end;">
-
-            <div>
-                <label>Quantity to buy (${escapeHtml(uom)})</label>
-                <input type="number" id="mprice-qty" min="0" step="any"
-                    style="width: 150px;"
-                    value="${materialPriceState.quantity}">
-            </div>
-
-            <div>
-                <label>Cost as of (optional)</label>
-                <input type="date" id="mprice-date"
-                    value="${escapeHtml(materialPriceState.date)}">
-            </div>
-
-            <button onclick="applyMaterialPriceControls()">Calculate</button>
-
-            <label style="display:flex; gap:6px; align-items:center;">
-                <input type="checkbox" ${materialPriceState.showPast ? "checked" : ""}
-                    onchange="toggleMaterialPastQuotations(this.checked)">
-                Show past (replaced) quotations
-            </label>
-
-        </div>
-
-        <p style="margin-top: 14px;">
-            <strong>Cost${materialPriceState.date ?
-                " as of " + escapeHtml(materialPriceState.date) : ""}${qty > 0 ?
-                " for " + qty + " " + escapeHtml(uom) : ""}:</strong><br>
-            ${renderCostSourceHtml(info.estimate, qty)}
-            ${info.estimate.source !== "None" ? " EUR" : ""}
-        </p>
-
-        <h4>Quotations <small style="font-weight:normal; color:#6b7280;">
-            &mdash; prices offered by suppliers (no customs / freight)</small></h4>
-
-        <div class="material-table-container">
-            <table class="material-table">
-                <thead>
-                    <tr>
-                        <th>Quotation</th>
-                        <th>Supplier</th>
-                        <th>Issued</th>
-                        <th>Valid until</th>
-                        <th>Status</th>
-                        <th>Lead time</th>
-                        <th>Price tiers</th>
-                        <th>Price for the quantity</th>
-                    </tr>
-                </thead>
-                <tbody>${quoteRows}</tbody>
-            </table>
-        </div>
-
-        <h4 style="margin-top: 20px;">Invoices <small style="font-weight:normal; color:#6b7280;">
-            &mdash; real prices paid (landed: price + customs / freight), by date</small></h4>
-
-        <div class="material-table-container">
-            <table class="material-table">
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Invoice</th>
-                        <th>Price (EUR)</th>
-                        <th>Detail</th>
-                    </tr>
-                </thead>
-                <tbody>${timelineRows}</tbody>
-            </table>
-        </div>
+    menu.innerHTML = `
+        <button type="button" class="cf-sort" data-dir="asc">Sort A &rarr; Z</button>
+        <button type="button" class="cf-sort" data-dir="desc">Sort Z &rarr; A</button>
+        <input type="text" class="cf-search" placeholder="Search values...">
+        <label class="cf-all"><input type="checkbox" class="cf-all-box"> (Select all)</label>
+        <div class="cf-list"></div>
+        <button type="button" class="cf-clear">Clear filter</button>
     `;
+
+    document.body.appendChild(menu);
+
+    const rect = th.getBoundingClientRect();
+
+    menu.style.left =
+        Math.max(8, Math.min(rect.left, window.innerWidth - 270)) + "px";
+
+    menu.style.top = (rect.bottom + 4) + "px";
+
+    const list = menu.querySelector(".cf-list");
+
+    const search = menu.querySelector(".cf-search");
+
+    const allBox = menu.querySelector(".cf-all-box");
+
+    function shownValues() {
+
+        const text = search.value.trim().toLowerCase();
+
+        return values.filter(
+            value => text === "" || value.toLowerCase().includes(text));
+    }
+
+    function commit() {
+
+        if (selected.size === values.length) {
+            table._colFilters.delete(index);
+        }
+        else {
+            table._colFilters.set(index, new Set(selected));
+        }
+
+        applyColumnFilters(table);
+    }
+
+    function renderList() {
+
+        const visible = shownValues();
+
+        list.innerHTML = visible.map((value, i) => `
+            <label class="cf-item">
+                <input type="checkbox" data-i="${i}" ${selected.has(value) ? "checked" : ""}>
+                ${value === "" ? "<em>(blank)</em>" : escapeHtml(value)}
+            </label>`).join("");
+
+        allBox.checked = visible.length > 0 &&
+            visible.every(value => selected.has(value));
+
+        list.querySelectorAll("input").forEach(box => {
+
+            box.addEventListener("change", () => {
+
+                const value = visible[Number(box.dataset.i)];
+
+                if (box.checked) {
+                    selected.add(value);
+                }
+                else {
+                    selected.delete(value);
+                }
+
+                allBox.checked = visible.every(v => selected.has(v));
+
+                commit();
+            });
+        });
+    }
+
+    allBox.addEventListener("change", () => {
+
+        for (const value of shownValues()) {
+
+            if (allBox.checked) {
+                selected.add(value);
+            }
+            else {
+                selected.delete(value);
+            }
+        }
+
+        renderList();
+
+        commit();
+    });
+
+    search.addEventListener("input", renderList);
+
+    menu.querySelectorAll(".cf-sort").forEach(button => {
+
+        button.addEventListener("click", () => {
+
+            sortTableByColumn(table, index, button.dataset.dir === "desc");
+
+            closeColumnFilterMenu();
+        });
+    });
+
+    menu.querySelector(".cf-clear").addEventListener("click", () => {
+
+        table._colFilters.delete(index);
+
+        applyColumnFilters(table);
+
+        closeColumnFilterMenu();
+    });
+
+    renderList();
+
+    search.focus();
 }
 
 // ============================================================
@@ -21302,6 +21749,7 @@ function collectExportSheets() {
         }
 
         const rows = bodyRows
+            .filter(tr => !tr.hasAttribute("data-filtered"))
             .map(tr => Array.from(tr.children).map(exportCellText))
             .filter(cells => cells.some(text => text !== ""));
 

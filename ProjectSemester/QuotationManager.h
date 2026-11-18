@@ -12,8 +12,12 @@
 // price Y") - the quantity bought decides the price - plus the
 // minimum order quantity and the lead time.
 //
-// A quotation never contains customs / freight: those only appear
-// once an import happens (Purchase Invoice).
+// A quotation has no customs; the transport the contractor quotes
+// from the start is ONE amount for the whole quotation
+// (freightCost, in the quotation's currency). For the estimated cost
+// it is spread per unit over the usual quantities of all its lines.
+// Real customs / freight only appear once an import happens
+// (Purchase Invoice).
 //
 // CURRENT vs. PAST (automatic replacement): for a given Supplier and
 // Material, the quotation with the latest issue date is the current
@@ -120,6 +124,10 @@ struct Quotation
     int leadTimeWeeks = 0;
 
     string comment;
+
+    // Transport quoted for the whole quotation, in the quotation's
+    // currency (0 = none)
+    double freightCost = 0.0;
 
     // Quotation PDF (empty = none), saved under the Documents Folder
     string documentPath;
@@ -357,6 +365,11 @@ private:
         if (q.leadTimeWeeks < 0)
         {
             return "Lead time (weeks) cannot be negative.";
+        }
+
+        if (q.freightCost < 0.0 || !isfinite(q.freightCost))
+        {
+            return "Transport cost cannot be negative.";
         }
 
         if (q.lines.empty())
@@ -754,6 +767,30 @@ public:
             line.usualQuantity : line.tiers.front().minQuantity;
     }
 
+    // The quotation's transport per unit, in EUR: the whole amount
+    // divided by the usual quantities (reference quantities) of all
+    // its lines
+    static double freightPerUnitEUR(const Quotation& quotation)
+    {
+        if (!(quotation.freightCost > 0.0))
+        {
+            return 0.0;
+        }
+
+        double units = 0.0;
+
+        for (const auto& line : quotation.lines)
+        {
+            if (!line.tiers.empty())
+            {
+                units += referenceQuantity(line);
+            }
+        }
+
+        return units > 0.0 ?
+            quotation.freightCost * quotation.exchangeRate / units : 0.0;
+    }
+
     // Unit price of the tier in EUR
     static double unitPriceEUR(
         const Quotation& quotation,
@@ -768,7 +805,8 @@ public:
     // ------------------------------------------------------------
     // One line per quotation:
     //   id|supplier|supplierQuoteNo|issueDate|validUntil|currency|
-    //   exchangeRate|incoterm|comment|documentPath|leadTimeWeeks|lines
+    //   exchangeRate|incoterm|comment|documentPath|leadTimeWeeks|lines|
+    //   freightCost   (the last field is missing in older files)
     // lines joined by "~", each:
     //   materialID,moq,usualQuantity,tiers
     // (older files: lines without usualQuantity "materialID,moq,tiers",
@@ -831,7 +869,8 @@ public:
                 << encodeField(q->comment) << "|"
                 << encodeField(q->documentPath) << "|"
                 << q->leadTimeWeeks << "|"
-                << linesField
+                << linesField << "|"
+                << formatNumber(q->freightCost)
                 << endl;
         }
 
@@ -974,6 +1013,11 @@ public:
             if (oldFormat)
             {
                 q->leadTimeWeeks = (oldLeadDays + 6) / 7;
+            }
+
+            if (!oldFormat && fields.size() >= 13)
+            {
+                q->freightCost = atof(fields[12].c_str());
             }
 
             if (q->id.size() > 4 && q->id.compare(0, 4, "QUO-") == 0)

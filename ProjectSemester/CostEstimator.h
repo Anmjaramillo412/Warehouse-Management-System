@@ -64,6 +64,7 @@ struct MaterialCostEstimate
     double basePriceEUR = 0.0;
     double importIncrementEUR = 0.0;
     bool hasImportIncrement = false;
+    double freightIncrementEUR = 0.0;  // transport quoted in the quotation
     string incrementRef;          // invoice the increment comes from
     bool belowFirstTier = false;  // quantity under the first tier
     bool belowMoq = false;        // quantity under the minimum order
@@ -379,8 +380,14 @@ public:
             result.incrementRef = withImport.invoiceID;
         }
 
+        // Transport the quotation itself states (whole quotation,
+        // spread per unit)
+        result.freightIncrementEUR =
+            QuotationManager::freightPerUnitEUR(*quote.quotation);
+
         result.unitPriceEUR =
-            result.basePriceEUR + result.importIncrementEUR;
+            result.basePriceEUR + result.importIncrementEUR +
+            result.freightIncrementEUR;
 
         if (invoice.found)
         {
