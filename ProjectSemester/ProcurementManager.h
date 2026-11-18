@@ -131,6 +131,33 @@ public:
         const string& confirmationDate,
         double confirmedQuantity);
 
+    // Changes the confirmed quantity of an already confirmed line
+    // (e.g. the supplier delivers more than confirmed). Never below
+    // what was already received. On failure, error says why.
+    // apply = false only checks (no change), so a whole batch can be
+    // validated before anything is saved.
+    bool changeConfirmedQuantity(
+        const string& id,
+        const string& materialID,
+        double newQuantity,
+        string& error,
+        bool apply = true);
+
+    // Admin correction of a receipt booked by mistake (e.g. saved
+    // twice): the receipt is reduced to newQuantity (0 = removed) and
+    // the difference leaves the Warehouse with a "RECEIPT CORRECTION"
+    // movement. Only ever reduces; fails if the stock was already
+    // used. removeAllowed: false when removing would shift the index
+    // of a receipt that is already on an invoice.
+    bool correctReceipt(
+        const string& id,
+        const string& materialID,
+        int receiptIndex,
+        double newQuantity,
+        bool removeAllowed,
+        string& error,
+        bool apply = true);
+
     // Adds a (possibly partial) receipt and performs the matching
     // Goods Receipt into the order's Warehouse (one specific
     // material line within an order).

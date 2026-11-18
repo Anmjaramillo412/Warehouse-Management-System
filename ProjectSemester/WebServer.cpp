@@ -7014,6 +7014,241 @@ void WebServer::run()
             });
 
 // ============================================================
+// PROCUREMENT - EDIT QUANTITIES (confirmed orders)
+// ============================================================
+// One request for the whole order: every changed Confirmed Qty is
+// checked first, and only if all are valid are they applied (each
+// change gets its own movement record: material, from -> to).
+
+    CROW_ROUTE(app, "/api/procurement/edit-quantities")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body || !body.has("changes"))
+                    {
+                        return crow::response(400, "Invalid JSON data.");
+                    }
+
+                    string id = body["id"].s();
+
+                    ProcurementManager& pm =
+                        warehouseSystem->getProcurementManager();
+
+                    struct Change { string materialID; double quantity; };
+
+                    vector<Change> changes;
+
+                    for (size_t i = 0; i < body["changes"].size(); i++)
+                    {
+                        Change c;
+
+                        c.materialID = body["changes"][i]["materialID"].s();
+
+                        c.quantity =
+                            jsonQuantity(body["changes"][i]["confirmedQuantity"]);
+
+                        string decimalsError =
+                            quantityDecimalsError(c.quantity, "Confirmed Quantity");
+
+                        if (!decimalsError.empty())
+                        {
+                            return crow::response(400, c.materialID + ": " + decimalsError);
+                        }
+
+                        changes.push_back(c);
+                    }
+
+                    if (id.empty() || changes.empty())
+                    {
+                        return crow::response(400, "Nothing to change.");
+                    }
+
+                    for (const auto& c : changes)
+                    {
+                        string error;
+
+                        if (!pm.changeConfirmedQuantity(
+                                id, c.materialID, c.quantity, error, false))
+                        {
+                            return crow::response(400, c.materialID + ": " + error);
+                        }
+                    }
+
+                    for (const auto& c : changes)
+                    {
+                        string error;
+
+                        pm.changeConfirmedQuantity(
+                            id, c.materialID, c.quantity, error, true);
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] = "Quantities updated.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(500, string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
+// PROCUREMENT - CORRECT RECEIPTS (Admin only, see AuthManager)
+// ============================================================
+// Fixes receipts saved by mistake (e.g. twice): the receipt is
+// reduced / removed and the surplus leaves the Warehouse with a
+// "RECEIPT CORRECTION" movement. Receipts already on an invoice
+// cannot be touched here.
+
+    CROW_ROUTE(app, "/api/procurement/correct-receipts")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body || !body.has("corrections"))
+                    {
+                        return crow::response(400, "Invalid JSON data.");
+                    }
+
+                    string id = body["id"].s();
+
+                    ProcurementManager& pm =
+                        warehouseSystem->getProcurementManager();
+
+                    PurchaseManager& purchase =
+                        warehouseSystem->getPurchaseManager();
+
+                    struct Correction
+                    {
+                        string materialID;
+                        int index;
+                        double quantity;
+                        bool removeAllowed;
+                    };
+
+                    vector<Correction> list;
+
+                    for (size_t i = 0; i < body["corrections"].size(); i++)
+                    {
+                        Correction c;
+
+                        c.materialID = body["corrections"][i]["materialID"].s();
+                        c.index = (int)body["corrections"][i]["receiptIndex"].i();
+                        c.quantity = jsonQuantity(body["corrections"][i]["quantity"]);
+
+                        string decimalsError =
+                            quantityDecimalsError(c.quantity, "Quantity");
+
+                        if (!decimalsError.empty())
+                        {
+                            return crow::response(400, c.materialID + ": " + decimalsError);
+                        }
+
+                        // Is this receipt (or a later one) on an invoice?
+                        c.removeAllowed = true;
+
+                        for (const auto& invoice : purchase.getInvoices())
+                        {
+                            for (const auto& line : invoice->getLines())
+                            {
+                                if (line.procurementOrderID != id ||
+                                    line.materialID != c.materialID)
+                                {
+                                    continue;
+                                }
+
+                                if (line.receiptIndex == c.index)
+                                {
+                                    return crow::response(
+                                        409,
+                                        c.materialID + ": receipt #" +
+                                        to_string(c.index + 1) +
+                                        " is already on invoice " +
+                                        invoice->getID() +
+                                        ". Correct or delete that invoice first.");
+                                }
+
+                                if (line.receiptIndex > c.index)
+                                {
+                                    c.removeAllowed = false;
+                                }
+                            }
+                        }
+
+                        list.push_back(c);
+                    }
+
+                    if (id.empty() || list.empty())
+                    {
+                        return crow::response(400, "Nothing to correct.");
+                    }
+
+                    for (const auto& c : list)
+                    {
+                        string error;
+
+                        if (!pm.correctReceipt(
+                                id, c.materialID, c.index, c.quantity,
+                                c.removeAllowed, error, false))
+                        {
+                            return crow::response(400, c.materialID + ": " + error);
+                        }
+                    }
+
+                    // Highest receipt index first, so removing one does
+                    // not shift the index of another still to be done.
+                    sort(list.begin(), list.end(),
+                        [](const Correction& a, const Correction& b)
+                        {
+                            return a.index > b.index;
+                        });
+
+                    for (const auto& c : list)
+                    {
+                        string error;
+
+                        if (!pm.correctReceipt(
+                                id, c.materialID, c.index, c.quantity,
+                                c.removeAllowed, error, true))
+                        {
+                            autoSaveIfEnabled(warehouseSystem);
+
+                            return crow::response(400, c.materialID + ": " + error);
+                        }
+                    }
+
+                    autoSaveIfEnabled(warehouseSystem);
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    response["message"] = "Receipts corrected.";
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(500, string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
 // PROCUREMENT - DELETE ORDER
 // ============================================================
 // Separate explicit endpoint for deleting an order outright, used
@@ -7215,6 +7450,36 @@ void WebServer::run()
                         return crow::response(
                             409,
                             "This Procurement Order is already completed.");
+                    }
+
+
+                    // Safety net against double saves (double click, slow
+                    // answer, two tabs): a receipt may never be larger than
+                    // what is still pending on the line. Without this, the
+                    // same receipt sent twice was accepted both times
+                    // (pending was still > 0 after the first one).
+
+                    if (receivedQuantity >
+                        order->getPendingQuantity() + 0.0005)
+                    {
+                        auto fmt = [](double v)
+                        {
+                            string t = to_string(v);
+                            t.erase(t.find_last_not_of('0') + 1);
+                            if (!t.empty() && t.back() == '.')
+                                t.pop_back();
+                            return t;
+                        };
+
+                        return crow::response(
+                            409,
+                            "Received Quantity (" + fmt(receivedQuantity) +
+                            ") is more than what is still pending (" +
+                            fmt(order->getPendingQuantity()) +
+                            ") for " + materialID + " on " + id +
+                            ". It may already have been saved - refresh the "
+                            "order. For a real over-delivery, first raise "
+                            "the confirmed quantity of the order.");
                     }
 
 

@@ -203,6 +203,34 @@ bool InventoryManager::goodsReceipt(
 }
 
 // ================================================================
+// STOCK OF ONE MATERIAL
+// ================================================================
+
+double InventoryManager::stockOf(
+    int warehouseID,
+    const string& materialID)
+{
+    if (warehouseManager == nullptr)
+    {
+        return 0.0;
+    }
+
+    Warehouse* warehouse =
+        warehouseManager->findWarehouse(warehouseID);
+
+    if (warehouse == nullptr)
+    {
+        return 0.0;
+    }
+
+    WarehouseNode* node =
+        warehouse->findMaterial(materialID);
+
+    return (node == nullptr) ? 0.0 : node->quantity;
+}
+
+
+// ================================================================
 // GOODS ISSUE
 // ================================================================
 

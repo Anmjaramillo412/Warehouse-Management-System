@@ -75,6 +75,11 @@ public:
     bool isWarehouseLocked(
         int warehouseID) const;
 
+    // Stock of one material in one Warehouse (0 if none)
+    double stockOf(
+        int warehouseID,
+        const string& materialID);
+
     // Goods Receipt
     // reference: e.g. the Procurement Order ID, for the movement ledger
     bool goodsReceipt(
