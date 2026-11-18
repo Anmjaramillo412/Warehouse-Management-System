@@ -171,6 +171,10 @@ function openModule(module) {
                     Cost by Category
                 </button>
 
+                <button onclick="showPurchaseReviewProduct()">
+                    Review Product
+                </button>
+
             </div>
 
             <div id="product-content">
@@ -10288,6 +10292,9 @@ async function fillProjectionPrices(projection, readOnly) {
 
             grandTotal += total;
 
+            cell.dataset.exportValue =
+                Number(est.unitPriceEUR).toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+
             cell.innerHTML =
                 renderCostSourceHtml(est, entry.quantity, "", true) +
                 `<br><strong>Total ${formatMoney(total)} EUR` +
@@ -16007,7 +16014,32 @@ async function uploadProductPhoto(index, input) {
     }
 }
 
-function renderPurchaseProductCostCard(product) {
+// Totals of a Product, put at the top of its Excel export
+function productCostSummaryRows(product) {
+
+    const rows = [
+        ["Product", `${product.productID} - ${product.productName}`],
+        ["Total Cost (EUR)", Number(product.totalCostEUR).toFixed(2)]
+    ];
+
+    if (product.hasEstimates) {
+
+        rows.push(["Real cost - invoices (EUR)",
+            Number(product.realCostEUR).toFixed(2)]);
+
+        rows.push(["Estimated cost - quotations (EUR)",
+            Number(product.estimatedCostEUR).toFixed(2)]);
+    }
+
+    rows.push(["Status", product.complete ? "Complete" :
+        "Incomplete - at least one BOM material has no price history yet"]);
+
+    return rows;
+}
+
+// detailed = false: the price report (price and where it comes from, short).
+// detailed = true : Review Product, with every comment on each price.
+function renderPurchaseProductCostCard(product, detailed) {
 
     let lineRows = "";
 
@@ -16027,15 +16059,15 @@ function renderPurchaseProductCostCard(product) {
                     ${line.materialName ?
                         "&mdash; " + escapeHtml(line.materialName) : ""}
                 </td>
-                <td>
+                <td data-export-value="${line.quantity}" data-export-unit="${escapeHtml(line.uom || "")}">
                     ${line.quantity}${line.uom ? " <strong>" + escapeHtml(line.uom) + "</strong>" : ""}
                     ${line.totalQuantity !== line.quantity ?
                         `<br><small>priced for ${line.totalQuantity}${line.uom ? " " + escapeHtml(line.uom) : ""}</small>` : ""}
                 </td>
-                <td>
+                <td data-export-value="${internalOnly || !line.hasPrice ? "" : Number(line.unitPriceEUR).toFixed(4).replace(/0+$/, "").replace(/\.$/, "")}">
                     ${internalOnly ?
                         "<small>Internal - cost is in other materials</small>" :
-                        renderCostSourceHtml(line.estimate, line.totalQuantity, line.uom)}
+                        renderCostSourceHtml(line.estimate, line.totalQuantity, line.uom, !detailed)}
                 </td>
                 <td>
                     ${internalOnly ? "-" : formatMoney(line.lineCostEUR)}
@@ -16060,7 +16092,7 @@ function renderPurchaseProductCostCard(product) {
                 </span>
             </h3>
 
-            <p>
+            <p data-summary="${escapeHtml(JSON.stringify(productCostSummaryRows(product)))}">
                 Total Cost:
                 <strong>${formatMoney(product.totalCostEUR)} EUR</strong>
                 ${product.hasEstimates ?
@@ -16152,6 +16184,91 @@ async function showPurchaseCostByCategory() {
     `;
 
     await initProductCombobox("costcategory");
+}
+
+// ============================================================
+// PURCHASE - REVIEW PRODUCT (every comment on the prices)
+// ============================================================
+// Same material list as Product Cost, but each price keeps all its
+// comments (quotation / invoice, import costs, usual quantity,
+// warnings...), so the Product Cost report itself stays clean.
+
+async function showPurchaseReviewProduct() {
+
+    const content = document.getElementById("purchase-content");
+
+    content.innerHTML = `
+
+        <div class="form-container form-container-wide">
+
+            <h2>
+                Review Product
+            </h2>
+
+            <p>
+                Every price of the Product with all its comments.
+            </p>
+
+            <label>
+                Product
+            </label>
+
+            ${productComboboxHtml("reviewproduct", "Search by ID or name...")}
+
+            <div class="form-actions">
+                <button onclick="loadPurchaseReviewProduct()">
+                    Review
+                </button>
+            </div>
+
+        </div>
+
+        <div id="reviewproduct-result">
+        </div>
+    `;
+
+    await initProductCombobox("reviewproduct");
+}
+
+async function loadPurchaseReviewProduct() {
+
+    const productID =
+        document.getElementById("reviewproduct-product-id").value.trim();
+
+    const result = document.getElementById("reviewproduct-result");
+
+    if (!productID) {
+
+        result.innerHTML = `<p>Please select a Product.</p>`;
+
+        return;
+    }
+
+    result.innerHTML = `<p>Loading...</p>`;
+
+    try {
+
+        const response = await fetch(
+            `/api/purchase/products/${encodeURIComponent(productID)}/cost` +
+            `?quantity=1&basis=usual`);
+
+        if (!response.ok) {
+
+            result.innerHTML =
+                `<p>Error: ${escapeHtml(await response.text())}</p>`;
+
+            return;
+        }
+
+        result.innerHTML =
+            renderPurchaseProductCostCard(await response.json(), true);
+    }
+    catch (error) {
+
+        console.error(error);
+
+        result.innerHTML = `<p>Could not connect to the server.</p>`;
+    }
 }
 
 async function loadPurchaseCostByCategory() {
@@ -20803,23 +20920,6 @@ function renderCostSourceHtml(est, totalQuantity, uom, compact) {
             `${formatMoney(est.importIncrementEUR)} customs/freight ` +
             `(estimated from ${escapeHtml(est.incrementRef)})`);
     }
-    else {
-
-        html += small("no import costs registered for this material");
-    }
-
-    if (est.usedUsualTier) {
-
-        html += small(
-            `priced at the usual purchase quantity ` +
-            `(from ${est.tierMinQuantity})`, "#1d4ed8");
-    }
-    else if (est.usualMissing) {
-
-        html += small(
-            "no usual purchase quantity marked on the quotation - " +
-            "priced for the quantity needed", "#6b7280");
-    }
 
     if (est.belowFirstTier) {
 
@@ -21574,6 +21674,15 @@ function buildXlsx(sheets) {
             allRows.push({ cells: [sheet.title], style: 1 });
         }
 
+        if (sheet.summary && sheet.summary.length > 0) {
+
+            for (const line of sheet.summary) {
+                allRows.push({ cells: line, style: 0 });
+            }
+
+            allRows.push({ cells: [], style: 0 });
+        }
+
         const headerRowNumber = allRows.length + 1;
 
         allRows.push({ cells: sheet.header, style: 2 });
@@ -21748,18 +21857,86 @@ function collectExportSheets() {
             bodyRows = Array.from(table.querySelectorAll("tr")).slice(headerCells.length ? 1 : 0);
         }
 
+        // Price columns (cells marked data-export-value) are exported as
+        // two columns: the number alone, and the comment next to it
+        // (a column marked with data-export-unit: number + unit instead)
+        const splitColumns = new Set();
+
+        const unitColumns = new Set();
+
+        for (const tr of bodyRows) {
+
+            Array.from(tr.children).forEach((cell, i) => {
+
+                if (cell.dataset && cell.dataset.exportValue !== undefined) {
+
+                    splitColumns.add(i);
+
+                    if (cell.dataset.exportUnit !== undefined) {
+                        unitColumns.add(i);
+                    }
+                }
+            });
+        }
+
         const rows = bodyRows
             .filter(tr => !tr.hasAttribute("data-filtered"))
-            .map(tr => Array.from(tr.children).map(exportCellText))
+            .map(tr => {
+
+                const cells = [];
+
+                Array.from(tr.children).forEach((cell, i) => {
+
+                    if (!splitColumns.has(i)) {
+
+                        cells.push(exportCellText(cell));
+
+                        return;
+                    }
+
+                    const value = cell.dataset.exportValue || "";
+
+                    if (unitColumns.has(i)) {
+
+                        cells.push(value, cell.dataset.exportUnit || "");
+
+                        return;
+                    }
+
+                    // line breaks become spaces so the words do not stick together
+                    const copy = cell.cloneNode(true);
+
+                    copy.querySelectorAll("br").forEach(br => br.replaceWith(" "));
+
+                    const note = exportCellText(copy)
+                        .replace(/^\s*-?[\d.,]+\s*EUR(\s*\/\s*\S+)?\s*/, "")
+                        .replace(/\s*price tiers\s*$/, "")
+                        .trim();
+
+                    cells.push(value, note);
+                });
+
+                return cells;
+            })
             .filter(cells => cells.some(text => text !== ""));
 
         if (rows.length === 0) {
             continue;
         }
 
-        let header = headerCells.map(th =>
-            th.getAttribute("title") && th.textContent.trim().length < 12 ?
-                th.getAttribute("title") : th.textContent.replace(/\s+/g, " ").trim());
+        let header = [];
+
+        headerCells.forEach((th, i) => {
+
+            const label = th.getAttribute("title") && th.textContent.trim().length < 12 ?
+                th.getAttribute("title") : th.textContent.replace(/\s+/g, " ").trim();
+
+            header.push(label.replace(/[\u25B2\u25BC\u25BE]/g, "").trim());
+
+            if (splitColumns.has(i)) {
+                header.push(unitColumns.has(i) ? "UoM" : "Price comment");
+            }
+        });
 
         if (header.length === 0) {
 
@@ -21772,9 +21949,27 @@ function collectExportSheets() {
 
         const title = exportTitleOf(table);
 
+        // Totals shown above the table (Product Cost) go to the top of the sheet
+        const section = table.closest(".procurement-section");
+
+        const holder = section && section.querySelector("[data-summary]");
+
+        let summary = [];
+
+        if (holder) {
+
+            try {
+                summary = JSON.parse(holder.dataset.summary);
+            }
+            catch (error) {
+                summary = [];
+            }
+        }
+
         sheets.push({
             name: title.name,
             title: title.title,
+            summary: summary,
             header: header,
             rows: rows
         });
