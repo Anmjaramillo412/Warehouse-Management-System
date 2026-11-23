@@ -1235,6 +1235,29 @@ bool ProcurementManager::addLieferscheinPath(
 }
 
 
+bool ProcurementManager::removeLieferscheinPath(
+    const string& id,
+    size_t index)
+{
+    auto it = lieferscheinPaths.find(id);
+
+    if (it == lieferscheinPaths.end() ||
+        index >= it->second.size())
+    {
+        return false;
+    }
+
+    it->second.erase(it->second.begin() + index);
+
+    if (it->second.empty())
+    {
+        lieferscheinPaths.erase(it);
+    }
+
+    return saveDocuments();
+}
+
+
 string ProcurementManager::getOrderConfirmationPath(
     const string& id) const
 {
