@@ -242,4 +242,10 @@ public:
 
     vector<string> getLieferscheinPaths(
         const string& id) const;
+
+    // Takes one Lieferschein off the order (index is 0-based). The
+    // file itself stays in the Documents Folder.
+    bool removeLieferscheinPath(
+        const string& id,
+        size_t index);
 };

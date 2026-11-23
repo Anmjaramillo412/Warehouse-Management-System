@@ -856,6 +856,57 @@ bool resolveAdditionalSuppliers(
     return true;
 }
 
+// Procurement documents (Order Confirmation / Lieferschein) may be a
+// PDF or a photo (JPG / PNG) - decided by the file's own first bytes,
+// not by what the browser says it is.
+static string documentExtensionFor(const string& bytes)
+{
+    if (bytes.size() >= 4 && bytes.compare(0, 4, "%PDF") == 0)
+    {
+        return ".pdf";
+    }
+
+    if (bytes.size() >= 3 &&
+        (unsigned char)bytes[0] == 0xFF &&
+        (unsigned char)bytes[1] == 0xD8 &&
+        (unsigned char)bytes[2] == 0xFF)
+    {
+        return ".jpg";
+    }
+
+    if (bytes.size() >= 4 &&
+        (unsigned char)bytes[0] == 0x89 &&
+        bytes.compare(1, 3, "PNG") == 0)
+    {
+        return ".png";
+    }
+
+    return "";
+}
+
+static string documentMimeFor(const string& path)
+{
+    string lower = path;
+
+    for (auto& ch : lower)
+    {
+        ch = (char)tolower((unsigned char)ch);
+    }
+
+    if (lower.size() >= 4 && lower.substr(lower.size() - 4) == ".png")
+    {
+        return "image/png";
+    }
+
+    if ((lower.size() >= 4 && lower.substr(lower.size() - 4) == ".jpg") ||
+        (lower.size() >= 5 && lower.substr(lower.size() - 5) == ".jpeg"))
+    {
+        return "image/jpeg";
+    }
+
+    return "application/pdf";
+}
+
 // ================================================================
 // RUN
 // ================================================================
@@ -4103,9 +4154,29 @@ void WebServer::run()
                     if (!productManager.createProduct(
                         product))
                     {
+                        // Say which of the two reasons it was.
+                        if (productManager.findProduct(id) != nullptr)
+                        {
+                            return crow::response(
+                                409,
+                                "Product " + id + " already exists.");
+                        }
+
+                        for (const auto& item : product.getBOM())
+                        {
+                            if (warehouseSystem->getMaterialManager()
+                                    .findMaterial(item.materialID) == nullptr)
+                            {
+                                return crow::response(
+                                    409,
+                                    "BOM material " + item.materialID +
+                                    " does not exist.");
+                            }
+                        }
+
                         return crow::response(
                             409,
-                            "Product already exists or a BOM material was not found.");
+                            "Product could not be created.");
                     }
 
 
@@ -4468,6 +4539,10 @@ void WebServer::run()
 
                         bom["quantity"] =
                             bomItem.quantity;
+
+                        bom["uom"] =
+                            (material != nullptr) ?
+                            material->getUoM() : "";
 
                         // Internal Supplier materials are self-
                         // manufactured, not purchased or stocked in a
@@ -5075,11 +5150,21 @@ void WebServer::run()
                     // a per-order subfolder - easier to spot when
                     // browsing that folder directly.
 
+                    string extension =
+                        documentExtensionFor(decoded);
+
+                    if (extension.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Only PDF, JPG or PNG files can be attached.");
+                    }
+
                     fs::create_directories(documentsFolder);
 
                     fs::path filePath =
                         fs::path(documentsFolder) /
-                        (id + " - confirmation.pdf");
+                        (id + " - confirmation" + extension);
 
                     ofstream outFile(
                         filePath,
@@ -5214,16 +5299,50 @@ void WebServer::run()
                     // that order's confirmation file, one after
                     // another, when browsing the folder.
 
+                    string extension =
+                        documentExtensionFor(decoded);
+
+                    if (extension.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Only PDF, JPG or PNG files can be attached.");
+                    }
+
                     fs::create_directories(documentsFolder);
 
                     int nextIndex =
                         (int)procurementManager
                             .getLieferscheinPaths(id).size() + 1;
 
+                    // After a Lieferschein was removed, the next number
+                    // may already be a file in the folder (removed
+                    // attachments stay on disk) - never overwrite it.
+                    auto numberTaken = [&](int n)
+                    {
+                        for (const char* ext : { ".pdf", ".jpg", ".png" })
+                        {
+                            if (fs::exists(
+                                    fs::path(documentsFolder) /
+                                    (id + " - DeliveryNote" +
+                                        to_string(n) + ext)))
+                            {
+                                return true;
+                            }
+                        }
+
+                        return false;
+                    };
+
+                    while (numberTaken(nextIndex))
+                    {
+                        nextIndex++;
+                    }
+
                     fs::path filePath =
                         fs::path(documentsFolder) /
                         (id + " - DeliveryNote" +
-                            to_string(nextIndex) + ".pdf");
+                            to_string(nextIndex) + extension);
 
                     ofstream outFile(
                         filePath,
@@ -5264,6 +5383,69 @@ void WebServer::run()
             });
 
 // ============================================================
+// PROCUREMENT DOCUMENTS - REMOVE an attachment
+// ============================================================
+// Takes the Order Confirmation or one Lieferschein off the order
+// (kind = "order-confirmation" | "lieferschein", index 1-based for
+// Lieferschein). The file stays in the Documents Folder.
+
+    CROW_ROUTE(app, "/api/procurement/<string>/documents/remove")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req, string id)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body || !body.has("kind"))
+                    {
+                        return crow::response(400, "kind is required.");
+                    }
+
+                    string kind = body["kind"].s();
+
+                    ProcurementManager& pm =
+                        warehouseSystem->getProcurementManager();
+
+                    if (pm.findOrder(id) == nullptr)
+                    {
+                        return crow::response(404, "Procurement Order not found.");
+                    }
+
+                    bool ok = false;
+
+                    if (kind == "order-confirmation")
+                    {
+                        ok = !pm.getOrderConfirmationPath(id).empty() &&
+                             pm.setOrderConfirmationPath(id, "");
+                    }
+                    else if (kind == "lieferschein" && body.has("index"))
+                    {
+                        int index = (int)body["index"].i();
+
+                        ok = index >= 1 &&
+                             pm.removeLieferscheinPath(id, (size_t)(index - 1));
+                    }
+
+                    if (!ok)
+                    {
+                        return crow::response(404, "No such attachment on this order.");
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(500, string("Error: ") + e.what());
+                }
+            });
+
+// ============================================================
 // PROCUREMENT DOCUMENTS - VIEW (serve the PDF bytes)
 // ============================================================
 
@@ -5293,7 +5475,7 @@ void WebServer::run()
 
                 res.set_header(
                     "Content-Type",
-                    "application/pdf");
+                    documentMimeFor(path));
 
                 return res;
             });
@@ -5338,7 +5520,7 @@ void WebServer::run()
 
                 res.set_header(
                     "Content-Type",
-                    "application/pdf");
+                    documentMimeFor(path));
 
                 return res;
             });
@@ -5428,8 +5610,18 @@ void WebServer::run()
                                 projection->getWarehouseID(),
                                 projection->getDeadline());
 
+                        // "Already ordered" is no longer a frozen flag: a
+                        // line counts as covered while the outstanding
+                        // Procurement Orders for this material and
+                        // Warehouse cover its Qty to Order (live).
+                        double outstanding =
+                            getOutstandingOrderedQuantity(
+                                projItem.materialID,
+                                projection->getWarehouseID(),
+                                warehouseSystem->getProcurementManager());
+
                         if (toOrder > 0 &&
-                            !projItem.orderRegistered)
+                            qtyLess(outstanding, toOrder))
                         {
                             fullyOrdered = false;
                             break;
@@ -5572,15 +5764,8 @@ void WebServer::run()
                     // the freeze is permanent until this Projection is
                     // completed.
 
-                    if (pending > 0 &&
-                        !projItem.orderRegistered)
-                    {
-                        fullyOrdered = false;
-                    }
-
-                    // Outstanding Ordered Quantity: purely
-                    // informational, shown alongside "Qty to Order"
-                    // but never subtracted from it - see
+                    // Outstanding Ordered Quantity: shown alongside
+                    // "Qty to Order" and never subtracted from it - see
                     // getOutstandingOrderedQuantity() above.
 
                     double ordered =
@@ -5588,6 +5773,16 @@ void WebServer::run()
                             projItem.materialID,
                             projection->getWarehouseID(),
                             procurementManager);
+
+                    // Covered (live, not frozen): outstanding orders
+                    // reach the Qty to Order. The line stays visible
+                    // and can still be ordered again.
+
+                    if (pending > 0 &&
+                        qtyLess(ordered, pending))
+                    {
+                        fullyOrdered = false;
+                    }
 
                     // Actual current stock of this material in this
                     // Projection's Warehouse (not netted against other

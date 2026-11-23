@@ -8171,7 +8171,7 @@ async function showDisplayProducts() {
                                         <div style="white-space: nowrap;">
                                             ${escapeHtml(stock.warehouseName)}:
                                             <strong style="color: ${color};">
-                                                ${stock.quantity}
+                                                ${stock.quantity}${item.uom ? " " + escapeHtml(item.uom) : ""}
                                             </strong>
                                         </div>
                                     `;
@@ -8216,7 +8216,7 @@ async function showDisplayProducts() {
                             </td>
 
                             <td>
-                                ${item.quantity}
+                                ${item.quantity}${item.uom ? " " + escapeHtml(item.uom) : ""}
                             </td>
 
                             <td>
@@ -9675,14 +9675,84 @@ async function displayProjections() {
             return;
         }
 
-        let html =
-            `<div class="procurement-list">`;
+        // Grouped by Product: every Projection of one Product together,
+        // collapsible to a single line with the total units required.
+
+        const groups = new Map();
 
         for (const projection of projections) {
-            html += renderProjectionCard(projection);
+
+            if (!groups.has(projection.productID)) {
+
+                groups.set(projection.productID, {
+                    productID: projection.productID,
+                    productName: projection.productName || "",
+                    items: []
+                });
+            }
+
+            groups.get(projection.productID).items.push(projection);
         }
 
-        html += `</div>`;
+        const sortedGroups =
+            [...groups.values()].sort((first, second) =>
+                first.productID.localeCompare(second.productID));
+
+        let html = `
+            <div class="projection-group-actions">
+                <button type="button" class="button-muted"
+                    onclick="setAllProjectionGroupsCollapsed(true)">
+                    Collapse all
+                </button>
+                <button type="button" class="button-muted"
+                    onclick="setAllProjectionGroupsCollapsed(false)">
+                    Expand all
+                </button>
+            </div>
+        `;
+
+        for (const group of sortedGroups) {
+
+            group.items.sort((first, second) =>
+                (first.deadline || "").localeCompare(second.deadline || ""));
+
+            const totalUnits =
+                roundQty3(group.items.reduce(
+                    (sum, item) => sum + Number(item.manufactureQuantity || 0),
+                    0));
+
+            html += `
+                <div class="projection-group">
+
+                    <div class="projection-group-heading"
+                         onclick="toggleProjectionGroup(this)">
+
+                        <span class="warehouse-caret">&#9660;</span>
+
+                        <span class="projection-group-title">
+                            ${escapeHtml(group.productID)}
+                            &mdash;
+                            ${escapeHtml(group.productName)}
+                        </span>
+
+                        <span class="projection-group-count">
+                            (${group.items.length}
+                            projection${group.items.length === 1 ? "" : "s"})
+                        </span>
+
+                        <span class="projection-group-total">
+                            Total required: ${totalUnits} units
+                        </span>
+
+                    </div>
+
+                    <div class="projection-group-body procurement-list">
+                        ${group.items.map(renderProjectionCard).join("")}
+                    </div>
+
+                </div>
+            `;
+        }
 
         content.innerHTML = html;
     }
@@ -9693,6 +9763,19 @@ async function displayProjections() {
         content.innerHTML = `
             <p>Could not connect to the server.</p>
         `;
+    }
+}
+
+// Open Projections: collapse a Product's Projections to one line
+function toggleProjectionGroup(heading) {
+
+    heading.closest(".projection-group").classList.toggle("collapsed");
+}
+
+function setAllProjectionGroupsCollapsed(collapsed) {
+
+    for (const group of document.querySelectorAll(".projection-group")) {
+        group.classList.toggle("collapsed", collapsed);
     }
 }
 
@@ -9999,7 +10082,8 @@ async function openProjectionDetail(id) {
                             <th title="This Product's Main Warehouse - current stock, right now">Stock</th>
                             <th title="How much of this material THIS Projection needs">Required</th>
                             <th title="Shared total: what every open Projection in this Warehouse still needs for this material, minus current stock">Qty to Order</th>
-                            <th title="Unit price and total for the Qty to Order: the last invoice, or the quotation price tier for that quantity (estimate)">Price at Qty to Order</th>
+                            <th title="Unit price for the quantity entered in Register Order Qty: the last invoice, or the quotation price tier for that quantity (estimate) - changes with the tier">Unit Price</th>
+                            <th title="Unit price x the quantity entered in Register Order Qty - updates as you type">Total</th>
                             <th title="Still-outstanding Procurement Order quantity for this material in this Warehouse - informational, not subtracted from Qty to Order">Ordered</th>
                             <th>Order By</th>
                             <th>Status</th>
@@ -10045,8 +10129,12 @@ async function openProjectionDetail(id) {
 
                 html += `
                     <tr class="projection-supplier-group-row">
-                        <td colspan="13">
+                        <td colspan="9">
                             ${escapeHtml(supplierGroup || "No Supplier")}
+                        </td>
+                        <td colspan="5"
+                            class="projection-supplier-subtotal"
+                            data-supplier="${escapeHtml(supplierGroup)}">
                         </td>
                     </tr>
                 `;
@@ -10073,8 +10161,20 @@ async function openProjectionDetail(id) {
             // back even if stock or orders change later - until this
             // Projection is completed.
 
-            const alreadyOrdered =
-                readOnly || !!item.orderRegistered;
+            // No more frozen "Already ordered" step: every line stays
+            // visible and can be ordered again (the Ordered column
+            // shows what is already on order).
+            const alreadyOrdered = readOnly;
+
+            // What the outstanding orders do not cover yet - the
+            // suggested quantity (empty when already covered, so the
+            // same amount is not ordered twice by habit).
+            const remainingToOrder =
+                Math.max(0, roundQty3(
+                    item.pendingQuantity - (item.orderedQuantity || 0)));
+
+            const covered =
+                item.pendingQuantity > 0 && remainingToOrder <= 0;
 
             const pendingCell =
                 alreadyOrdered
@@ -10083,7 +10183,9 @@ async function openProjectionDetail(id) {
 
             const orderedCell =
                 item.orderedQuantity > 0
-                ? item.orderedQuantity
+                ? (covered
+                    ? `<span title="Outstanding orders cover the Qty to Order">${item.orderedQuantity} &#10003;</span>`
+                    : item.orderedQuantity)
                 : "-";
 
             if (!alreadyOrdered) {
@@ -10092,7 +10194,7 @@ async function openProjectionDetail(id) {
 
             html += `
 
-                <tr id="${rowID}-row">
+                <tr id="${rowID}-row" data-supplier="${escapeHtml(supplierGroup)}">
 
                     <td>
                         ${
@@ -10134,6 +10236,7 @@ async function openProjectionDetail(id) {
                     <td>${item.requiredQuantity}</td>
                     <td>${pendingCell}</td>
                     <td id="${rowID}-price"><small>-</small></td>
+                    <td id="${rowID}-total"><small>-</small></td>
                     <td>${orderedCell}</td>
                     <td>${escapeHtml(item.orderByDate || "-")}</td>
 
@@ -10153,7 +10256,7 @@ async function openProjectionDetail(id) {
                                     step="any"
                                     class="procurement-qty-input"
                                     id="${rowID}-qty"
-                                    value="${item.pendingQuantity}"
+                                    value="${remainingToOrder > 0 ? remainingToOrder : ""}"
                                >`
                         }
                     </td>
@@ -10273,25 +10376,272 @@ async function openProjectionDetail(id) {
     }
 }
 
-// Price of each material at its Qty to Order (last invoice, or the
-// quotation price tier for that quantity as an estimate).
+// Unit price of each material for the quantity typed in "Register Order
+// Qty" (last invoice, or the quotation price tier for that quantity as
+// an estimate). Unit price and Total follow the quantity live: the total
+// instantly, the unit price (price tier) right after the typing stops.
+const projectionPriceState = {};
+
+function projectionRowFor(materialID) {
+    return "projdet-" + materialID;
+}
+
+function renderProjectionRowPrice(materialID, projectionID) {
+
+    const state = projectionPriceState[materialID];
+
+    const rowID = projectionRowFor(materialID);
+
+    const priceCell = document.getElementById(`${rowID}-price`);
+
+    const totalCell = document.getElementById(`${rowID}-total`);
+
+    const qtyInput = document.getElementById(`${rowID}-qty`);
+
+    if (!priceCell || !totalCell || !qtyInput) {
+        return;
+    }
+
+    const quantity = Number(qtyInput.value);
+
+    if (!state || !state.est) {
+
+        priceCell.innerHTML = `<small>-</small>`;
+
+        totalCell.innerHTML = `<small>-</small>`;
+
+        delete totalCell.dataset.exportValue;
+
+        return;
+    }
+
+    const est = state.est;
+
+    if (est.source === "None") {
+
+        priceCell.innerHTML = `<small>No price yet</small>`;
+
+        totalCell.innerHTML = `<small>-</small>`;
+
+        delete totalCell.dataset.exportValue;
+
+        return;
+    }
+
+    priceCell.dataset.exportValue =
+        Number(est.unitPriceEUR).toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+
+    priceCell.innerHTML =
+        renderCostSourceHtml(est, quantity > 0 ? quantity : state.quantity, "", true) +
+        `<br><small><a href="#" onclick="event.preventDefault(); ` +
+        `openMaterialFromProjection('${escapeHtml(materialID)}', ` +
+        `'${escapeHtml(projectionID)}');">price tiers</a></small>`;
+
+    if (quantity > 0) {
+
+        const total = est.unitPriceEUR * quantity;
+
+        totalCell.dataset.exportValue = total.toFixed(2);
+
+        totalCell.dataset.total = String(total);
+
+        totalCell.innerHTML =
+            `<strong>${formatMoney(total)} EUR</strong>` +
+            `${est.estimated ? "<br><small>(est.)</small>" : ""}`;
+    }
+    else {
+
+        totalCell.innerHTML = `<small>-</small>`;
+
+        delete totalCell.dataset.exportValue;
+
+        delete totalCell.dataset.total;
+    }
+}
+
+// Sum of the Totals: the checked rows if any are checked, else all rows
+function updateProjectionGrandTotal() {
+
+    const message = document.getElementById("projection-detail-message");
+
+    if (!message) {
+        return;
+    }
+
+    const rows = [...document.querySelectorAll('[id^="projdet-"][id$="-total"]')];
+
+    const checkedRows = rows.filter(cell => {
+
+        const box = document.getElementById(
+            cell.id.replace(/-total$/, "-select"));
+
+        return box && box.checked;
+    });
+
+    const used = checkedRows.length > 0 ? checkedRows : rows;
+
+    const grandTotal =
+        used.reduce((sum, cell) => sum + Number(cell.dataset.total || 0), 0);
+
+    // Subtotal per Supplier = what that Supplier's order is expected to
+    // cost: its checked rows (or all its rows while nothing is checked).
+    const anyChecked = checkedRows.length > 0;
+
+    for (const cell of document.querySelectorAll(".projection-supplier-subtotal")) {
+
+        const supplier = cell.dataset.supplier;
+
+        const supplierCells = used.filter(totalCell => {
+
+            const row = document.getElementById(
+                totalCell.id.replace(/-total$/, "-row"));
+
+            return row && row.dataset.supplier === supplier;
+        });
+
+        const subtotal =
+            supplierCells.reduce(
+                (sum, totalCell) => sum + Number(totalCell.dataset.total || 0), 0);
+
+        cell.innerHTML =
+            subtotal > 0
+            ? `Subtotal${anyChecked ? " (selected)" : ""}: ` +
+              `<strong>${formatMoney(subtotal)} EUR</strong>`
+            : "";
+    }
+
+    message.innerHTML =
+        grandTotal > 0
+        ? `<p><small>Estimated value of the quantities entered ` +
+          `(${checkedRows.length > 0 ? "selected" : "all"} priced materials): ` +
+          `<strong>${formatMoney(grandTotal)} EUR</strong></small></p>`
+        : "";
+}
+
+async function refreshProjectionPrice(projection, materialID) {
+
+    const rowID = projectionRowFor(materialID);
+
+    const qtyInput = document.getElementById(`${rowID}-qty`);
+
+    if (!qtyInput) {
+        return;
+    }
+
+    const quantity = Number(qtyInput.value);
+
+    const state =
+        projectionPriceState[materialID] ||
+        (projectionPriceState[materialID] = { est: null, quantity: 0, seq: 0 });
+
+    // Total follows the typing right away with the last known unit price
+    renderProjectionRowPrice(materialID, projection.id);
+
+    updateProjectionGrandTotal();
+
+    if (!(quantity > 0)) {
+        return;
+    }
+
+    const seq = ++state.seq;
+
+    try {
+
+        const response = await fetch(
+            `/api/price-estimates?items=${encodeURIComponent(materialID + ":" + quantity)}`);
+
+        if (!response.ok || seq !== state.seq) {
+            return;
+        }
+
+        const data = await response.json();
+
+        const entry = (data.items || [])[0];
+
+        if (!entry) {
+            return;
+        }
+
+        state.est = entry.estimate;
+
+        state.quantity = quantity;
+
+        renderProjectionRowPrice(materialID, projection.id);
+
+        updateProjectionGrandTotal();
+    }
+    catch (error) {
+
+        console.error(error);
+    }
+}
+
 async function fillProjectionPrices(projection, readOnly) {
 
     if (readOnly) {
         return;
     }
 
-    const items = (projection.items || []).filter(
-        item => item.pendingQuantity > 0 && !item.orderRegistered);
+    for (const key of Object.keys(projectionPriceState)) {
+        delete projectionPriceState[key];
+    }
 
-    if (items.length === 0) {
+    const items = (projection.items || []);
+
+    // Live updates: quantity typed -> new tier price and total
+    const timers = {};
+
+    for (const item of items) {
+
+        const rowID = projectionRowFor(item.materialID);
+
+        const qtyInput = document.getElementById(`${rowID}-qty`);
+
+        if (qtyInput) {
+
+            qtyInput.addEventListener("input", () => {
+
+                // Total right away, tier price once the typing stops
+                renderProjectionRowPrice(item.materialID, projection.id);
+
+                updateProjectionGrandTotal();
+
+                clearTimeout(timers[item.materialID]);
+
+                timers[item.materialID] = setTimeout(
+                    () => refreshProjectionPrice(projection, item.materialID),
+                    300);
+            });
+        }
+
+        const box = document.getElementById(`${rowID}-select`);
+
+        if (box) {
+            box.addEventListener("change", updateProjectionGrandTotal);
+        }
+    }
+
+    // First fill: one request for every row that has a quantity
+    // (rows with an empty quantity are priced at their Qty to Order).
+    const query = items.map(item => {
+
+        const qtyInput =
+            document.getElementById(`${projectionRowFor(item.materialID)}-qty`);
+
+        const quantity =
+            qtyInput && Number(qtyInput.value) > 0
+                ? Number(qtyInput.value)
+                : item.pendingQuantity;
+
+        return quantity > 0 ? `${item.materialID}:${quantity}` : null;
+
+    }).filter(Boolean).join(";");
+
+    if (!query) {
         return;
     }
 
     try {
-
-        const query = items.map(
-            item => `${item.materialID}:${item.pendingQuantity}`).join(";");
 
         const response = await fetch(
             `/api/price-estimates?items=${encodeURIComponent(query)}`);
@@ -10302,51 +10652,18 @@ async function fillProjectionPrices(projection, readOnly) {
 
         const data = await response.json();
 
-        let grandTotal = 0;
-
         for (const entry of (data.items || [])) {
 
-            const cell = document.getElementById(
-                `projdet-${entry.materialID}-price`);
+            projectionPriceState[entry.materialID] = {
+                est: entry.estimate,
+                quantity: entry.quantity,
+                seq: 0
+            };
 
-            if (!cell) {
-                continue;
-            }
-
-            const est = entry.estimate;
-
-            if (est.source === "None") {
-
-                cell.innerHTML = `<small>No price yet</small>`;
-
-                continue;
-            }
-
-            const total = est.unitPriceEUR * entry.quantity;
-
-            grandTotal += total;
-
-            cell.dataset.exportValue =
-                Number(est.unitPriceEUR).toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
-
-            cell.innerHTML =
-                renderCostSourceHtml(est, entry.quantity, "", true) +
-                `<br><strong>Total ${formatMoney(total)} EUR` +
-                `${est.estimated ? " (est.)" : ""}</strong>` +
-                `<br><small><a href="#" onclick="event.preventDefault(); ` +
-                `openMaterialFromProjection('${escapeHtml(entry.materialID)}', ` +
-                `'${escapeHtml(projection.id)}');">price tiers</a></small>`;
+            renderProjectionRowPrice(entry.materialID, projection.id);
         }
 
-        const message = document.getElementById("projection-detail-message");
-
-        if (message && grandTotal > 0 && !message.textContent.trim()) {
-
-            message.innerHTML =
-                `<p><small>Estimated purchase value of the Qty to Order ` +
-                `(priced materials only): <strong>${formatMoney(grandTotal)} EUR` +
-                `</strong></small></p>`;
-        }
+        updateProjectionGrandTotal();
     }
     catch (error) {
 
@@ -11799,14 +12116,17 @@ function renderProcurementDocumentRows(
             <span>Order Confirmation:</span>
 
             ${orderConfirmationPath
-                ? `<a href="/api/procurement/${encodeURIComponent(id)}/documents/order-confirmation/file" target="_blank">View PDF</a>`
+                ? `<a href="/api/procurement/${encodeURIComponent(id)}/documents/order-confirmation/file" target="_blank">View file</a>
+                   <button type="button" class="procurement-document-remove"
+                       title="Remove this attachment"
+                       onclick="removeProcurementDocument('${id}', 'order-confirmation', 0)">&times;</button>`
                 : `<em>Not attached</em>`}
 
             <label class="procurement-document-upload">
                 ${orderConfirmationPath ? "Replace" : "Upload"}
                 <input
                     type="file"
-                    accept="application/pdf"
+                    accept="application/pdf,image/jpeg,image/png"
                     class="hidden"
                     onchange="uploadProcurementDocument('${id}', 'order-confirmation', this)">
             </label>
@@ -11821,7 +12141,7 @@ function renderProcurementDocumentRows(
                 ? `
                     ${lieferscheinPaths.length
                         ? lieferscheinPaths
-                            .map((path, index) => `<a href="/api/procurement/${encodeURIComponent(id)}/documents/lieferschein/${index + 1}/file" target="_blank">View PDF ${index + 1}</a>`)
+                            .map((path, index) => `<a href="/api/procurement/${encodeURIComponent(id)}/documents/lieferschein/${index + 1}/file" target="_blank">View file ${index + 1}</a><button type="button" class="procurement-document-remove" title="Remove this attachment" onclick="removeProcurementDocument('${id}', 'lieferschein', ${index + 1})">&times;</button>`)
                             .join(" ")
                         : `<em>Not attached</em>`}
 
@@ -11829,7 +12149,7 @@ function renderProcurementDocumentRows(
                         + Add Delivery Note
                         <input
                             type="file"
-                            accept="application/pdf"
+                            accept="application/pdf,image/jpeg,image/png"
                             class="hidden"
                             onchange="uploadProcurementDocument('${id}', 'lieferschein', this)">
                     </label>
@@ -12470,6 +12790,125 @@ function renderProcurementCard(group, cardMode = "open") {
 // every material line, saved under the Documents Folder configured
 // in Data Management Settings.
 
+// Takes an attachment off the order (the file stays in the Documents
+// Folder). index: 1-based number of the Lieferschein.
+async function removeProcurementDocument(id, kind, index) {
+
+    const message =
+        document.getElementById(`${id}-documents-message`);
+
+    const confirmed =
+        await showConfirmDialog(
+            "Remove this attachment from the order? The file itself " +
+            "stays in the Documents Folder.");
+
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch(
+                `/api/procurement/${encodeURIComponent(id)}/documents/remove`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ kind: kind, index: index })
+                });
+
+        if (!response.ok) {
+
+            if (message) {
+                message.textContent = await response.text();
+            }
+
+            return;
+        }
+
+        const ordersResponse = await fetch("/api/procurement");
+
+        if (ordersResponse.ok) {
+
+            const ordersData = await ordersResponse.json();
+
+            const orderLines =
+                (ordersData.orders || [])
+                    .filter(order => order.id === id);
+
+            const rowsContainer =
+                document.getElementById(`${id}-documents-rows`);
+
+            if (orderLines.length > 0 && rowsContainer) {
+
+                const combinedStatus =
+                    combineProcurementStatus(orderLines);
+
+                rowsContainer.innerHTML =
+                    renderProcurementDocumentRows(
+                        id,
+                        orderLines[0].orderConfirmationPath || "",
+                        orderLines[0].lieferscheinPaths || [],
+                        combinedStatus !== "Ordered" &&
+                            combinedStatus !== "Cancelled");
+            }
+        }
+
+        if (message) {
+            message.textContent = "";
+        }
+    }
+    catch (error) {
+
+        console.error(error);
+
+        if (message) {
+            message.textContent = "Could not connect to the server.";
+        }
+    }
+}
+
+// A photo (JPG / PNG) is shrunk to at most 2000 px on its long side and
+// saved as JPEG before it is sent (phone photos are several MB); a PDF
+// goes up unchanged.
+async function readDocumentForUpload(file) {
+
+    if (!file.type.startsWith("image/")) {
+        return readFileAsBase64(file);
+    }
+
+    const url = URL.createObjectURL(file);
+
+    try {
+
+        const image = await new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = () => reject(new Error("Could not read the photo."));
+            img.src = url;
+        });
+
+        const scale =
+            Math.min(1, 2000 / Math.max(image.width, image.height));
+
+        const canvas = document.createElement("canvas");
+
+        canvas.width = Math.round(image.width * scale);
+        canvas.height = Math.round(image.height * scale);
+
+        const context = canvas.getContext("2d");
+
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+        return canvas.toDataURL("image/jpeg", 0.85);
+    }
+    finally {
+        URL.revokeObjectURL(url);
+    }
+}
+
 async function uploadProcurementDocument(id, kind, inputEl) {
 
     const file =
@@ -12491,7 +12930,7 @@ async function uploadProcurementDocument(id, kind, inputEl) {
     try {
 
         const fileData =
-            await readFileAsBase64(file);
+            await readDocumentForUpload(file);
 
         const response =
             await fetch(
