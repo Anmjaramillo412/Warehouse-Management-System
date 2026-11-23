@@ -966,6 +966,12 @@ void WebServer::run()
                     "Content-Type",
                     "text/html");
 
+                // The page files change with every update: never reuse
+                // an old copy kept by the browser.
+                response.set_header(
+                    "Cache-Control",
+                    "no-store");
+
                 return response;
             });
 
@@ -993,6 +999,12 @@ void WebServer::run()
                     "Content-Type",
                     "text/css");
 
+                // The page files change with every update: never reuse
+                // an old copy kept by the browser.
+                response.set_header(
+                    "Cache-Control",
+                    "no-store");
+
                 return response;
             });
 
@@ -1019,6 +1031,12 @@ void WebServer::run()
                 response.set_header(
                     "Content-Type",
                     "application/javascript");
+
+                // The page files change with every update: never reuse
+                // an old copy kept by the browser.
+                response.set_header(
+                    "Cache-Control",
+                    "no-store");
 
                 return response;
             });

@@ -10069,7 +10069,7 @@ async function openProjectionDetail(id) {
                 <div id="projection-detail-message">
                 </div>
 
-                <table class="material-table material-table-sticky">
+                <table class="material-table material-table-sticky projection-detail-table">
 
                     <thead>
 

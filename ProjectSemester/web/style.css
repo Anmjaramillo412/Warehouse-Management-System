@@ -367,19 +367,21 @@ body {
    sibling button, with its own (lighter) hover shade above that. */
 
 .button-today {
-    background: #374151;
+    background: #cbd5e1;
+    color: #1f2937;
 }
 
     .button-today:hover {
-        background: #4b5563;
+        background: #b4c0d0;
     }
 
     .procurement-inline-form button.button-today {
-        background: #374151;
+        background: #cbd5e1;
+        color: #1f2937;
     }
 
         .procurement-inline-form button.button-today:hover {
-            background: #4b5563;
+            background: #b4c0d0;
         }
 
 
@@ -2369,3 +2371,14 @@ th.filterable-th {
 .projection-group-actions button { background: #e5e7eb; color: #374151; border: none; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
 .projection-group-actions button:hover { background: #d1d5db; }
 .projection-supplier-subtotal { text-align: right; font-weight: normal; text-transform: none; }
+
+/* Projection detail: 14 columns must fit inside the white container */
+.projection-detail-table { table-layout: auto; width: 100%; }
+.projection-detail-table th,
+.projection-detail-table td { padding: 8px 5px; font-size: 13px; text-align: center; }
+.projection-detail-table th { white-space: normal; }
+.projection-detail-table td:nth-child(4) { text-align: left; }
+.projection-detail-table .procurement-qty-input { width: 72px; }
+.projection-detail-table .material-thumbnail { max-width: 44px; }
+.projection-detail-table .projection-supplier-group-row td { text-align: left; }
+.projection-detail-table .projection-supplier-group-row td.projection-supplier-subtotal { text-align: right; }
