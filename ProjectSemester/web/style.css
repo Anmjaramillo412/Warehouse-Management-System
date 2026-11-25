@@ -2382,3 +2382,15 @@ th.filterable-th {
 .projection-detail-table .material-thumbnail { max-width: 44px; }
 .projection-detail-table .projection-supplier-group-row td { text-align: left; }
 .projection-detail-table .projection-supplier-group-row td.projection-supplier-subtotal { text-align: right; }
+.inventory-search-row { display: flex; align-items: center; gap: 12px; margin: 14px 0 10px; }
+.inventory-search-row .product-cost-search { max-width: 420px; }
+.inventory-search-count { color: #6b7280; }
+
+/* Material page: unit price summary with quotation tiers */
+.material-price-quote { margin: 10px 0 16px; }
+.material-price-quote-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 6px; }
+.material-price-quote-head small { color: #6b7280; }
+.material-price-quote .material-table { max-width: 520px; }
+
+/* Unit of measure shown next to a Quantity box */
+.uom-hint { margin-left: 8px; color: #374151; font-weight: bold; white-space: nowrap; align-self: center; }
