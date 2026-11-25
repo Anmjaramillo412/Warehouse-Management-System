@@ -2802,10 +2802,68 @@ async function initMaterialCombobox(prefix, selectedID) {
     updateMaterialPartNumberHint(prefix, selectedID || "");
 }
 
+// The Quantity box next to a Material box shows that material's unit of
+// measure ("20 pcs"), so it is clear what the number means. The Quantity
+// input is found next to the Material box (same row): the closest
+// number input whose id or class says quantity / qty.
+function updateMaterialUomHint(prefix, materialID) {
+
+    const searchInput =
+        document.getElementById(prefix + "-material-id-search");
+
+    if (!searchInput) {
+        return;
+    }
+
+    let quantityInput = null;
+
+    let scope = searchInput.parentElement;
+
+    for (let level = 0; level < 5 && scope && !quantityInput; level++) {
+
+        // Gone up so far that another Material box is inside: stop
+        if (scope.querySelectorAll('input[id$="-material-id-search"]').length > 1) {
+            return;
+        }
+
+        quantityInput =
+            [...scope.querySelectorAll('input[type="number"]')].find(input =>
+                /qty|quantity/i.test(input.id + " " + input.className)) || null;
+
+        scope = scope.parentElement;
+    }
+
+    if (!quantityInput) {
+        return;
+    }
+
+    const material = materialID ?
+        (materialCache || []).find(m => m.id === materialID) : null;
+
+    let hint = quantityInput.nextElementSibling;
+
+    if (!hint || !hint.classList.contains("uom-hint")) {
+
+        if (!material || !material.uom) {
+            return;
+        }
+
+        hint = document.createElement("span");
+
+        hint.className = "uom-hint";
+
+        quantityInput.insertAdjacentElement("afterend", hint);
+    }
+
+    hint.textContent = (material && material.uom) ? material.uom : "";
+}
+
 // Optional: a form that has an element "<prefix>-material-id-pn" next
 // to its Material box gets the selected material's supplier part
 // number(s) there - the chosen Supplier's first (quotations).
 function updateMaterialPartNumberHint(prefix, materialID) {
+
+    updateMaterialUomHint(prefix, materialID);
 
     const hint =
         document.getElementById(prefix + "-material-id-pn");
@@ -4162,10 +4220,14 @@ async function showMaterialDetail(id) {
                     : ""
                 }
 
+                <div id="material-price-summary"></div>
+
                 <div id="material-movements"></div>
 
             </div>
         `;
+
+        loadMaterialPriceSummary("material-price-summary", data.id);
 
         loadMaterialMovements(data.id);
     }
@@ -6806,6 +6868,12 @@ async function displayInventory() {
 
 
         let html = `
+            <div class="inventory-search-row">
+                <input type="text" class="product-cost-search"
+                    placeholder="Search material (ID, name, supplier P/N...)"
+                    oninput="filterInventoryRows(this)">
+                <small class="inventory-search-count"></small>
+            </div>
             <div class="warehouse-toggle-all">
                 <button class="button-muted" onclick="setAllWarehousesCollapsed(true)">
                     Collapse all
@@ -6869,6 +6937,10 @@ async function displayInventory() {
                             <tr>
 
                                 <th>
+                                    Photo
+                                </th>
+
+                                <th>
                                     Material ID
                                 </th>
 
@@ -6898,12 +6970,30 @@ async function displayInventory() {
 
                     html += `
 
-                        <tr>
+                        <tr data-mid="${escapeHtml(item.materialID)}">
 
                             <td>
-                                ${escapeHtml(
-                                    item.materialID
-                                )}
+                                ${
+                                    item.photo
+                                    ? `<img
+                                            src="/${item.photo}"
+                                            class="material-thumbnail"
+                                            alt="Material photo"
+                                       >`
+                                    : "No photo"
+                                }
+                            </td>
+
+                            <td>
+                                <a
+                                    href="#"
+                                    class="material-id-link"
+                                    title="View this Material"
+                                    onclick="event.preventDefault(); openMaterialFromQuotation('${escapeHtml(item.materialID)}');">
+
+                                    ${escapeHtml(item.materialID)}
+
+                                </a>
                             </td>
 
                             <td>
@@ -6975,6 +7065,80 @@ function setAllProductsCollapsed(collapsed) {
 
     for (const block of document.querySelectorAll(".product-block")) {
         block.classList.toggle("collapsed", collapsed);
+    }
+}
+
+// Display Inventory: search across every Warehouse (same matching as
+// the other material searches); Warehouses without a hit are hidden and
+// the ones with hits are opened.
+async function filterInventoryRows(input) {
+
+    const root = input.closest("#inventory-content") || document;
+
+    const text = input.value.trim().toLowerCase();
+
+    const key = normalizeMaterialKey(text);
+
+    const materials = await loadMaterialCache();
+
+    const byID = {};
+
+    for (const material of (materials || [])) {
+        byID[material.id] = material;
+    }
+
+    let shown = 0;
+
+    let total = 0;
+
+    for (const block of root.querySelectorAll(".warehouse-block")) {
+
+        let blockShown = 0;
+
+        const rows = block.querySelectorAll("tbody tr[data-mid]");
+
+        for (const row of rows) {
+
+            const material = byID[row.dataset.mid];
+
+            const haystack = row.textContent.toLowerCase() + " " +
+                (material ? materialSearchText(material) : "");
+
+            const match = text === "" ||
+                haystack.includes(text) ||
+                (key !== "" && normalizeMaterialKey(haystack).includes(key));
+
+            row.dataset.searchHidden = match ? "" : "1";
+
+            applyRowVisibility(row);
+
+            total++;
+
+            if (match) {
+                blockShown++;
+                shown++;
+            }
+        }
+
+        if (text === "") {
+
+            block.style.display = "";
+        }
+        else {
+
+            block.style.display = blockShown > 0 ? "" : "none";
+
+            if (blockShown > 0) {
+                block.classList.remove("collapsed");
+            }
+        }
+    }
+
+    const count = root.querySelector(".inventory-search-count");
+
+    if (count) {
+        count.textContent = text === "" ? "" :
+            `${shown} of ${total} materials`;
     }
 }
 
@@ -19952,6 +20116,113 @@ function setQuotationMessage(text, isError) {
 
 // Material information in a pop-up over the current view: nothing is
 // navigated away from, closing it leaves the page exactly as it was
+// ============================================================
+// MATERIAL - UNIT PRICE SUMMARY (with the quotation tiers)
+// ============================================================
+// The current unit price (last invoice, or the quotation as an estimate)
+// and, for every current quotation, its price tiers by quantity. Shown in
+// the material page and in the pop-up opened from lists.
+
+async function loadMaterialPriceSummary(containerId, materialID) {
+
+    const container = document.getElementById(containerId);
+
+    if (!container) {
+        return;
+    }
+
+    try {
+
+        const response = await fetch(
+            `/api/materials/${encodeURIComponent(materialID)}/price-info?lite=1`);
+
+        if (!response.ok) {
+            return;
+        }
+
+        const info = await response.json();
+
+        const uom = info.uom ? " / " + escapeHtml(info.uom) : "";
+
+        const est = info.estimate;
+
+        let currentHtml;
+
+        if (!est || est.source === "None") {
+
+            currentHtml = `<span class="detail-value">No price yet</span>`;
+        }
+        else {
+
+            currentHtml =
+                `<span class="detail-value"><strong>${formatMoney(est.unitPriceEUR)} EUR</strong>` +
+                `<small>${uom}</small></span> ` +
+                (est.source === "Invoice"
+                    ? `<small>Invoice ${escapeHtml(est.sourceRef)} &middot; ` +
+                      `${escapeHtml(est.sourceDate)} (real)</small>`
+                    : `<span class="status-badge status-partial">Estimated</span> ` +
+                      `<small>Quotation ${escapeHtml(est.sourceRef)}</small>`);
+        }
+
+        const quotes = (info.quotations || []).filter(q => q.current);
+
+        const quoteCards = quotes.map(q => {
+
+            const tierRows = (q.tiers || []).map(tier => `
+                <tr>
+                    <td>${quotationNumber(tier.minQuantity)}+</td>
+                    <td>${quotationNumber(tier.unitPrice)} ${escapeHtml(q.currency)}</td>
+                    <td>${formatMoney(tier.unitPriceEUR)} EUR</td>
+                </tr>`).join("");
+
+            return `
+                <div class="material-price-quote">
+
+                    <div class="material-price-quote-head">
+                        <strong>${escapeHtml(q.supplier)}</strong>
+                        ${q.primarySupplier ? `<span class="status-badge status-active">Primary</span>` : ""}
+                        <small>
+                            ${escapeHtml(q.id)}
+                            &middot; valid until ${escapeHtml(q.validUntil || "-")}
+                            ${q.leadTimeWeeks ? `&middot; ${escapeHtml(String(q.leadTimeWeeks))} wk lead time` : ""}
+                            ${q.moq ? `&middot; MOQ ${quotationNumber(q.moq)}${info.uom ? " " + escapeHtml(info.uom) : ""}` : ""}
+                            ${q.incoterm ? `&middot; ${escapeHtml(q.incoterm)}` : ""}
+                        </small>
+                    </div>
+
+                    <table class="material-table">
+                        <thead>
+                            <tr>
+                                <th>From quantity${info.uom ? " (" + escapeHtml(info.uom) + ")" : ""}</th>
+                                <th>Unit price${uom}</th>
+                                <th>Unit price (EUR)${uom}</th>
+                            </tr>
+                        </thead>
+                        <tbody>${tierRows}</tbody>
+                    </table>
+
+                </div>`;
+        }).join("");
+
+        container.innerHTML = `
+            <div class="procurement-section">
+
+                <h3>Unit Price</h3>
+
+                <p>${currentHtml}</p>
+
+                ${quoteCards
+                    ? `<h4>Quotation price tiers</h4>${quoteCards}`
+                    : `<p><small>No current quotation for this material.</small></p>`}
+
+            </div>`;
+    }
+    catch (error) {
+
+        console.error(error);
+    }
+}
+
 async function openMaterialFromQuotation(materialID) {
 
     const existing = document.getElementById("material-popup");
@@ -20055,6 +20326,7 @@ async function openMaterialFromQuotation(materialID) {
             ${extra ? `<div class="detail-field" style="margin-top:10px;">
                 <div class="detail-label">Additional Suppliers</div>
                 <div class="detail-value">${extra}</div></div>` : ""}
+            <div id="material-popup-price"></div>
             <div class="app-modal-actions">
                 <button type="button" class="app-modal-button-secondary" id="material-popup-full">
                     Open full page
@@ -20065,6 +20337,8 @@ async function openMaterialFromQuotation(materialID) {
             </div>`;
 
         box.querySelector("#material-popup-close").onclick = close;
+
+        loadMaterialPriceSummary("material-popup-price", materialID);
 
         box.querySelector("#material-popup-full").onclick = () => {
             close();

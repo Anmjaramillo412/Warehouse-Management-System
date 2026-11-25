@@ -3865,6 +3865,9 @@ void WebServer::run()
                         inventoryItem["uom"] =
                             node->material->getUoM();
 
+                        inventoryItem["photo"] =
+                            node->material->getPhotoPath();
+
 
                         inventoryList.push_back(
                             inventoryItem);
