@@ -30,6 +30,72 @@ static string sanitizeField(const string& value)
 }
 
 
+// A Supplier name is stored in its own field, so only the characters
+// that would break the line format are replaced (commas are fine).
+static string sanitizeSupplierField(const string& value)
+{
+    string result = value;
+
+    replace(result.begin(), result.end(), '|', ' ');
+    replace(result.begin(), result.end(), '\n', ' ');
+    replace(result.begin(), result.end(), '\r', ' ');
+
+    return result;
+}
+
+// Orders saved by the first version stored the Supplier name with its
+// commas turned into ';'. This gives back the real name: the Supplier
+// of the Material (primary or additional) whose name matches once
+// the same replacement is applied. Anything else is returned as is.
+static string restoreSupplierName(
+    MaterialManager* materialManager,
+    const string& materialID,
+    const string& stored)
+{
+    if (stored.find(';') == string::npos ||
+        materialManager == nullptr)
+    {
+        return stored;
+    }
+
+    Material* material = materialManager->findMaterial(materialID);
+
+    if (material == nullptr)
+    {
+        return stored;
+    }
+
+    auto matches = [&](Supplier* supplier) -> bool
+    {
+        if (supplier == nullptr)
+        {
+            return false;
+        }
+
+        string name = supplier->getName();
+
+        replace(name.begin(), name.end(), ',', ';');
+
+        return name == stored;
+    };
+
+    if (matches(material->getSupplier()))
+    {
+        return material->getSupplier()->getName();
+    }
+
+    for (const auto& link : material->getAdditionalSuppliers())
+    {
+        if (matches(link.supplier))
+        {
+            return link.supplier->getName();
+        }
+    }
+
+    return stored;
+}
+
+
 // ================================================================
 // SPLIT HELPER
 // ================================================================
@@ -279,7 +345,7 @@ ProcurementOrder* ProcurementManager::createOrder(
         }
 
         orders.back()->setSupplierName(
-            sanitizeField(chosenSupplier));
+            sanitizeSupplierField(chosenSupplier));
     }
 
     // Snapshot the Material's current name into the order itself, so
@@ -328,7 +394,10 @@ string ProcurementManager::orderSupplierName(
 {
     if (!order.getSupplierName().empty())
     {
-        return order.getSupplierName();
+        return restoreSupplierName(
+            materialManager,
+            order.getMaterialID(),
+            order.getSupplierName());
     }
 
     if (materialManager != nullptr)
@@ -455,7 +524,7 @@ string ProcurementManager::setOrderSupplier(
         if (order->getID() == id)
         {
             order->setSupplierName(
-                sanitizeField(supplierName));
+                sanitizeSupplierField(supplierName));
         }
     }
 
@@ -1178,7 +1247,8 @@ bool ProcurementManager::save()
             << (order->isClosed() ? "1" : "0") << "|"
             << (order->isCancelled() ? "1" : "0") << "|"
             << order->getEstimatedReceiptDate() << "|"
-            << order->getSupplierName()
+            << (order->getSupplierName().empty() ?
+                string() : orderSupplierName(*order))
             << endl;
     }
 
