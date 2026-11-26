@@ -1056,6 +1056,17 @@ function showModifySupplier(statusMessage) {
 // LOAD SUPPLIER FOR MODIFY
 // ============================================================
 
+// Opens Modify Supplier with this supplier already loaded (used by the
+// name links in Display Suppliers).
+async function openSupplierForModify(name) {
+
+    showModifySupplier();
+
+    await populateSupplierSelect("ms-lookup-name", name);
+
+    await loadSupplierForModify();
+}
+
 async function loadSupplierForModify() {
 
     const name =
@@ -1503,7 +1514,9 @@ async function displaySuppliers() {
 
                 <tr>
 
-                    <td>${escapeHtml(supplier.name)}</td>
+                    <td><a href="#" class="material-id-link" title="Modify this supplier"
+                        data-name="${escapeHtml(supplier.name)}"
+                        onclick="event.preventDefault(); openSupplierForModify(this.dataset.name);">${escapeHtml(supplier.name)}</a></td>
                     <td>${(supplier.aliases || []).map(alias =>
                         escapeHtml(alias.name) +
                         (alias.note ? ` <small>(${escapeHtml(alias.note)})</small>` : "")
@@ -3363,6 +3376,67 @@ function selectMaterialOption(prefix, id) {
     updateMaterialPartNumberHint(prefix, id);
 
     updateMaterialCurrentPriceHint(prefix, id);
+
+    updateMaterialSupplierSelect(prefix, id);
+}
+
+// Optional: a form with a <select id="<prefix>-supplier"> gets the
+// Material's Suppliers (primary first) when it is picked - shown only
+// when there is more than one, so a Material with a single Supplier
+// looks exactly as before.
+
+function updateMaterialSupplierSelect(prefix, materialID) {
+
+    const select =
+        document.getElementById(prefix + "-supplier");
+
+    if (!select) {
+        return;
+    }
+
+    const material = materialID ?
+        (materialCache || []).find(m => m.id === materialID) : null;
+
+    const names = [];
+
+    if (material && material.supplier) {
+
+        names.push(material.supplier);
+
+        for (const link of (material.additionalSuppliers || [])) {
+
+            if (link.supplier && !names.includes(link.supplier)) {
+                names.push(link.supplier);
+            }
+        }
+    }
+
+    select.dataset.material = materialID || "";
+
+    select.innerHTML = names.map(name =>
+        `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`
+    ).join("");
+
+    select.hidden = names.length < 2;
+}
+
+function projectionSupplierSelectHtml(item, rowID) {
+
+    const names = item.suppliers || [];
+
+    if (names.length < 2) {
+        return "";
+    }
+
+    return `
+        <select
+            id="${rowID}-supplier"
+            class="procurement-supplier-select"
+            title="Supplier this order is placed with">
+            ${names.map(name =>
+                `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`
+            ).join("")}
+        </select>`;
 }
 
 // Optional: if a form built with materialComboboxHtml(prefix, ...)
@@ -10660,7 +10734,7 @@ async function openProjectionDetail(id) {
                                     class="procurement-qty-input"
                                     id="${rowID}-qty"
                                     value="${remainingToOrder > 0 ? remainingToOrder : ""}"
-                               >`
+                               >${projectionSupplierSelectHtml(item, rowID)}`
                         }
                     </td>
 
@@ -10822,7 +10896,7 @@ function renderProjectionRowPrice(materialID, projectionID) {
 
     if (est.source === "None") {
 
-        priceCell.innerHTML = `<small>No price yet</small>`;
+        priceCell.innerHTML = `<small class="no-price">No price yet</small>`;
 
         totalCell.innerHTML = `<small>-</small>`;
 
@@ -11621,9 +11695,15 @@ async function registerSelectedOrders(projectionID, productID, warehouseID) {
             return;
         }
 
+        const supplierSelect =
+            document.getElementById(
+                "projdet-" + materialID + "-supplier"
+            );
+
         lines.push({
             materialID: materialID,
-            orderedQuantity: Number(quantity)
+            orderedQuantity: Number(quantity),
+            supplierName: supplierSelect ? supplierSelect.value : ""
         });
     }
 
@@ -11967,6 +12047,13 @@ function neworderRowHtml(rowIndex) {
                 placeholder="Quantity"
             >
 
+            <select
+                id="${prefix}-supplier"
+                class="procurement-supplier-select neworder-supplier"
+                title="Supplier this order is placed with"
+                hidden>
+            </select>
+
             <button
                 type="button"
                 onclick="document.getElementById('${prefix}-row').remove()">
@@ -12108,9 +12195,16 @@ async function submitNewProcurementOrder() {
             return;
         }
 
+        const supplierSelect =
+            row.querySelector(".neworder-supplier");
+
         lines.push({
             materialID: materialID,
-            orderedQuantity: quantity
+            orderedQuantity: quantity,
+            supplierName:
+                (supplierSelect && !supplierSelect.hidden &&
+                    supplierSelect.dataset.material === materialID)
+                ? supplierSelect.value : ""
         });
     }
 
@@ -12172,6 +12266,51 @@ async function submitNewProcurementOrder() {
 
         message.textContent =
             "Could not connect to the server.";
+    }
+}
+
+// ============================================================
+// PROCUREMENT ORDERS - CHANGE THE SUPPLIER OF AN ORDER
+// ============================================================
+
+async function changeOrderSupplier(orderID) {
+
+    const select =
+        document.getElementById(`${orderID}-supplier`);
+
+    if (!select) {
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch("/api/procurement/set-supplier", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    id: orderID,
+                    supplierName: select.value
+                })
+            });
+
+        if (!response.ok) {
+
+            alert(await response.text());
+
+            await reloadProcurementKeepingView();
+
+            return;
+        }
+
+        // The card moves under the new Supplier heading.
+        await reloadProcurementKeepingView();
+    }
+    catch (error) {
+
+        console.error(error);
+
+        alert("Could not change the Supplier of this order.");
     }
 }
 
@@ -12333,10 +12472,25 @@ async function displayArchivedOrders() {
             return;
         }
 
-        content.innerHTML =
-            renderProcurementGroupedList(
+        content.innerHTML = `
+            <div class="inventory-search-row">
+                <input type="text" class="product-cost-search"
+                    placeholder="Search orders (PRC number, material, supplier...)"
+                    oninput="filterProcurementCards(this)">
+                <small class="procurement-search-count"></small>
+            </div>
+            <div class="warehouse-toggle-all">
+                <button class="button-muted" onclick="setAllProcurementCardsCollapsed(true)">
+                    Collapse all
+                </button>
+                <button class="button-muted" onclick="setAllProcurementCardsCollapsed(false)">
+                    Expand all
+                </button>
+            </div>
+            ${renderProcurementGroupedList(
                 groupProcurementLines(lines),
-                "archived");
+                "archived")}
+        `;
     }
     catch (error) {
 
@@ -12346,6 +12500,76 @@ async function displayArchivedOrders() {
             <p>Could not connect to the server.</p>
         `;
     }
+}
+
+// Search box of the order list: hides the order cards that do not
+// match (PRC number, materials, supplier, ...) and the supplier
+// headings left without any card
+function filterProcurementCards(input) {
+
+    const text = input.value.trim().toLowerCase();
+
+    const key = normalizeMaterialKey(text);
+
+    const content = document.getElementById("procurement-content");
+
+    const cards = content.querySelectorAll(".procurement-card");
+
+    let shown = 0;
+
+    for (const card of cards) {
+
+        const haystack = card.textContent.toLowerCase();
+
+        const match = text === "" ||
+            haystack.includes(text) ||
+            (key !== "" && normalizeMaterialKey(haystack).includes(key));
+
+        card.style.display = match ? "" : "none";
+
+        if (match) {
+            shown++;
+        }
+    }
+
+    // a supplier heading (and its list) only shows with a visible card
+    content.querySelectorAll(".procurement-list").forEach(list => {
+
+        const visible = Array.from(list.querySelectorAll(".procurement-card"))
+            .some(card => card.style.display !== "none");
+
+        list.style.display = visible ? "" : "none";
+
+        const heading = list.previousElementSibling;
+
+        if (heading && heading.classList.contains("supplier-group-heading")) {
+            heading.style.display = visible ? "" : "none";
+        }
+    });
+
+    const count = content.querySelector(".procurement-search-count");
+
+    if (count) {
+        count.textContent = text === "" ? "" :
+            `${shown} of ${cards.length} orders`;
+    }
+}
+
+function setAllProcurementCardsCollapsed(collapsed) {
+
+    document.querySelectorAll("#procurement-content .procurement-card[id]")
+        .forEach(card => {
+
+            const body = document.getElementById(card.id + "-body");
+
+            if (!body) {
+                return;
+            }
+
+            body.hidden = collapsed;
+
+            card.classList.toggle("collapsed", collapsed);
+        });
 }
 
 // ============================================================
@@ -12646,6 +12870,48 @@ function renderProcurementCard(group, cardMode = "open") {
                         class="procurement-eta-message"
                         id="${id}-eta-message">
                     </span>
+                </div>
+            </div>
+        `
+        : "";
+
+    // Supplier switch: only for an order that is still open and whose
+    // materials can all be bought from more than one common Supplier
+    // (e.g. two orders of one material placed with different
+    // Suppliers, or the primary Supplier changed after ordering).
+
+    let commonSuppliers = null;
+
+    for (const line of lines) {
+
+        const list = line.materialSuppliers || [];
+
+        commonSuppliers = commonSuppliers === null
+            ? [...list]
+            : commonSuppliers.filter(name => list.includes(name));
+    }
+
+    const currentOrderSupplier =
+        lines[0].supplierName || "";
+
+    const supplierSwitchHtml =
+        (cardMode === "open" || cardMode === "confirmed") &&
+        !etaReadOnly &&
+        commonSuppliers && commonSuppliers.length > 1
+        ? `
+            <div class="procurement-eta-row">
+                <div class="procurement-eta-inline">
+                    <span class="detail-label">Ordered from</span>
+                    <select
+                        class="procurement-supplier-select"
+                        id="${id}-supplier"
+                        onchange="changeOrderSupplier('${id}')">
+                        ${commonSuppliers.map(name => `
+                            <option value="${escapeHtml(name)}"
+                                ${name === currentOrderSupplier ? "selected" : ""}>
+                                ${escapeHtml(name)}
+                            </option>`).join("")}
+                    </select>
                 </div>
             </div>
         `
@@ -13160,6 +13426,8 @@ function renderProcurementCard(group, cardMode = "open") {
             </div>
 
             <div class="procurement-body" id="order-${id}-body" hidden>
+
+                ${supplierSwitchHtml}
 
                 ${sharedEtaRowHtml}
 
@@ -16544,6 +16812,7 @@ function renderPurchaseInvoiceCard(
                     ${escapeHtml(invoiceSupplier)}
                     &nbsp;&middot;&nbsp;
                     ${invoice.lines.length} line${invoice.lines.length === 1 ? "" : "s"}
+                    ${invoice.hasDocument ? `<span title="Has an attached PDF" style="margin-left:6px;">&#128206;</span>` : ""}
                 </span>
 
                 <span class="procurement-summary-qty">
@@ -17118,6 +17387,7 @@ async function loadPurchaseHistory() {
             rows += `
                 <tr>
                     <td>${escapeHtml(entry.date)}</td>
+                    <td>${escapeHtml(entry.supplierName || "-")}</td>
                     <td>${formatMoney(entry.unitPriceEUR)}</td>
                     <td>${escapeHtml(entry.originalCurrency)}</td>
                     <td>${formatMoney(entry.originalUnitPrice)}</td>
@@ -17150,6 +17420,7 @@ async function loadPurchaseHistory() {
                     <thead>
                         <tr>
                             <th>Date</th>
+                            <th>Supplier</th>
                             <th>Unit Price (EUR)</th>
                             <th>Original Currency</th>
                             <th>Original Unit Price</th>
@@ -17460,7 +17731,7 @@ function openProductCostDetail(index) {
     }
 
     content.innerHTML = `
-        <button class="button-muted" style="margin-bottom: 12px;"
+        <button class="back-pill" style="margin-bottom: 12px;"
             onclick="renderProductCostTiles()">&larr; All Products</button>
         ${product.photo ?
             `<img class="product-detail-photo" src="${escapeHtml(product.photo)}" alt="">` : ""}
@@ -17924,7 +18195,7 @@ function togglePurchaseCategoryDetail(index) {
                 </td>
                 <td>${line.quantity}${line.uom ? " " + escapeHtml(line.uom) : ""}</td>
                 <td>${line.hasPrice ? formatMoney(line.unitPriceEUR) +
-                        (line.uom ? ` <small>EUR / ${escapeHtml(line.uom)}</small>` : "") : "<small>No price yet</small>"}
+                        (line.uom ? ` <small>EUR / ${escapeHtml(line.uom)}</small>` : "") : "<small class=\"no-price\">No price yet</small>"}
                     ${line.hasPrice && line.estimate && line.estimate.estimated ?
                         `<br><small style="color:#b45309;">estimated</small>` : ""}</td>
                 <td>${line.hasPrice ? formatMoney(line.lineCostEUR) : "-"}</td>
@@ -20740,7 +21011,7 @@ async function loadMaterialPriceSummary(containerId, materialID) {
 
         if (!est || est.source === "None") {
 
-            currentHtml = `<span class="detail-value">No price yet</span>`;
+            currentHtml = `<span class="detail-value no-price">No price yet</span>`;
         }
         else {
 
@@ -22664,9 +22935,105 @@ function quotationRefHtml(ref, hasDocument) {
 
     const text = `Quotation ${escapeHtml(ref)}`;
 
-    return hasDocument
-        ? `<a href="/api/quotations/${encodeURIComponent(ref)}/document/file" target="_blank" title="View the quotation PDF">${text}</a>`
-        : text;
+    // The number opens the quotation itself (to review or modify it);
+    // the paperclip opens its PDF.
+    const pdf = hasDocument
+        ? ` <a href="/api/quotations/${encodeURIComponent(ref)}/document/file" target="_blank" title="View the quotation PDF">&#128206;</a>`
+        : "";
+
+    return `<a href="#" title="Open this quotation" data-ref="${escapeHtml(ref)}" ` +
+        `data-pdf="${hasDocument ? "1" : ""}" ` +
+        `onclick="return openCostSourceRecord(event, 'quotation', this)">${text}</a>${pdf}`;
+}
+
+// Opens the invoice / quotation record behind a price. Where the
+// Pricing views are not on screen (e.g. Procurement tables) it falls
+// back to the PDF when there is one.
+function openCostSourceRecord(event, kind, link) {
+
+    event.preventDefault();
+
+    const ref = link.dataset.ref;
+
+    const host = document.getElementById("purchase-content");
+
+    if (host) {
+
+        // Remember what was on screen, so a Back button can return to
+        // it (the Review Product / Product Cost list, scroll included).
+        const saved = {
+            html: host.innerHTML,
+            scrollY: window.scrollY,
+            tabs: Array.from(document.querySelectorAll("button.active-tab"))
+        };
+
+        (async () => {
+
+            if (kind === "quotation") {
+                await openQuotation(ref);
+            }
+            else {
+                await openInvoiceRecord(ref);
+            }
+
+            const target = document.getElementById("purchase-content");
+
+            if (!target) {
+                return;
+            }
+
+            const back = document.createElement("button");
+
+            back.type = "button";
+            back.className = "back-pill";
+            back.style.margin = "0 0 12px";
+            back.innerHTML = "&larr; Back";
+
+            back.onclick = () => {
+
+                target.innerHTML = saved.html;
+
+                document.querySelectorAll("button.active-tab")
+                    .forEach(b => b.classList.remove("active-tab"));
+
+                saved.tabs.forEach(b => b.classList.add("active-tab"));
+
+                window.scrollTo(0, saved.scrollY);
+            };
+
+            target.prepend(back);
+        })();
+
+        return false;
+    }
+
+    if (link.dataset.pdf) {
+
+        window.open(
+            kind === "quotation"
+                ? `/api/quotations/${encodeURIComponent(ref)}/document/file`
+                : `/api/purchase/invoices/${encodeURIComponent(ref)}/document/file`,
+            "_blank");
+    }
+
+    return false;
+}
+
+async function openInvoiceRecord(id) {
+
+    await showPurchaseInvoices();
+
+    const body = document.getElementById(`purchinv-${id}-body`);
+
+    if (body && body.hidden) {
+        togglePurchaseInvoiceCard(id);
+    }
+
+    const card = document.getElementById(`purchinv-${id}`);
+
+    if (card) {
+        card.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
 }
 
 // "Invoice INV-000004", as a link to the invoice file when it has one
@@ -22674,16 +23041,20 @@ function invoiceRefHtml(ref, hasDocument) {
 
     const text = `Invoice ${escapeHtml(ref)}`;
 
-    return hasDocument
-        ? `<a href="/api/purchase/invoices/${encodeURIComponent(ref)}/document/file" target="_blank" title="View the invoice file">${text}</a>`
-        : text;
+    const pdf = hasDocument
+        ? ` <a href="/api/purchase/invoices/${encodeURIComponent(ref)}/document/file" target="_blank" title="View the invoice file">&#128206;</a>`
+        : "";
+
+    return `<a href="#" title="Open this invoice" data-ref="${escapeHtml(ref)}" ` +
+        `data-pdf="${hasDocument ? "1" : ""}" ` +
+        `onclick="return openCostSourceRecord(event, 'invoice', this)">${text}</a>${pdf}`;
 }
 
 function renderCostSourceHtml(est, totalQuantity, uom, compact) {
 
     if (!est || est.source === "None") {
 
-        return "No price yet";
+        return `<span class="no-price">No price yet</span>`;
     }
 
     const small = (text, color) =>
@@ -22737,6 +23108,8 @@ function renderCostSourceHtml(est, totalQuantity, uom, compact) {
                 `(${escapeHtml(est.quoteSupplier)}, ${escapeHtml(est.quoteDate)}) ` +
                 `offers ${formatMoney(est.quotePriceEUR)} EUR` +
                 (totalQuantity ? ` for ${totalQuantity}` : "") +
+                (est.quoteTierMinQuantity > 0 ?
+                    `, tier from ${est.quoteTierMinQuantity}${uom ? " " + escapeHtml(uom) : ""}` : "") +
                 (est.quoteBelowFirstTier ?
                     " (below its first tier)" : "") +
                 (est.quoteExpired ? " - expired" : "") +
@@ -22768,6 +23141,22 @@ function renderCostSourceHtml(est, totalQuantity, uom, compact) {
             `${formatMoney(est.basePriceEUR)} quoted + ` +
             `${formatMoney(est.importIncrementEUR)} customs/freight ` +
             `(estimated from ${escapeHtml(est.incrementRef)})`);
+    }
+
+    // Which price tier of the quotation was used, and why
+    if (est.tierMinQuantity > 0) {
+
+        html += small(
+            `price tier from ${est.tierMinQuantity}${uom ? " " + escapeHtml(uom) : ""}` +
+            (est.usedUsualTier ? " (usual purchase quantity)" : ""),
+            "#6b7280");
+    }
+
+    if (est.usualMissing) {
+
+        html += small(
+            "no usual purchase quantity marked on this quotation - " +
+            "first tier shown", "#b45309");
     }
 
     if (est.belowFirstTier) {

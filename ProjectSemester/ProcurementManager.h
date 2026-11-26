@@ -106,7 +106,29 @@ public:
         double orderedQuantity,
         const string& comment,
         const string& projectionID = "",
-        const string& explicitID = "");
+        const string& explicitID = "",
+        const string& supplierName = "");
+
+    // Supplier an order line was placed with: the stored one, or (older
+    // orders) the Material's current primary Supplier. "" if none.
+    string orderSupplierName(
+        const ProcurementOrder& order) const;
+
+    // That Supplier's own part number for the Material ("" if none).
+    string orderSupplierPartNumber(
+        const ProcurementOrder& order) const;
+
+    // True if the Material can be bought from that Supplier (primary or
+    // one of its additional Suppliers).
+    bool materialHasSupplier(
+        const string& materialID,
+        const string& supplierName) const;
+
+    // Changes the Supplier of every line of one PRC. Returns an error
+    // text, or "" on success.
+    string setOrderSupplier(
+        const string& id,
+        const string& supplierName);
 
     // Search - a "PRC-######" ID may be shared by several lines
     // (one per material), so lookups always disambiguate by

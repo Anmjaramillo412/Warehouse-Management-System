@@ -87,6 +87,11 @@ private:
     // affect status, quantities or any calculation.
     string estimatedReceiptDate;
 
+    // Supplier this order was actually placed with. Stored on the order
+    // so it does not change when the Material's primary Supplier is
+    // changed later. Empty on older orders = use the primary Supplier.
+    string supplierName;
+
 public:
 
     // Constructor
@@ -118,6 +123,7 @@ public:
     bool isClosed() const;
     bool isCancelled() const;
     string getEstimatedReceiptDate() const;
+    string getSupplierName() const;
 
     // Setters
     void setID(const string& orderID);
@@ -134,6 +140,7 @@ public:
     void setClosed(bool value);
     void setCancelled(bool value);
     void setEstimatedReceiptDate(const string& date);
+    void setSupplierName(const string& name);
 
     // Receipts
     void addReceipt(

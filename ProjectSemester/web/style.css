@@ -1279,6 +1279,19 @@ footer {
     margin-bottom: 14px;
 }
 
+.procurement-supplier-select {
+    padding: 4px 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+    max-width: 220px;
+}
+
+.procurement-qty-input + .procurement-supplier-select {
+    display: block;
+    margin-top: 6px;
+}
+
 /* Label and date picker on ONE line; the status text ("Saved" or an
    error) floats just below so it never pushes the line to two rows. */
 
@@ -2371,8 +2384,10 @@ th.filterable-th {
 .projection-group.collapsed .projection-group-body { display: none; }
 .projection-group.collapsed .warehouse-caret { transform: rotate(-90deg); }
 .projection-group.collapsed .projection-group-heading { margin-bottom: 0; }
-.projection-group-actions button { background: #e5e7eb; color: #374151; border: none; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
-.projection-group-actions button:hover { background: #d1d5db; }
+.projection-group-actions button,
+.warehouse-toggle-all button { background: #e5e7eb; color: #374151; border: none; border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 14px; }
+.projection-group-actions button:hover,
+.warehouse-toggle-all button:hover { background: #d1d5db; }
 .projection-supplier-subtotal { text-align: right; font-weight: normal; text-transform: none; }
 
 /* Projection detail: 14 columns must fit inside the white container */
@@ -2467,4 +2482,54 @@ tr.supplier-collapsed { display: none !important; }
     outline-offset: 3px;
     font-weight: 700;
     box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.18);
+}
+
+.no-price,
+.no-price * {
+    color: #dc2626 !important;
+    font-weight: 600;
+    background: transparent !important;
+}
+
+/* Config - Categories: Rename/Save/Cancel as rounded as Delete */
+[id^="matcat-view-"] button,
+[id^="matcat-edit-"] button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    background: #e5e7eb;
+    color: #374151;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+[id^="matcat-view-"] button:hover,
+[id^="matcat-edit-"] button:hover {
+    background: #d1d5db;
+}
+
+[id^="matcat-view-"] button.button-danger {
+    background: #fee2e2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+}
+
+[id^="matcat-view-"] button.button-danger:hover {
+    background: #fecaca;
+}
+
+/* Rounded grey "back" button, same look as Expand/Collapse */
+.back-pill {
+    background: #e5e7eb;
+    color: #374151;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.back-pill:hover {
+    background: #d1d5db;
 }
