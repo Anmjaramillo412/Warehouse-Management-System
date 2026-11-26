@@ -89,6 +89,85 @@ static bool usualBasis(const crow::request& req)
     return !(b != nullptr && string(b) == "quantity");
 }
 
+// Supplier "Other Names" <-> JSON ([{name, note}, ...])
+static vector<SupplierAlias> readSupplierAliases(
+    const crow::json::rvalue& body)
+{
+    vector<SupplierAlias> aliases;
+
+    if (!body.has("aliases"))
+    {
+        return aliases;
+    }
+
+    for (const auto& item : body["aliases"])
+    {
+        SupplierAlias alias;
+
+        alias.name = item.has("name") ? string(item["name"].s()) : "";
+
+        alias.note = item.has("note") ? string(item["note"].s()) : "";
+
+        while (!alias.name.empty() && isspace((unsigned char)alias.name.front())) alias.name.erase(alias.name.begin());
+        while (!alias.name.empty() && isspace((unsigned char)alias.name.back())) alias.name.pop_back();
+
+        if (!alias.name.empty())
+        {
+            aliases.push_back(alias);
+        }
+    }
+
+    return aliases;
+}
+
+static crow::json::wvalue supplierAliasesToJson(const Supplier& supplier)
+{
+    crow::json::wvalue::list list;
+
+    for (const auto& alias : supplier.getAliases())
+    {
+        crow::json::wvalue item;
+
+        item["name"] = alias.name;
+        item["note"] = alias.note;
+
+        list.push_back(std::move(item));
+    }
+
+    return crow::json::wvalue(std::move(list));
+}
+
+// Set when the server starts: lets the price estimates say whether
+// an invoice they quote has its file attached (to link it)
+static WarehouseSystem* estimateSystem = nullptr;
+
+static bool invoiceHasDocument(const string& invoiceID)
+{
+    if (estimateSystem == nullptr || invoiceID.empty())
+    {
+        return false;
+    }
+
+    const PurchaseInvoice* invoice =
+        estimateSystem->getPurchaseManager().findInvoice(invoiceID);
+
+    return invoice != nullptr && !invoice->getDocumentPath().empty();
+}
+
+static bool quotationHasDocument(const string& quotationID)
+{
+    if (estimateSystem == nullptr || quotationID.empty())
+    {
+        return false;
+    }
+
+    const Quotation* q =
+        estimateSystem->getQuotationManager().findQuotation(quotationID);
+
+    return q != nullptr && !q->documentPath.empty() &&
+        fs::exists(q->documentPath);
+}
+
 static crow::json::wvalue estimateToJson(const MaterialCostEstimate& e)
 {
     crow::json::wvalue j;
@@ -97,6 +176,9 @@ static crow::json::wvalue estimateToJson(const MaterialCostEstimate& e)
     j["estimated"] = e.estimated;
     j["unitPriceEUR"] = e.unitPriceEUR;
     j["sourceRef"] = e.sourceRef;
+    j["sourceHasDocument"] =
+        e.source == "Invoice" ? invoiceHasDocument(e.sourceRef) :
+        (e.source == "Quotation" && quotationHasDocument(e.sourceRef));
     j["sourceDate"] = e.sourceDate;
     j["supplierName"] = e.supplierName;
     j["basePriceEUR"] = e.basePriceEUR;
@@ -112,6 +194,8 @@ static crow::json::wvalue estimateToJson(const MaterialCostEstimate& e)
     j["usualMissing"] = e.usualMissing;
     j["hasQuoteInfo"] = e.hasQuoteInfo;
     j["quoteRef"] = e.quoteRef;
+    j["quoteHasDocument"] =
+        e.hasQuoteInfo && quotationHasDocument(e.quoteRef);
     j["quoteSupplier"] = e.quoteSupplier;
     j["quoteDate"] = e.quoteDate;
     j["quotePriceEUR"] = e.quotePriceEUR;
@@ -120,6 +204,8 @@ static crow::json::wvalue estimateToJson(const MaterialCostEstimate& e)
     j["quoteTierMinQuantity"] = e.quoteTierMinQuantity;
     j["hasLastInvoice"] = e.hasLastInvoice;
     j["lastInvoiceRef"] = e.lastInvoiceRef;
+    j["lastInvoiceHasDocument"] =
+        e.hasLastInvoice && invoiceHasDocument(e.lastInvoiceRef);
     j["lastInvoiceDate"] = e.lastInvoiceDate;
     j["lastInvoicePriceEUR"] = e.lastInvoicePriceEUR;
 
@@ -921,6 +1007,8 @@ void WebServer::run()
     auth::AuthManager::instance().load();
 
     WarehouseSystem* warehouseSystem = system;
+
+    estimateSystem = warehouseSystem;
 
     // ------------------------------------------------------------
     // Auto Save and Load Data: if turned on in Data Management
@@ -2238,6 +2326,8 @@ void WebServer::run()
                         leadTimeWeeks,
                         isInternal);
 
+                    supplier.setAliases(readSupplierAliases(body));
+
                     SupplierManager& supplierManager =
                         warehouseSystem->getSupplierManager();
 
@@ -2329,6 +2419,9 @@ void WebServer::run()
 
                     item["isInternal"] =
                         supplier->getIsInternal();
+
+                    item["aliases"] =
+                        supplierAliasesToJson(*supplier);
 
                     supplierList.push_back(item);
                 }
@@ -2455,6 +2548,8 @@ void WebServer::run()
                         leadTimeWeeks,
                         isInternal);
 
+                    updatedSupplier.setAliases(readSupplierAliases(body));
+
                     bool success =
                         supplierManager.modifySupplier(
                             name,
@@ -2551,6 +2646,9 @@ void WebServer::run()
                 response["isInternal"] =
                     supplier->getIsInternal();
 
+                response["aliases"] =
+                    supplierAliasesToJson(*supplier);
+
                 return crow::response(response);
             });
 
@@ -2645,6 +2743,9 @@ void WebServer::run()
 
                 response["isInternal"] =
                     supplier->getIsInternal();
+
+                response["aliases"] =
+                    supplierAliasesToJson(*supplier);
 
                 return crow::response(response);
             });
@@ -8277,6 +8378,9 @@ void WebServer::run()
                     item["comment"] =
                         invoice->getComment();
 
+                    item["hasDocument"] =
+                        !invoice->getDocumentPath().empty();
+
                     item["totalMaterialCost"] =
                         invoice->getTotalMaterialCost();
 
@@ -11043,6 +11147,308 @@ void WebServer::run()
                 res.set_header("Content-Type", "application/pdf");
 
                 return res;
+            });
+
+
+    // ============================================================
+    // PURCHASE INVOICE - ATTACHED FILE (PDF / photo, for viewing)
+    // ============================================================
+    // Saved under the Documents Folder as "INV-000001 - invoice.pdf";
+    // a new upload replaces the previous one.
+
+    CROW_ROUTE(app, "/api/purchase/invoices/<string>/document")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req, string id)
+            {
+                try
+                {
+                    PurchaseManager& purchaseManager =
+                        warehouseSystem->getPurchaseManager();
+
+                    if (purchaseManager.findInvoice(id) == nullptr)
+                    {
+                        return crow::response(
+                            404,
+                            "Invoice not found.");
+                    }
+
+                    string documentsFolder =
+                        warehouseSystem->getDataManager()
+                            .getDocumentsFolder();
+
+                    if (documentsFolder.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Set a Documents Folder first in Data "
+                            "Management Settings.");
+                    }
+
+                    auto body = crow::json::load(req.body);
+
+                    if (!body || !body.has("fileData"))
+                    {
+                        return crow::response(
+                            400,
+                            "fileData is required.");
+                    }
+
+                    string fileData = body["fileData"].s();
+
+                    size_t commaPosition = fileData.find(',');
+
+                    if (commaPosition == string::npos)
+                    {
+                        return crow::response(
+                            400,
+                            "Invalid file data.");
+                    }
+
+                    string decoded =
+                        decodeBase64(
+                            fileData.substr(commaPosition + 1));
+
+                    string extension = documentExtensionFor(decoded);
+
+                    if (extension.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Only PDF, JPG or PNG files can be attached.");
+                    }
+
+                    fs::create_directories(documentsFolder);
+
+                    fs::path filePath =
+                        fs::path(documentsFolder) /
+                        (id + " - invoice" + extension);
+
+                    ofstream outFile(filePath, ios::binary);
+
+                    if (!outFile)
+                    {
+                        return crow::response(
+                            500,
+                            "Could not write file.");
+                    }
+
+                    outFile.write(decoded.data(), decoded.size());
+
+                    outFile.close();
+
+                    purchaseManager.setInvoiceDocumentPath(
+                        id,
+                        filePath.string());
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    return crow::response(response);
+                }
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+    CROW_ROUTE(app, "/api/purchase/invoices/<string>/document/file")
+        ([warehouseSystem](string id)
+            {
+                const PurchaseInvoice* invoice =
+                    warehouseSystem->getPurchaseManager()
+                        .findInvoice(id);
+
+                if (invoice == nullptr ||
+                    invoice->getDocumentPath().empty() ||
+                    !fs::exists(invoice->getDocumentPath()))
+                {
+                    return crow::response(
+                        404,
+                        "No file on record for this invoice.");
+                }
+
+                ifstream inFile(invoice->getDocumentPath(), ios::binary);
+
+                ostringstream contents;
+
+                contents << inFile.rdbuf();
+
+                crow::response res(contents.str());
+
+                res.set_header(
+                    "Content-Type",
+                    documentMimeFor(invoice->getDocumentPath()));
+
+                return res;
+            });
+
+
+    // ============================================================
+    // MATERIAL CATEGORIES (list / rename / delete)
+    // ============================================================
+    // The list is built from the categories the materials already use,
+    // so it always remembers what was created. Renaming changes it on
+    // every material that has it; deleting leaves them without category.
+
+    CROW_ROUTE(app, "/api/material-categories")
+        ([warehouseSystem]()
+            {
+                map<string, int> counts;
+
+                int uncategorized = 0;
+
+                for (const auto& material :
+                    warehouseSystem->getMaterialManager().getMaterials())
+                {
+                    string category = material->getCategory();
+
+                    if (category.empty())
+                    {
+                        uncategorized++;
+                    }
+                    else
+                    {
+                        counts[category]++;
+                    }
+                }
+
+                crow::json::wvalue response;
+
+                crow::json::wvalue::list list;
+
+                for (const auto& entry : counts)
+                {
+                    crow::json::wvalue item;
+
+                    item["name"] = entry.first;
+                    item["count"] = entry.second;
+
+                    list.push_back(std::move(item));
+                }
+
+                response["categories"] = std::move(list);
+
+                response["uncategorized"] = uncategorized;
+
+                return response;
+            });
+
+    CROW_ROUTE(app, "/api/material-categories/rename")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                auto body = crow::json::load(req.body);
+
+                if (!body || !body.has("from") || !body.has("to"))
+                {
+                    return crow::response(400, "from and to are required.");
+                }
+
+                string from = body["from"].s();
+
+                string to = body["to"].s();
+
+                while (!to.empty() && isspace((unsigned char)to.front())) to.erase(to.begin());
+                while (!to.empty() && isspace((unsigned char)to.back())) to.pop_back();
+
+                if (from.empty() || to.empty())
+                {
+                    return crow::response(400, "Enter a category name.");
+                }
+
+                if (to.find(',') != string::npos ||
+                    to.find('\n') != string::npos)
+                {
+                    return crow::response(400, "The name cannot contain commas or line breaks.");
+                }
+
+                int changed = 0;
+
+                for (const auto& material :
+                    warehouseSystem->getMaterialManager().getMaterials())
+                {
+                    if (material->getCategory() == from)
+                    {
+                        material->setCategory(to);
+                        changed++;
+                    }
+                }
+
+                if (changed == 0)
+                {
+                    return crow::response(404, "No material has that category.");
+                }
+
+                warehouseSystem->getMovementLogger().log(
+                    "MATERIAL CATEGORY RENAMED",
+                    "Category: " + from + " -> " + to +
+                    " | Materials changed: " + to_string(changed),
+                    "");
+
+                autoSaveIfEnabled(warehouseSystem);
+
+                crow::json::wvalue response;
+
+                response["success"] = true;
+
+                response["changed"] = changed;
+
+                return crow::response(response);
+            });
+
+    CROW_ROUTE(app, "/api/material-categories/delete")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                auto body = crow::json::load(req.body);
+
+                if (!body || !body.has("name"))
+                {
+                    return crow::response(400, "name is required.");
+                }
+
+                string name = body["name"].s();
+
+                if (name.empty())
+                {
+                    return crow::response(400, "Category name is required.");
+                }
+
+                int changed = 0;
+
+                for (const auto& material :
+                    warehouseSystem->getMaterialManager().getMaterials())
+                {
+                    if (material->getCategory() == name)
+                    {
+                        material->setCategory("");
+                        changed++;
+                    }
+                }
+
+                if (changed == 0)
+                {
+                    return crow::response(404, "No material has that category.");
+                }
+
+                warehouseSystem->getMovementLogger().log(
+                    "MATERIAL CATEGORY DELETED",
+                    "Category: " + name +
+                    " | Materials left without category: " + to_string(changed),
+                    "");
+
+                autoSaveIfEnabled(warehouseSystem);
+
+                crow::json::wvalue response;
+
+                response["success"] = true;
+
+                response["changed"] = changed;
+
+                return crow::response(response);
             });
 
 

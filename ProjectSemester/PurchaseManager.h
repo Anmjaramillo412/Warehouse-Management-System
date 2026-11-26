@@ -296,6 +296,11 @@ public:
     // Persistence
     // ------------------------------------------------------------
 
+    // Attaches (or clears, with an empty path) the invoice's file
+    bool setInvoiceDocumentPath(
+        const string& id,
+        const string& path);
+
     bool save();
     bool load();
 

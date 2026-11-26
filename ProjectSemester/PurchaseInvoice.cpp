@@ -81,6 +81,12 @@ string PurchaseInvoice::getComment() const
 }
 
 
+string PurchaseInvoice::getDocumentPath() const
+{
+    return documentPath;
+}
+
+
 const vector<PurchaseInvoiceLine>& PurchaseInvoice::getLines() const
 {
     return lines;
@@ -136,6 +142,12 @@ void PurchaseInvoice::setFreightCost(double freight)
 void PurchaseInvoice::setComment(const string& cmt)
 {
     comment = cmt;
+}
+
+
+void PurchaseInvoice::setDocumentPath(const string& path)
+{
+    documentPath = path;
 }
 
 

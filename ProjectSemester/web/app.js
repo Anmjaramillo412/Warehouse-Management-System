@@ -38,6 +38,29 @@ let materialsSupplierFilter = "";
 let materialsListScroll = 0;
 
 
+// Picture shown for a Material that has no photo
+const MATERIAL_NO_PHOTO_SRC = "data:image/png;base64,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";
+
+function materialPhotoSrc(photo) {
+
+    return photo ? "/" + photo : MATERIAL_NO_PHOTO_SRC;
+}
+
+// A Material whose saved photo file is missing (moved, deleted, not in
+// this computer's folder) would show a broken image: use the default
+// picture instead. "error" does not bubble, so it is caught on capture.
+document.addEventListener("error", event => {
+
+    const img = event.target;
+
+    if (img && img.tagName === "IMG" &&
+        img.alt === "Material photo" &&
+        img.src !== MATERIAL_NO_PHOTO_SRC) {
+
+        img.src = MATERIAL_NO_PHOTO_SRC;
+    }
+}, true);
+
 function openModule(module) {
 
     materialsReturnProjectionID = null;
@@ -106,6 +129,10 @@ function openModule(module) {
 
                 <button class="button-muted" onclick="displayArchivedMaterials()">
                     Archived Materials
+                </button>
+
+                <button class="button-muted" onclick="showMaterialConfig()">
+                    Config
                 </button>
 
             </div>
@@ -609,6 +636,50 @@ function openModule(module) {
 }
 
 // ============================================================
+// SUPPLIER "OTHER NAMES" (none, one or several rows)
+// ============================================================
+
+function addSupplierAliasRow(containerId, name, note) {
+
+    const container = document.getElementById(containerId);
+
+    if (!container) {
+        return;
+    }
+
+    const row = document.createElement("div");
+
+    row.className = "supplier-alias-row";
+
+    row.style.cssText = "display:flex; gap:8px; margin-bottom:6px; align-items:center;";
+
+    row.innerHTML = `
+        <input type="text" class="supplier-alias-name" style="flex:2;"
+            placeholder="Other name (legal entity / export company)"
+            value="${escapeHtml(name || "")}">
+        <input type="text" class="supplier-alias-note" style="flex:2;"
+            placeholder="Note (optional, e.g. exports for this supplier)"
+            value="${escapeHtml(note || "")}">
+        <button type="button" class="remove-line-button"
+            title="Remove this name"
+            onclick="this.closest('.supplier-alias-row').remove()">&times;</button>
+    `;
+
+    container.appendChild(row);
+}
+
+function collectSupplierAliases(containerId) {
+
+    return Array.from(document.querySelectorAll(
+        `#${containerId} .supplier-alias-row`))
+        .map(row => ({
+            name: row.querySelector(".supplier-alias-name").value.trim(),
+            note: row.querySelector(".supplier-alias-note").value.trim()
+        }))
+        .filter(alias => alias.name);
+}
+
+// ============================================================
 // CREATE SUPPLIER FORM
 // ============================================================
 
@@ -738,6 +809,24 @@ function showCreateSupplier() {
             >
 
 
+            <label>
+                Other Names
+            </label>
+
+            <small>
+                Other legal entities the Supplier exports under, or
+                companies that handle its exports/imports. None, one
+                or several - they are found by the supplier search.
+            </small>
+
+            <div id="supplier-aliases"></div>
+
+            <button type="button" class="add-line-button"
+                onclick="addSupplierAliasRow('supplier-aliases')">
+                + Add Other Name
+            </button>
+
+
             <label class="checkbox-label">
                 <input type="checkbox" id="supplier-is-internal">
                 Internal Supplier
@@ -863,7 +952,9 @@ async function createSupplier() {
 
         leadTimeWeeks: leadTimeWeeks,
 
-        isInternal: isInternal
+        isInternal: isInternal,
+
+        aliases: collectSupplierAliases("supplier-aliases")
     };
 
 
@@ -1112,6 +1203,23 @@ async function loadSupplierForModify() {
             <input type="number" id="ms-lead-time" min="0"
                 value="${data.leadTimeWeeks || 0}">
 
+            <label>
+                Other Names
+            </label>
+
+            <small>
+                Other legal entities the Supplier exports under, or
+                companies that handle its exports/imports. None, one
+                or several - they are found by the supplier search.
+            </small>
+
+            <div id="ms-aliases"></div>
+
+            <button type="button" class="add-line-button"
+                onclick="addSupplierAliasRow('ms-aliases')">
+                + Add Other Name
+            </button>
+
             <label class="checkbox-label">
                 <input type="checkbox" id="ms-is-internal"
                     ${data.isInternal ? "checked" : ""}>
@@ -1137,6 +1245,10 @@ async function loadSupplierForModify() {
             <div id="modify-supplier-message">
             </div>
         `;
+
+        for (const alias of (data.aliases || [])) {
+            addSupplierAliasRow("ms-aliases", alias.name, alias.note);
+        }
     }
     catch (error) {
 
@@ -1235,7 +1347,9 @@ async function modifySupplierSubmit() {
 
         leadTimeWeeks: leadTimeWeeks,
 
-        isInternal: isInternal
+        isInternal: isInternal,
+
+        aliases: collectSupplierAliases("ms-aliases")
     };
 
     try {
@@ -1353,7 +1467,7 @@ async function displaySuppliers() {
                 </h2>
 
                 <input type="text" class="product-cost-search"
-                    placeholder="Search supplier (name, country, contact, email...)"
+                    placeholder="Search supplier (name, other names, country, contact, email...)"
                     oninput="filterSupplierRows(this)">
 
                 <small class="supplier-search-count"></small>
@@ -1365,6 +1479,7 @@ async function displaySuppliers() {
                         <tr>
 
                             <th>Name</th>
+                            <th>Other Names</th>
                             <th>Country</th>
                             <th>Contact</th>
                             <th>Email</th>
@@ -1389,6 +1504,10 @@ async function displaySuppliers() {
                 <tr>
 
                     <td>${escapeHtml(supplier.name)}</td>
+                    <td>${(supplier.aliases || []).map(alias =>
+                        escapeHtml(alias.name) +
+                        (alias.note ? ` <small>(${escapeHtml(alias.note)})</small>` : "")
+                    ).join("<br>")}</td>
                     <td>${escapeHtml(supplier.country || "")}</td>
                     <td>${escapeHtml(supplier.contactName || "")}</td>
                     <td>${escapeHtml(supplier.contactEmail || "")}</td>
@@ -1802,8 +1921,11 @@ function showCreateMaterial() {
             <input
                 type="text"
                 id="material-category"
-                placeholder="Enter Category (optional)"
+                list="material-category-list"
+                autocomplete="off"
+                placeholder="Pick an existing category or type a new one"
             >
+            <datalist id="material-category-list"></datalist>
 
 
             <label>
@@ -2280,8 +2402,19 @@ function renderSupplierOptions(prefix) {
 
     const matches =
         suppliers.filter(supplier =>
-            supplier.name.toLowerCase().includes(filterText)
+            supplier.name.toLowerCase().includes(filterText) ||
+            (supplier.aliases || []).some(alias =>
+                alias.name.toLowerCase().includes(filterText))
         );
+
+    const aliasHint = supplier => {
+
+        const hit = (supplier.aliases || []).find(alias =>
+            filterText && alias.name.toLowerCase().includes(filterText) &&
+            !supplier.name.toLowerCase().includes(filterText));
+
+        return hit ? ` (also: ${escapeHtml(hit.name)})` : "";
+    };
 
     if (matches.length === 0) {
 
@@ -2297,7 +2430,7 @@ function renderSupplierOptions(prefix) {
             matches.map(supplier => `
                 <div class="combobox-option"
                     onmousedown="selectSupplierOption('${prefix}', '${escapeHtml(supplier.name)}')">
-                    ${escapeHtml(supplier.name)}${
+                    ${escapeHtml(supplier.name)}${aliasHint(supplier)}${
                         supplier.isInternal
                             ? " (Internal - no Projections/Procurement)"
                             : ""
@@ -3919,15 +4052,11 @@ async function renderMaterialsList(filterFn, headingText, emptyText, targetID) {
 
                     <td>
 
-                        ${
-                            material.photo
-                            ? `<img
-                                    src="/${material.photo}"
+                        <img
+                                    src="${materialPhotoSrc(material.photo)}"
                                     class="material-thumbnail"
                                     alt="Material photo"
-                               >`
-                            : "No photo"
-                        }
+                                    >
 
                     </td>
 
@@ -4102,16 +4231,10 @@ async function showMaterialDetail(id) {
                 <div class="material-detail-header">
 
                     <div class="material-detail-photo">
-                        ${
-                            data.photo
-                            ? `<img
-                                    src="/${data.photo}"
-                                    alt="Material photo"
-                               >`
-                            : `<div class="material-detail-photo-placeholder">
-                                    No photo
-                               </div>`
-                        }
+                        <img
+                            src="${materialPhotoSrc(data.photo)}"
+                            alt="Material photo"
+                        >
                     </div>
 
                     <div class="material-detail-title">
@@ -4868,8 +4991,11 @@ async function loadMaterialForModify() {
                 <input
                     type="text"
                     id="modify-category"
+                    list="material-category-list"
+                    autocomplete="off"
                     value="${escapeHtml(data.category)}"
                 >
+                <datalist id="material-category-list"></datalist>
 
 
                 <label>
@@ -5754,6 +5880,37 @@ async function displayWarehouses() {
             return;
         }
 
+        // Products by their Main Warehouse
+        const productsByWarehouse = {};
+
+        let productsWithoutWarehouse = 0;
+
+        try {
+
+            const productsResponse = await fetch("/api/products");
+
+            if (productsResponse.ok) {
+
+                const productsData = await productsResponse.json();
+
+                for (const product of (productsData.products || [])) {
+
+                    if (!product.mainWarehouseID) {
+                        productsWithoutWarehouse++;
+                        continue;
+                    }
+
+                    (productsByWarehouse[product.mainWarehouseID] =
+                        productsByWarehouse[product.mainWarehouseID] || [])
+                        .push(product);
+                }
+            }
+        }
+        catch (error) {
+
+            console.error(error);
+        }
+
 
         let html = `
 
@@ -5771,6 +5928,7 @@ async function displayWarehouses() {
 
                             <th>Warehouse ID</th>
                             <th>Warehouse Name</th>
+                            <th>Products (Main Warehouse)</th>
 
                         </tr>
 
@@ -5798,6 +5956,14 @@ async function displayWarehouses() {
                         )}
                     </td>
 
+                    <td>
+                        ${(productsByWarehouse[warehouse.id] || []).length > 0
+                            ? productsByWarehouse[warehouse.id].map(product =>
+                                `<a href="#" title="View the product" onclick="openProductPopup('${escapeHtml(String(product.id)).replace(/'/g, "&#39;")}'); return false;">${escapeHtml(String(product.id))}</a> &mdash; ${escapeHtml(product.name || "")}`
+                              ).join("<br>")
+                            : `<em style="color:#6b7280;">No products</em>`}
+                    </td>
+
                 </tr>
             `;
         }
@@ -5808,6 +5974,10 @@ async function displayWarehouses() {
                     </tbody>
 
                 </table>
+
+                ${productsWithoutWarehouse > 0
+                    ? `<small>${productsWithoutWarehouse} product(s) have no Main Warehouse set.</small>`
+                    : ""}
 
             </div>
         `;
@@ -6973,15 +7143,11 @@ async function displayInventory() {
                         <tr data-mid="${escapeHtml(item.materialID)}">
 
                             <td>
-                                ${
-                                    item.photo
-                                    ? `<img
-                                            src="/${item.photo}"
+                                <img
+                                            src="${materialPhotoSrc(item.photo)}"
                                             class="material-thumbnail"
                                             alt="Material photo"
-                                       >`
-                                    : "No photo"
-                                }
+                                            >
                             </td>
 
                             <td>
@@ -7782,7 +7948,39 @@ function modifyBomItemRowHtml(prefix, quantity) {
     `;
 }
 
+// Search box above the Bill of Materials: hides the component rows
+// that do not match (rows stay in the form, so Save Changes still
+// keeps every component).
+function filterModifyBomRows() {
+
+    const box = document.getElementById("modify-bom-filter");
+
+    const words = String(box ? box.value : "").toLowerCase()
+        .split(/\s+/).filter(Boolean);
+
+    document.querySelectorAll("#modify-bom-items .bom-row").forEach(row => {
+
+        const search = row.querySelector("input[id$='-material-id-search']");
+
+        const text = String(search ? search.value : "").toLowerCase();
+
+        const match = words.every(word => text.includes(word));
+
+        row.style.display = match ? "" : "none";
+    });
+}
+
 function addModifyBOMItemRow(materialID, quantity) {
+
+    // A new component must be visible: clear the search first
+    const filterBox = document.getElementById("modify-bom-filter");
+
+    if (filterBox && filterBox.value) {
+
+        filterBox.value = "";
+
+        filterModifyBomRows();
+    }
 
     const container =
         document.getElementById(
@@ -7911,6 +8109,15 @@ async function loadProductForModify() {
             <h3>
                 Bill of Materials
             </h3>
+
+            <input
+                type="text"
+                id="modify-bom-filter"
+                class="bom-filter"
+                placeholder="Search components in this Bill of Materials (ID or name)..."
+                autocomplete="off"
+                oninput="filterModifyBomRows()"
+            >
 
             <div id="modify-bom-items">
             </div>
@@ -8346,15 +8553,11 @@ async function showDisplayProducts() {
                         <tr class="${isInternal ? "product-bom-internal" : ""}">
 
                             <td>
-                                ${
-                                    item.photo
-                                    ? `<img
-                                            src="/${item.photo}"
+                                <img
+                                            src="${materialPhotoSrc(item.photo)}"
                                             class="material-thumbnail"
                                             alt="Material photo"
-                                       >`
-                                    : "No photo"
-                                }
+                                            >
                             </td>
 
                             <td>
@@ -9930,6 +10133,34 @@ async function displayProjections() {
     }
 }
 
+// Projection detail: collapse / expand the materials of one Supplier
+// (click on its grey row; the subtotal stays visible)
+function toggleProjectionSupplier(groupRow, collapsed) {
+
+    const collapse =
+        collapsed === undefined
+            ? !groupRow.classList.contains("collapsed")
+            : collapsed;
+
+    groupRow.classList.toggle("collapsed", collapse);
+
+    const supplier = groupRow.dataset.supplier;
+
+    for (const row of groupRow.closest("tbody").querySelectorAll("tr[id$='-row']")) {
+
+        if (row.dataset.supplier === supplier) {
+            row.classList.toggle("supplier-collapsed", collapse);
+        }
+    }
+}
+
+function setAllProjectionSuppliersCollapsed(collapsed) {
+
+    for (const groupRow of document.querySelectorAll(".projection-supplier-group-row")) {
+        toggleProjectionSupplier(groupRow, collapsed);
+    }
+}
+
 // Open Projections: collapse a Product's Projections to one line
 function toggleProjectionGroup(heading) {
 
@@ -10233,6 +10464,15 @@ async function openProjectionDetail(id) {
                 <div id="projection-detail-message">
                 </div>
 
+                <div class="projection-group-actions">
+                    <button type="button" onclick="setAllProjectionSuppliersCollapsed(true)">
+                        Collapse all suppliers
+                    </button>
+                    <button type="button" onclick="setAllProjectionSuppliersCollapsed(false)">
+                        Expand all suppliers
+                    </button>
+                </div>
+
                 <table class="material-table material-table-sticky projection-detail-table">
 
                     <thead>
@@ -10292,8 +10532,11 @@ async function openProjectionDetail(id) {
                 lastSupplierGroup = supplierGroup;
 
                 html += `
-                    <tr class="projection-supplier-group-row">
+                    <tr class="projection-supplier-group-row"
+                        data-supplier="${escapeHtml(supplierGroup)}"
+                        onclick="toggleProjectionSupplier(this)">
                         <td colspan="9">
+                            <span class="warehouse-caret">&#9660;</span>
                             ${escapeHtml(supplierGroup || "No Supplier")}
                         </td>
                         <td colspan="5"
@@ -10372,15 +10615,11 @@ async function openProjectionDetail(id) {
                     </td>
 
                     <td>
-                        ${
-                            item.photo
-                            ? `<img
-                                    src="/${item.photo}"
+                        <img
+                                    src="${materialPhotoSrc(item.photo)}"
                                     class="material-thumbnail"
                                     alt="Material photo"
-                               >`
-                            : "No photo"
-                        }
+                                    >
                     </td>
 
                     <td>
@@ -13631,7 +13870,7 @@ async function addMaterialToOrder(id) {
             return;
         }
 
-        await displayProcurementOrders();
+        await reloadProcurementKeepingView();
     }
     catch (error) {
 
@@ -13642,6 +13881,35 @@ async function addMaterialToOrder(id) {
                 "Could not connect to the server.";
         }
     }
+}
+
+// Reloads the order list but keeps what the person was looking at:
+// the cards that were open stay open and the page does not jump.
+async function reloadProcurementKeepingView() {
+
+    const open = new Set(
+        Array.from(document.querySelectorAll(
+            "#procurement-content .procurement-card[id]"))
+            .filter(card => !card.classList.contains("collapsed"))
+            .map(card => card.id));
+
+    const scrollY = window.scrollY;
+
+    await displayProcurementOrders();
+
+    open.forEach(cardID => {
+
+        const card = document.getElementById(cardID);
+
+        const body = document.getElementById(cardID + "-body");
+
+        if (card && body) {
+            card.classList.remove("collapsed");
+            body.hidden = false;
+        }
+    });
+
+    window.scrollTo(0, scrollY);
 }
 
 // ============================================================
@@ -15205,6 +15473,27 @@ async function showPurchaseAdjust() {
                 placeholder="e.g. Reason for the adjustment"
             >
 
+            <label>
+                Invoice / Quotation file (PDF or photo, optional)
+            </label>
+
+            <input
+                type="file"
+                id="purchadjust-file"
+                accept="application/pdf,image/jpeg,image/png"
+                onchange="readInvoicePdf(this)"
+            >
+
+            <small>
+                A PDF with selectable text is read to fill in the
+                form (date, currency, customs, freight and the
+                material lines) - check everything before saving.
+                The file stays on the invoice for viewing.
+            </small>
+
+            <div id="purchadjust-reader-status">
+            </div>
+
         </div>
 
         <div class="multi-line-items">
@@ -15261,7 +15550,7 @@ async function showPurchaseAdjust() {
     addPurchaseAdjustMaterialRow();
 }
 
-function addPurchaseAdjustMaterialRow() {
+function addPurchaseAdjustMaterialRow(materialID, quantity, unitCost) {
 
     const container =
         document.getElementById(
@@ -15305,7 +15594,7 @@ function addPurchaseAdjustMaterialRow() {
                 step="any"
                 id="${prefix}-quantity"
                 placeholder="Qty"
-                value="1"
+                value="${quantity || 1}"
             >
 
         </div>
@@ -15318,6 +15607,7 @@ function addPurchaseAdjustMaterialRow() {
                 step="0.01"
                 id="${prefix}-unitcost"
                 placeholder="Unit Cost"
+                value="${unitCost || ""}"
             >
 
         </div>
@@ -15335,7 +15625,203 @@ function addPurchaseAdjustMaterialRow() {
 
     container.appendChild(row);
 
-    initMaterialCombobox(prefix);
+    initMaterialCombobox(prefix, materialID);
+
+    return row;
+}
+
+// ------------------------------------------------------------
+// Read the supplier invoice PDF and prepare the form (same reader
+// as the quotations: the file never leaves this computer)
+// ------------------------------------------------------------
+
+function invoiceReaderStatus(html, kind) {
+
+    const box = document.getElementById("purchadjust-reader-status");
+
+    if (!box) {
+        return;
+    }
+
+    const color = kind === "error" ? "#b91c1c" :
+        kind === "warn" ? "#92400e" : "#166534";
+
+    box.innerHTML = `<div style="color:${color}; margin-top:6px;">${html}</div>`;
+}
+
+function markInvoiceField(id, note) {
+
+    const el = document.getElementById(id);
+
+    if (el) {
+        el.style.background = "#fef3c7";
+        el.title = note || "Check this value";
+    }
+}
+
+async function readInvoicePdf(input) {
+
+    const file = input.files[0];
+
+    if (!file) {
+        return;
+    }
+
+    // Photos are only attached, not read
+    if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") {
+
+        invoiceReaderStatus(
+            "Photos are attached but not read - fill the form in by hand.",
+            "warn");
+
+        return;
+    }
+
+    invoiceReaderStatus("Reading " + escapeHtml(file.name) + "...", "ok");
+
+    try {
+
+        await loadQuotationReaderLibs();
+
+        const buffer = await file.arrayBuffer();
+
+        const pdf = await window.pdfjsLib.getDocument(
+            { data: new Uint8Array(buffer.slice(0)) }).promise;
+
+        let lines = [];
+
+        for (let p = 1; p <= pdf.numPages; p++) {
+
+            const page = await pdf.getPage(p);
+
+            const text = await page.getTextContent();
+
+            lines = lines.concat(window.QuotationReader.buildLines(
+                text.items.map(i => ({
+                    s: i.str, x: i.transform[4],
+                    y: i.transform[5], w: i.width
+                }))));
+        }
+
+        if (lines.join("").length < 40) {
+
+            invoiceReaderStatus(
+                "This PDF has no selectable text (a scan or a photo), so " +
+                "it cannot be read - fill the form in by hand; the file " +
+                "will still be attached.", "warn");
+
+            return;
+        }
+
+        const suppliersResponse = await fetch("/api/suppliers");
+
+        const suppliersData = await suppliersResponse.json();
+
+        const materials = await loadMaterialCache(true);
+
+        const draft = window.QuotationReader.parseInvoice(lines, {
+            fileName: file.name,
+            suppliers: (suppliersData.suppliers || [])
+                .map(s => ({ name: s.name, aliases: (s.aliases || []).map(alias => alias.name) })),
+            materials: materials.map(m => ({
+                id: m.id,
+                name: m.name,
+                partNumbers: [m.supplierPartNumber].concat(
+                    (m.additionalSuppliers || [])
+                        .map(link => link.supplierPartNumber))
+                    .filter(pn => pn)
+            }))
+        });
+
+        await applyInvoiceDraft(draft, file.name);
+    }
+    catch (error) {
+
+        console.error(error);
+
+        invoiceReaderStatus(
+            "Could not read this PDF - fill the form in by hand.", "error");
+    }
+}
+
+async function applyInvoiceDraft(draft, fileName) {
+
+    const set = (id, value) => {
+
+        const el = document.getElementById(id);
+
+        if (el && value !== undefined && value !== "") {
+            el.value = value;
+        }
+    };
+
+    set("purchadjust-date", draft.date);
+
+    set("purchadjust-currency", draft.currency);
+
+    await handlePurchaseAdjustCurrencyChange();
+
+    if (draft.customsCost > 0) {
+        set("purchadjust-customs", draft.customsCost);
+    }
+
+    if (draft.freightCost > 0) {
+        set("purchadjust-freight", draft.freightCost);
+    }
+
+    const comment = document.getElementById("purchadjust-comment");
+
+    if (comment && !comment.value && draft.invoiceNumber) {
+        comment.value = "Invoice " + draft.invoiceNumber +
+            (draft.supplier ? " - " + draft.supplier : "");
+    }
+
+    for (const warning of draft.warnings) {
+
+        if (/date/i.test(warning)) {
+            markInvoiceField("purchadjust-date", warning);
+        }
+    }
+
+    markInvoiceField("purchadjust-currency", "Check the currency");
+
+    // material lines replace the empty starter row(s)
+    const container = document.getElementById("purchadjust-rows");
+
+    if (draft.lines.length > 0) {
+
+        container.innerHTML = "";
+
+        purchAdjustRowCounter = 0;
+    }
+
+    for (const line of draft.lines) {
+
+        const row = addPurchaseAdjustMaterialRow(
+            line.materialID, line.quantity, line.unitCost);
+
+        const info = document.createElement("div");
+
+        info.style.cssText = "font-size:13px; color:#374151; grid-column: 1 / -1;";
+
+        info.innerHTML =
+            "From the PDF: " + escapeHtml(line.articleNumbers.join(" / ")) +
+            (line.description ? " - " + escapeHtml(line.description) : "") +
+            (line.warnings.length > 0
+                ? `<div style="background:#fef3c7; border-radius:6px; padding:4px 8px; margin-top:4px;">${escapeHtml(line.warnings.join(" "))}</div>`
+                : "");
+
+        row.insertBefore(info, row.firstChild);
+    }
+
+    const hints = draft.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join("");
+
+    invoiceReaderStatus(
+        `Read ${draft.lines.length} material line(s) from ${escapeHtml(fileName)}` +
+        (draft.supplier ? ` (supplier: ${escapeHtml(draft.supplier)})` : "") +
+        `. <strong>Check everything before saving.</strong>` +
+        (hints ? `<ul style="margin:6px 0 0 18px;">${hints}</ul>` : ""),
+        draft.warnings.length > 0 ? "warn" : "ok");
 }
 
 async function handlePurchaseAdjustCurrencyChange() {
@@ -15577,12 +16063,30 @@ async function submitPurchaseAdjust() {
         const data =
             await response.json();
 
+        // Attach the file (if any) to the new invoice
+        let fileNote = "";
+
+        const fileInput =
+            document.getElementById("purchadjust-file");
+
+        if (fileInput && fileInput.files[0]) {
+
+            const uploadError =
+                await uploadPurchaseInvoiceFile(
+                    data.id, fileInput.files[0]);
+
+            fileNote = uploadError
+                ? ` The file could NOT be attached (${uploadError}) - ` +
+                  `open the invoice in Invoices to attach it.`
+                : " File attached.";
+        }
+
         await showPurchaseAdjust();
 
         document.getElementById(
             "purchadjust-message"
         ).textContent =
-            `Prices saved (Invoice ${data.id}).`;
+            `Prices saved (Invoice ${data.id}).${fileNote}`;
     }
     catch (error) {
 
@@ -15590,6 +16094,75 @@ async function submitPurchaseAdjust() {
 
         message.textContent =
             "Could not connect to the server.";
+    }
+}
+
+// Uploads the invoice file (PDF / JPG / PNG); returns "" when saved,
+// otherwise the error text.
+async function uploadPurchaseInvoiceFile(id, file) {
+
+    try {
+
+        const fileData = await readFileAsBase64(file);
+
+        const response = await fetch(
+            `/api/purchase/invoices/${encodeURIComponent(id)}/document`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ fileData: fileData })
+            });
+
+        if (!response.ok) {
+            return await response.text();
+        }
+
+        return "";
+    }
+    catch (error) {
+
+        console.error(error);
+
+        return "Could not upload the file.";
+    }
+}
+
+// Attach / replace from an invoice card (updates the card in place)
+async function attachPurchaseInvoiceFile(id, inputEl) {
+
+    const file = inputEl.files[0];
+
+    if (!file) {
+        return;
+    }
+
+    const status = document.getElementById(`purchinv-${id}-docstatus`);
+
+    if (status) {
+        status.textContent = "Uploading...";
+    }
+
+    const error = await uploadPurchaseInvoiceFile(id, file);
+
+    inputEl.value = "";
+
+    if (error) {
+
+        if (status) {
+            status.textContent = error;
+        }
+
+        return;
+    }
+
+    if (purchaseInvoiceCache[id]) {
+        purchaseInvoiceCache[id].hasDocument = true;
+    }
+
+    if (status) {
+        status.innerHTML =
+            `<a href="/api/purchase/invoices/${encodeURIComponent(id)}/document/file" target="_blank">View file</a> ` +
+            `<strong style="color:#166534;">&#10003; saved</strong>`;
     }
 }
 
@@ -15993,6 +16566,25 @@ function renderPurchaseInvoiceCard(
                  style="padding: 4px 16px 16px;" ${expanded ? "" : "hidden"}>
 
             ${header}
+
+            <div class="procurement-section" style="margin: 8px 0;">
+
+                <span class="detail-label">Invoice file:</span>
+
+                <span id="purchinv-${escapedID}-docstatus">
+                    ${invoice.hasDocument
+                        ? `<a href="/api/purchase/invoices/${encodeURIComponent(invoice.id)}/document/file" target="_blank">View file</a>`
+                        : `<em>none</em>`}
+                </span>
+
+                <label class="button-muted" style="display:inline-block; padding:4px 10px; border-radius:6px; cursor:pointer; margin-left:8px;">
+                    ${invoice.hasDocument ? "Replace" : "Attach"}
+                    <input type="file" accept="application/pdf,image/jpeg,image/png"
+                           style="display:none;"
+                           onchange="attachPurchaseInvoiceFile('${escapedID}', this)">
+                </label>
+
+            </div>
 
             <div class="material-table-container">
 
@@ -19151,10 +19743,8 @@ function restoreInventoryCountUnsaved() {
 
 function inventoryCountPhotoHtml(line) {
 
-    return line.photo ?
-        `<img src="/${escapeHtml(line.photo)}"
-            class="material-thumbnail" alt="Material photo">` :
-        "-";
+    return `<img src="${line.photo ? "/" + escapeHtml(line.photo) : MATERIAL_NO_PHOTO_SRC}"
+            class="material-thumbnail" alt="Material photo">`;
 }
 
 function inventoryCountRowStyle(line) {
@@ -20158,10 +20748,10 @@ async function loadMaterialPriceSummary(containerId, materialID) {
                 `<span class="detail-value"><strong>${formatMoney(est.unitPriceEUR)} EUR</strong>` +
                 `<small>${uom}</small></span> ` +
                 (est.source === "Invoice"
-                    ? `<small>Invoice ${escapeHtml(est.sourceRef)} &middot; ` +
+                    ? `<small>${invoiceRefHtml(est.sourceRef, est.sourceHasDocument)} &middot; ` +
                       `${escapeHtml(est.sourceDate)} (real)</small>`
                     : `<span class="status-badge status-partial">Estimated</span> ` +
-                      `<small>Quotation ${escapeHtml(est.sourceRef)}</small>`);
+                      `<small>${quotationRefHtml(est.sourceRef, est.sourceHasDocument)}</small>`);
         }
 
         const quotes = (info.quotations || []).filter(q => q.current);
@@ -20182,7 +20772,9 @@ async function loadMaterialPriceSummary(containerId, materialID) {
                         <strong>${escapeHtml(q.supplier)}</strong>
                         ${q.primarySupplier ? `<span class="status-badge status-active">Primary</span>` : ""}
                         <small>
-                            ${escapeHtml(q.id)}
+                            ${q.hasDocument
+                                ? `<a href="/api/quotations/${encodeURIComponent(q.id)}/document/file" target="_blank" title="View the quotation PDF">${escapeHtml(q.id)}</a>`
+                                : escapeHtml(q.id)}
                             &middot; valid until ${escapeHtml(q.validUntil || "-")}
                             ${q.leadTimeWeeks ? `&middot; ${escapeHtml(String(q.leadTimeWeeks))} wk lead time` : ""}
                             ${q.moq ? `&middot; MOQ ${quotationNumber(q.moq)}${info.uom ? " " + escapeHtml(info.uom) : ""}` : ""}
@@ -20220,6 +20812,124 @@ async function loadMaterialPriceSummary(containerId, materialID) {
     catch (error) {
 
         console.error(error);
+    }
+}
+
+// Pop-up with the Product (photo, description, Main Warehouse and its
+// Bill of Materials), over whatever view is open
+async function openProductPopup(productID) {
+
+    const existing = document.getElementById("product-popup");
+
+    if (existing) {
+        existing.remove();
+    }
+
+    const overlay = document.createElement("div");
+
+    overlay.id = "product-popup";
+
+    overlay.className = "app-modal-overlay";
+
+    overlay.style.zIndex = "1600";
+
+    overlay.innerHTML = `
+        <div class="app-modal-box"
+            style="max-width: 720px; max-height: 85vh; overflow-y: auto;">
+            <p>Loading product...</p>
+        </div>`;
+
+    const close = () => {
+        document.removeEventListener("keydown", onKey);
+        overlay.remove();
+    };
+
+    const onKey = event => {
+        if (event.key === "Escape") {
+            close();
+        }
+    };
+
+    document.addEventListener("keydown", onKey);
+
+    overlay.addEventListener("mousedown", event => {
+        if (event.target === overlay) {
+            close();
+        }
+    });
+
+    document.body.appendChild(overlay);
+
+    const box = overlay.firstElementChild;
+
+    const closeButton = `
+        <div class="app-modal-actions">
+            <button type="button" class="app-modal-button-primary">Close</button>
+        </div>`;
+
+    try {
+
+        const response = await fetch("/api/products");
+
+        const data = await response.json();
+
+        const product = (data.products || []).find(p => p.id === productID);
+
+        if (!response.ok || !product) {
+
+            box.innerHTML = `<p>Product not found.</p>${closeButton}`;
+
+            box.querySelector("button").onclick = close;
+
+            return;
+        }
+
+        const bomRows = (product.bom || []).map(item => `
+            <tr>
+                <td><img src="${materialPhotoSrc(item.photo)}"
+                         class="material-thumbnail" alt="Material photo"></td>
+                <td>${escapeHtml(item.materialID)}</td>
+                <td>${escapeHtml(item.materialName || "")}</td>
+                <td>${item.quantity}${item.uom ? " " + escapeHtml(item.uom) : ""}</td>
+            </tr>`).join("");
+
+        box.innerHTML = `
+            <div style="display:flex; gap:16px; align-items:flex-start;">
+                ${product.photo
+                    ? `<img src="${escapeHtml(product.photo)}" alt=""
+                           style="width:120px; height:120px; object-fit:cover; border-radius:8px; border:1px solid #d1d5db;">`
+                    : ""}
+                <div>
+                    <h2 style="margin:0;">${escapeHtml(product.name)}</h2>
+                    <p class="material-detail-id">${escapeHtml(product.id)}</p>
+                    ${product.description
+                        ? `<p>${escapeHtml(product.description)}</p>` : ""}
+                    ${product.mainWarehouseName
+                        ? `<p>Main Warehouse: <strong>${escapeHtml(product.mainWarehouseName)}</strong></p>`
+                        : ""}
+                </div>
+            </div>
+
+            <h3>Bill of Materials (${(product.bom || []).length} component(s))</h3>
+
+            ${bomRows
+                ? `<table class="material-table">
+                       <thead><tr><th></th><th>Material ID</th><th>Name</th><th>Quantity</th></tr></thead>
+                       <tbody>${bomRows}</tbody>
+                   </table>`
+                : `<p><em>No components.</em></p>`}
+
+            ${closeButton}`;
+
+        box.querySelector(".app-modal-button-primary").onclick = close;
+    }
+    catch (error) {
+
+        console.error(error);
+
+        box.innerHTML = `<p>Could not load the product.</p>${closeButton}`;
+
+        box.querySelector("button").onclick = close;
     }
 }
 
@@ -20299,9 +21009,7 @@ async function openMaterialFromQuotation(materialID) {
         box.innerHTML = `
             <div class="material-detail-header">
                 <div class="material-detail-photo">
-                    ${data.photo ?
-                        `<img src="/${data.photo}" alt="Material photo">` :
-                        `<div class="material-detail-photo-placeholder">No photo</div>`}
+                    <img src="${materialPhotoSrc(data.photo)}" alt="Material photo">
                 </div>
                 <div class="material-detail-title">
                     <h2>${escapeHtml(data.name)}</h2>
@@ -20817,7 +21525,7 @@ function renderQuotationDetail() {
     `;
 }
 
-async function uploadQuotationDocument(id, inputEl) {
+async function uploadQuotationDocument(id, inputEl, stayInForm) {
 
     const file = inputEl.files[0];
 
@@ -20826,6 +21534,12 @@ async function uploadQuotationDocument(id, inputEl) {
     }
 
     setQuotationMessage("Uploading...", false);
+
+    const uploadingStatus = document.getElementById("quo-doc-status");
+
+    if (uploadingStatus) {
+        uploadingStatus.textContent = "Uploading...";
+    }
 
     try {
 
@@ -20841,9 +21555,40 @@ async function uploadQuotationDocument(id, inputEl) {
 
         if (!response.ok) {
 
-            setQuotationMessage(await response.text(), true);
+            const errorText = await response.text();
+
+            setQuotationMessage(errorText, true);
+
+            // In the edit form the message at the bottom is out of
+            // sight - show the error next to the button too
+            const docStatus = document.getElementById("quo-doc-status");
+
+            if (docStatus) {
+                docStatus.innerHTML =
+                    `<strong style="color:#b91c1c;">${escapeHtml(errorText)}</strong>`;
+            }
 
             inputEl.value = "";
+
+            return;
+        }
+
+        if (stayInForm) {
+
+            // Editing: keep what is typed in the form
+            const status = document.getElementById("quo-doc-status");
+
+            if (status) {
+                status.innerHTML =
+                    `<a href="/api/quotations/${encodeURIComponent(id)}/document/file" target="_blank">View PDF</a> ` +
+                    `<strong style="color:#166534;">&#10003; saved</strong>`;
+            }
+
+            if (quotationDetail && quotationDetail.id === id) {
+                quotationDetail.hasDocument = true;
+            }
+
+            setQuotationMessage("PDF saved.", false);
 
             return;
         }
@@ -20936,7 +21681,23 @@ async function renderQuotationForm(existing) {
 
             <h2>${existing ? "Edit " + escapeHtml(q.id) : "New Quotation"}</h2>
 
-            ${existing ? "" : `
+            ${existing ? `
+            <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:12px; margin-bottom:14px;">
+                <strong>Quotation document (PDF)</strong>
+                <p style="margin:6px 0;" id="quo-doc-status">
+                    ${q.hasDocument
+                        ? `<a href="/api/quotations/${encodeURIComponent(q.id)}/document/file" target="_blank">View PDF</a>`
+                        : "No PDF attached yet."}
+                </p>
+                <label style="cursor:pointer; padding: 8px 16px; display:inline-block; width:auto; margin:4px 0 0 0; background:#e5e7eb; color:#1f2937; border-radius:8px; font-weight:600;">
+                    ${q.hasDocument ? "Replace PDF" : "Attach PDF"}
+                    <input type="file" accept="application/pdf" style="display:none;"
+                        onchange="uploadQuotationDocument('${escapeHtml(q.id)}', this, true)">
+                </label>
+                <small style="display:block; margin-top:6px;">
+                    Saved right away - the rest of this form is saved with "Save".
+                </small>
+            </div>` : `
             <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:12px; margin-bottom:14px;">
                 <strong>Fill in from the supplier's PDF</strong>
                 <p style="margin:6px 0;">
@@ -21512,7 +22273,7 @@ async function readQuotationPdf(input) {
         const context = {
             fileName: file.name,
             suppliers: (suppliersData.suppliers || [])
-                .map(s => ({ name: s.name })),
+                .map(s => ({ name: s.name, aliases: (s.aliases || []).map(alias => alias.name) })),
             materials: materials.map(m => ({
                 id: m.id,
                 name: m.name,
@@ -21898,6 +22659,26 @@ function pastePriceTableImage(event, prefix) {
 // increment) and the warnings. totalQuantity is the quantity the
 // price was looked up for.
 
+// "Quotation QUO-000002", as a link to the quotation PDF when it has one
+function quotationRefHtml(ref, hasDocument) {
+
+    const text = `Quotation ${escapeHtml(ref)}`;
+
+    return hasDocument
+        ? `<a href="/api/quotations/${encodeURIComponent(ref)}/document/file" target="_blank" title="View the quotation PDF">${text}</a>`
+        : text;
+}
+
+// "Invoice INV-000004", as a link to the invoice file when it has one
+function invoiceRefHtml(ref, hasDocument) {
+
+    const text = `Invoice ${escapeHtml(ref)}`;
+
+    return hasDocument
+        ? `<a href="/api/purchase/invoices/${encodeURIComponent(ref)}/document/file" target="_blank" title="View the invoice file">${text}</a>`
+        : text;
+}
+
 function renderCostSourceHtml(est, totalQuantity, uom, compact) {
 
     if (!est || est.source === "None") {
@@ -21918,7 +22699,7 @@ function renderCostSourceHtml(est, totalQuantity, uom, compact) {
 
         if (est.source === "Invoice") {
 
-            return html + small(`Invoice ${escapeHtml(est.sourceRef)}`);
+            return html + small(invoiceRefHtml(est.sourceRef, est.sourceHasDocument));
         }
 
         const warnings = [];
@@ -21937,7 +22718,7 @@ function renderCostSourceHtml(est, totalQuantity, uom, compact) {
 
         return html +
             ` <span class="status-badge status-partial">Estimated</span>` +
-            small(`Quotation ${escapeHtml(est.sourceRef)}` +
+            small(quotationRefHtml(est.sourceRef, est.sourceHasDocument) +
                 (warnings.length > 0 ?
                     ` <span style="color:#b91c1c; cursor:help;" ` +
                     `title="${escapeHtml(warnings.join("; "))}">&#9888;</span>` : ""));
@@ -21946,13 +22727,13 @@ function renderCostSourceHtml(est, totalQuantity, uom, compact) {
     if (est.source === "Invoice") {
 
         html += small(
-            `Invoice ${escapeHtml(est.sourceRef)} &middot; ` +
+            `${invoiceRefHtml(est.sourceRef, est.sourceHasDocument)} &middot; ` +
             `${escapeHtml(est.sourceDate)} (real)`);
 
         if (est.hasQuoteInfo) {
 
             html += small(
-                `Quotation ${escapeHtml(est.quoteRef)} ` +
+                `${quotationRefHtml(est.quoteRef, est.quoteHasDocument)} ` +
                 `(${escapeHtml(est.quoteSupplier)}, ${escapeHtml(est.quoteDate)}) ` +
                 `offers ${formatMoney(est.quotePriceEUR)} EUR` +
                 (totalQuantity ? ` for ${totalQuantity}` : "") +
@@ -21969,7 +22750,7 @@ function renderCostSourceHtml(est, totalQuantity, uom, compact) {
     html += ` <span class="status-badge status-partial">Estimated</span>`;
 
     html += small(
-        `Quotation ${escapeHtml(est.sourceRef)} &middot; ` +
+        `${quotationRefHtml(est.sourceRef, est.sourceHasDocument)} &middot; ` +
         `${escapeHtml(est.supplierName)} &middot; ${escapeHtml(est.sourceDate)}`);
 
     if (est.freightIncrementEUR > 0) {
@@ -22009,7 +22790,7 @@ function renderCostSourceHtml(est, totalQuantity, uom, compact) {
     if (est.hasLastInvoice) {
 
         html += small(
-            `last invoice ${escapeHtml(est.lastInvoiceRef)} ` +
+            `last ${invoiceRefHtml(est.lastInvoiceRef, est.lastInvoiceHasDocument).replace("Invoice", "invoice")} ` +
             `(${escapeHtml(est.lastInvoiceDate)}): ` +
             `${formatMoney(est.lastInvoicePriceEUR)} EUR`, "#6b7280");
     }
@@ -23157,3 +23938,297 @@ function exportCurrentViewToExcel() {
         start();
     }
 })();
+
+
+// ============================================================
+// CATEGORY LIST FOR THE CATEGORY BOX + MATERIAL MANAGER CONFIG
+// ============================================================
+
+// Existing categories (the ones materials already use): pick one or
+// type a new one.
+async function fillCategoryList() {
+
+    const list = document.getElementById("material-category-list");
+
+    if (!list) {
+        return;
+    }
+
+    try {
+
+        const response = await fetch("/api/material-categories");
+
+        if (!response.ok) {
+            return;
+        }
+
+        const data = await response.json();
+
+        list.innerHTML = (data.categories || []).map(category =>
+            `<option value="${escapeHtml(category.name)}"></option>`).join("");
+    }
+    catch (error) {
+
+        console.error(error);
+    }
+}
+
+document.addEventListener("focusin", event => {
+
+    if (event.target && (event.target.id === "material-category" ||
+                         event.target.id === "modify-category")) {
+
+        fillCategoryList();
+    }
+});
+
+async function showMaterialConfig() {
+
+    const content = document.getElementById("material-content");
+
+    content.innerHTML = `<p>Loading...</p>`;
+
+    try {
+
+        const response = await fetch("/api/material-categories");
+
+        if (!response.ok) {
+
+            content.innerHTML = `<p>Error: ${escapeHtml(await response.text())}</p>`;
+
+            return;
+        }
+
+        const data = await response.json();
+
+        const rows = (data.categories || []).map((category, index) => {
+
+            const safeName = escapeHtml(category.name).replace(/'/g, "&#39;");
+
+            return `
+            <tr>
+                <td>
+                    <span id="matcat-name-${index}">${escapeHtml(category.name)}</span>
+                    <input type="text" id="matcat-input-${index}"
+                        value="${escapeHtml(category.name)}"
+                        style="display:none; width: 90%;">
+                </td>
+                <td>${category.count}</td>
+                <td>
+                    <span id="matcat-view-${index}">
+                        <button type="button" class="button-muted"
+                            onclick="modifyCategoryStart(${index})">Rename</button>
+                        <button type="button" class="button-danger"
+                            onclick="deleteCategory('${safeName}', ${category.count})">Delete</button>
+                    </span>
+                    <span id="matcat-edit-${index}" style="display:none;">
+                        <button type="button"
+                            onclick="modifyCategorySave(${index}, '${safeName}')">Save</button>
+                        <button type="button" class="button-muted"
+                            onclick="showMaterialConfig()">Cancel</button>
+                    </span>
+                </td>
+            </tr>`;
+        }).join("");
+
+        content.innerHTML = `
+            <div class="material-table-container material-table-container-fit">
+
+                <h2>Config &mdash; Categories</h2>
+
+                <p>
+                    These are the categories the materials use. Renaming changes
+                    it on every material that has it (renaming to an existing
+                    name merges them); deleting leaves those materials without a
+                    category. New categories are created by typing them in a
+                    material's Category box.
+                </p>
+
+                <div id="matcat-message"></div>
+
+                ${rows
+                    ? `<table class="material-table" style="max-width: 640px;">
+                        <thead>
+                            <tr><th>Category</th><th>Materials</th><th></th></tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                       </table>`
+                    : `<p>No categories yet.</p>`}
+
+                <p><small>${data.uncategorized || 0} material(s) have no category.</small></p>
+
+            </div>`;
+    }
+    catch (error) {
+
+        console.error(error);
+
+        content.innerHTML = `<p>Could not connect to the server.</p>`;
+    }
+}
+
+function modifyCategoryStart(index) {
+
+    document.getElementById(`matcat-name-${index}`).style.display = "none";
+    document.getElementById(`matcat-input-${index}`).style.display = "";
+    document.getElementById(`matcat-view-${index}`).style.display = "none";
+    document.getElementById(`matcat-edit-${index}`).style.display = "";
+
+    document.getElementById(`matcat-input-${index}`).focus();
+}
+
+async function modifyCategorySave(index, oldName) {
+
+    const message = document.getElementById("matcat-message");
+
+    const newName = document.getElementById(`matcat-input-${index}`).value.trim();
+
+    if (!newName) {
+
+        message.textContent = "Enter a category name.";
+
+        return;
+    }
+
+    if (newName === oldName) {
+
+        showMaterialConfig();
+
+        return;
+    }
+
+    const response = await fetch("/api/material-categories/rename", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from: oldName, to: newName })
+    });
+
+    if (!response.ok) {
+
+        message.textContent = "Error: " + await response.text();
+
+        return;
+    }
+
+    materialCache = null;
+
+    await showMaterialConfig();
+
+    document.getElementById("matcat-message").textContent =
+        `Renamed "${oldName}" to "${newName}".`;
+}
+
+async function deleteCategory(name, count) {
+
+    const confirmed = await showConfirmDialog(
+        `Delete the category "${name}"? ${count} material(s) will be left ` +
+        `without a category (the materials themselves are not deleted).`);
+
+    if (!confirmed) {
+        return;
+    }
+
+    const response = await fetch("/api/material-categories/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name })
+    });
+
+    if (!response.ok) {
+
+        document.getElementById("matcat-message").textContent =
+            "Error: " + await response.text();
+
+        return;
+    }
+
+    materialCache = null;
+
+    await showMaterialConfig();
+
+    document.getElementById("matcat-message").textContent =
+        `Category "${name}" deleted.`;
+}
+
+// ============================================================
+// MARK THE CURRENT WINDOW IN EVERY MODULE'S BUTTON ROW
+// ============================================================
+// The button of the window that is open gets a frame (class
+// "active-tab"). It is set whenever that window's function runs - from
+// a click or called from anywhere else in the app - by wrapping the
+// function each button of a module row calls. A module re-render
+// builds fresh buttons, which start unmarked.
+
+function markActiveModuleTab(functionName) {
+
+    document.querySelectorAll(".module-buttons").forEach(row => {
+
+        const target = Array.from(row.querySelectorAll("button")).find(
+            button => (button.getAttribute("onclick") || "")
+                .trim().startsWith(functionName + "("));
+
+        if (!target) {
+            return;
+        }
+
+        row.querySelectorAll("button.active-tab")
+            .forEach(other => other.classList.remove("active-tab"));
+
+        target.classList.add("active-tab");
+    });
+}
+
+const wrappedModuleTabFunctions = new Set();
+
+function wrapModuleTabFunctions() {
+
+    document.querySelectorAll(".module-buttons button[onclick]").forEach(button => {
+
+        const match = /^\s*([A-Za-z_$][\w$]*)\(/.exec(
+            button.getAttribute("onclick") || "");
+
+        if (!match) {
+            return;
+        }
+
+        const name = match[1];
+
+        if (wrappedModuleTabFunctions.has(name) ||
+            typeof window[name] !== "function") {
+            return;
+        }
+
+        wrappedModuleTabFunctions.add(name);
+
+        const original = window[name];
+
+        window[name] = function (...args) {
+
+            markActiveModuleTab(name);
+
+            return original.apply(this, args);
+        };
+    });
+}
+
+new MutationObserver(wrapModuleTabFunctions).observe(
+    document.documentElement, { childList: true, subtree: true });
+
+wrapModuleTabFunctions();
+
+// Fallback: a click always marks the clicked button
+document.addEventListener("click", event => {
+
+    const button = event.target.closest
+        ? event.target.closest(".module-buttons button")
+        : null;
+
+    if (!button) {
+        return;
+    }
+
+    button.parentElement.querySelectorAll("button.active-tab")
+        .forEach(other => other.classList.remove("active-tab"));
+
+    button.classList.add("active-tab");
+});

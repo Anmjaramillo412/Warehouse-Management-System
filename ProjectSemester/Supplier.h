@@ -6,6 +6,15 @@
 
 using namespace std;
 
+// Another name a Supplier is known by: a second legal entity it
+// exports under, or an export/import company that handles its
+// shipments. "note" says which (free text, optional).
+struct SupplierAlias
+{
+    string name;
+    string note;
+};
+
 class Supplier
 {
 private:
@@ -39,6 +48,9 @@ private:
     // its uses in Projections and Procurement.
     bool isInternal;
 
+    // Other names (none, one or several) - searchable
+    vector<SupplierAlias> aliases;
+
 public:
 
     // Constructor
@@ -68,6 +80,7 @@ public:
     string getPaymentMethod() const;
     int getLeadTimeWeeks() const;
     bool getIsInternal() const;
+    const vector<SupplierAlias>& getAliases() const;
 
     // Setters
     void setName(const string& n);
@@ -80,6 +93,7 @@ public:
     void setPaymentMethod(const string& payment);
     void setLeadTimeWeeks(int leadTime);
     void setIsInternal(bool internal);
+    void setAliases(const vector<SupplierAlias>& newAliases);
 
     // Serialization helpers
     // (ordering methods stored as a single ";" separated cell)

@@ -189,7 +189,18 @@
 
     function findSupplier(lines, context, result) {
 
-        const suppliers = context.suppliers || [];
+        // every name of a supplier (its own and its "other names")
+        // can identify it in the document
+        const suppliers = [];
+
+        for (const s of (context.suppliers || [])) {
+
+            suppliers.push({ name: s.name, matchName: s.name });
+
+            for (const alias of (s.aliases || [])) {
+                suppliers.push({ name: s.name, matchName: alias });
+            }
+        }
 
         const haystack = normalizeName(
             lines.slice(0, 60).join(" ") + " " +
@@ -199,7 +210,7 @@
 
         for (const supplier of suppliers) {
 
-            const key = normalizeName(supplier.name);
+            const key = normalizeName(supplier.matchName);
 
             if (key.length < 4) {
                 continue;
@@ -217,7 +228,7 @@
             // first word of the name (e.g. "Fastlink")
             for (const supplier of suppliers) {
 
-                const word = normalizeName(supplier.name).split(" ")[0];
+                const word = normalizeName(supplier.matchName).split(" ")[0];
 
                 if (word.length >= 5 && haystack.includes(word) &&
                     (!best || word.length > best.key.length)) {
@@ -1176,9 +1187,168 @@
         return result;
     }
 
+    // ------------------------------------------------------------
+    // Supplier INVOICE (for "Adjust Material Price"): the same text
+    // reading as a quotation - supplier, date, currency, article
+    // lines with quantity and unit price - plus the invoice number,
+    // customs (Zoll) and freight amounts. It only prepares the form.
+    // ------------------------------------------------------------
+
+    function lastAmount(text) {
+
+        const matches = text.match(new RegExp(NUM + "(?:[.,]\\d{1,2})?", "g")) || [];
+
+        for (let i = matches.length - 1; i >= 0; i--) {
+
+            const value = parseNumber(matches[i]);
+
+            if (value > 0 && /[.,]\d{2}$/.test(matches[i])) {
+                return value;
+            }
+        }
+
+        return 0;
+    }
+
+    function parseInvoice(lines, context) {
+
+        context = context || {};
+
+        const result = {
+            supplier: "",
+            supplierGuess: "",
+            invoiceNumber: "",
+            date: "",
+            currency: "EUR",
+            customsCost: 0,
+            freightCost: 0,
+            notes: [],
+            lines: [],
+            warnings: []
+        };
+
+        const scratch = { warnings: [], notes: [] };
+
+        findSupplier(lines, context, result);
+
+        findCurrency(lines, result);
+
+        // invoice number
+        const text = lines.join("\n");
+
+        const numberPatterns = [
+            /Rechnung(?:s-?)?\s*(?:Nr\.?|Nummer)\s*[:.]?\s*([A-Z0-9][\w\-\/\.]*)/i,
+            /Rechnung\s*(?:Nr\.?|Nummer)?\s*[:.]?\s*([A-Z0-9]*\d[\w\-\/\.]*)/i,
+            /Invoice\s*(?:No\.?|Number|Nr\.?|#)\s*[:.]?\s*([A-Z0-9][\w\-\/\.]*)/i,
+            /Belegnummer\s*[:#]?\s*([A-Z0-9][\w\-\/\.]*)/i
+        ];
+
+        for (const re of numberPatterns) {
+
+            const m = text.match(re);
+
+            if (m && /\d/.test(m[1])) {
+
+                result.invoiceNumber = m[1].replace(/[.,]$/, "");
+
+                break;
+            }
+        }
+
+        if (!result.invoiceNumber) {
+            result.warnings.push("Invoice number not found.");
+        }
+
+        // invoice date: labelled date first, otherwise the first date
+        const labelled = lines.find(line =>
+            /Rechnungsdatum|Invoice\s*date|Belegdatum|Datum|Date/i.test(line) &&
+            findDates(line).length > 0);
+
+        if (labelled) {
+            result.date = findDates(labelled)[0].iso;
+        }
+        else {
+
+            const any = findDates(text);
+
+            if (any.length > 0) {
+
+                result.date = any[0].iso;
+
+                result.warnings.push("Invoice date guessed (first date in the document) - check it.");
+            }
+            else {
+                result.warnings.push("Invoice date not found.");
+            }
+        }
+
+        // customs and freight (amounts on their own line or the next)
+        for (let i = 0; i < lines.length; i++) {
+
+            const line = lines[i];
+
+            if (/Zoll|customs|duty|duties|Einfuhr/i.test(line) &&
+                !/Zolltarif|tariff|HS[- ]?code|Zollnummer/i.test(line)) {
+
+                const amount = lastAmount(line) || lastAmount(lines[i + 1] || "");
+
+                if (amount > 0 && result.customsCost === 0) {
+                    result.customsCost = amount;
+                }
+            }
+
+            if (/Fracht|Versandkosten|Porto|Transportkosten|freight|shipping\s*(?:cost|charge)|Verpackung|packaging/i.test(line) &&
+                !/Versandtermin|Versandart|Lieferart/i.test(line)) {
+
+                const amount = lastAmount(line) || lastAmount(lines[i + 1] || "");
+
+                if (amount > 0 && result.freightCost === 0) {
+                    result.freightCost = amount;
+                }
+            }
+        }
+
+        // article lines: reuse the quotation line reading; on an invoice
+        // the quantity and price of a line are what was billed
+        const items = parseItems(lines, context, scratch);
+
+        for (const item of items) {
+
+            const quantity = item.usualQuantity ||
+                (item.tiers[0] ? item.tiers[0].minQuantity : 0);
+
+            const tier = item.tiers.find(t => t.minQuantity === quantity) ||
+                item.tiers[0];
+
+            const line = {
+                materialID: item.materialID || "",
+                quantity: quantity,
+                unitCost: tier ? tier.unitPrice : 0,
+                articleNumbers: item.articleNumbers,
+                description: item.description,
+                warnings: item.warnings.slice()
+            };
+
+            if (item.tiers.length > 1) {
+                line.warnings.push(
+                    "Several quantities/prices were found for this article - check the quantity and unit cost.");
+            }
+
+            result.lines.push(line);
+        }
+
+        if (result.lines.length === 0) {
+            result.warnings.push(
+                "No article lines were recognized - add the materials by hand.");
+        }
+
+        return result;
+    }
+
     const api = {
         buildLines: buildLines,
         parseQuotation: parseQuotation,
+        parseInvoice: parseInvoice,
         parseTierTable: parseTierTable,
         analyzeTierTable: analyzeTierTable,
         parseNumber: parseNumber,

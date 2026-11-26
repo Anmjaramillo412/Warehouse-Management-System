@@ -667,6 +667,37 @@ bool PurchaseManager::updateInvoice(
 
 
 // ================================================================
+// INVOICE DOCUMENT (PDF / photo kept for viewing)
+// ================================================================
+
+bool PurchaseManager::setInvoiceDocumentPath(
+    const string& id,
+    const string& path)
+{
+    PurchaseInvoice* invoice = findInvoice(id);
+
+    if (invoice == nullptr)
+    {
+        return false;
+    }
+
+    invoice->setDocumentPath(path);
+
+    save();
+
+    if (movementLogger != nullptr)
+    {
+        movementLogger->log(
+            "PURCHASE INVOICE DOCUMENT",
+            "ID: " + id + " | file " +
+            (path.empty() ? string("removed") : string("saved")));
+    }
+
+    return true;
+}
+
+
+// ================================================================
 // DELETE INVOICE
 // ================================================================
 
@@ -1193,7 +1224,8 @@ bool PurchaseManager::save()
             << invoice->getFreightCost() << "|"
             << invoice->getComment() << "|"
             << linesField << "|"
-            << otherCostsField
+            << otherCostsField << "|"
+            << invoice->getDocumentPath()
             << endl;
     }
 
@@ -1300,6 +1332,11 @@ bool PurchaseManager::load()
 
                 invoice->addLine(invoiceLine);
             }
+        }
+
+        if (fields.size() > 9 && !fields[9].empty())
+        {
+            invoice->setDocumentPath(fields[9]);
         }
 
         if (fields.size() > 8 && !fields[8].empty())
