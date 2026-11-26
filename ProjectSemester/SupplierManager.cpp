@@ -102,6 +102,9 @@ bool SupplierManager::modifySupplier(
     supplier->setLeadTimeWeeks(
         newData.getLeadTimeWeeks());
 
+    supplier->setAliases(
+        newData.getAliases());
+
 
     return true;
 }

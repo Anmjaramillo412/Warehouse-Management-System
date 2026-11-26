@@ -403,6 +403,7 @@ body {
     align-items: center;
     gap: 15px;
     margin-top: 30px;
+    margin-bottom: 20px;
 }
 
 
@@ -1193,6 +1194,7 @@ footer {
     margin-bottom: 0;
     padding-bottom: 10px;
     border-bottom: 2px solid #1f2937;
+    color: #111827;
     font-size: 19px;
 }
 
@@ -1224,8 +1226,9 @@ footer {
     }
 
     .procurement-summary-id {
-        font-weight: bold;
-        color: #1f2937;
+        font-weight: 700;
+        color: #1e3a8a;
+        letter-spacing: 0.2px;
         white-space: nowrap;
     }
 
@@ -2394,3 +2397,74 @@ th.filterable-th {
 
 /* Unit of measure shown next to a Quantity box */
 .uom-hint { margin-left: 8px; color: #374151; font-weight: bold; white-space: nowrap; align-self: center; }
+
+/* Projection detail: collapsible Supplier groups */
+.projection-supplier-group-row { cursor: pointer; user-select: none; }
+.projection-supplier-group-row:hover td { background: #e5e7eb; }
+.projection-supplier-group-row.collapsed .warehouse-caret { transform: rotate(-90deg); }
+tr.supplier-collapsed { display: none !important; }
+
+.form-container input.bom-filter,
+.bom-filter {
+    width: 100%;
+    margin: 6px 0 14px 0;
+    box-sizing: border-box;
+    background: #e5e7eb;
+    border: 1px solid #9ca3af;
+}
+
+.form-container input.bom-filter:focus,
+.bom-filter:focus {
+    background: #f3f4f6;
+}
+
+/* Bill of Materials rows: material | quantity | unit | Remove, with
+   Remove at the far right so it is not next to "+ Add Component" */
+.bom-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+    .bom-row .combobox {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .bom-row input.bom-quantity,
+    .bom-row input.modify-bom-quantity {
+        flex: none;
+        width: 120px;
+    }
+
+    .bom-row .uom-hint {
+        margin-left: 0;
+        min-width: 34px;
+    }
+
+    .bom-row > button {
+        flex: none;
+        margin-left: auto;
+        padding: 8px 14px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        background: #f9fafb;
+        color: #b91c1c;
+        cursor: pointer;
+    }
+
+        .bom-row > button:hover {
+            background: #fee2e2;
+        }
+
+/* Window the person is currently in: framed button in the module's
+   button row (set by the click handler in app.js). */
+
+.module-buttons button.active-tab,
+.module-buttons button.active-tab:hover {
+    outline: 3px solid #2563eb;
+    outline-offset: 3px;
+    font-weight: 700;
+    box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.18);
+}

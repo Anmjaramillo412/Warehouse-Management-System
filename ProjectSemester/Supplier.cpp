@@ -105,9 +105,21 @@ bool Supplier::getIsInternal() const
 }
 
 
+const vector<SupplierAlias>& Supplier::getAliases() const
+{
+    return aliases;
+}
+
+
 // ================================================================
 // SETTERS
 // ================================================================
+
+void Supplier::setAliases(const vector<SupplierAlias>& newAliases)
+{
+    aliases = newAliases;
+}
+
 
 void Supplier::setName(const string& n)
 {

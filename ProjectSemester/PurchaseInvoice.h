@@ -143,6 +143,10 @@ private:
 
     string comment;
 
+    // Supplier invoice file (PDF / photo) kept only for viewing;
+    // empty = none. Saved under the Documents Folder.
+    string documentPath;
+
     vector<PurchaseInvoiceLine> lines;
 
     // One-time, Supplier-tied charges amortized separately from
@@ -173,6 +177,7 @@ public:
     double getCustomsCost() const;
     double getFreightCost() const;
     string getComment() const;
+    string getDocumentPath() const;
     const vector<PurchaseInvoiceLine>& getLines() const;
     const vector<PurchaseInvoiceOtherCost>& getOtherCosts() const;
 
@@ -184,6 +189,7 @@ public:
     void setCustomsCost(double customs);
     void setFreightCost(double freight);
     void setComment(const string& cmt);
+    void setDocumentPath(const string& path);
 
     void addLine(const PurchaseInvoiceLine& line);
     void setLines(const vector<PurchaseInvoiceLine>& newLines);

@@ -482,6 +482,7 @@ bool DataManager::save(
         suppliersSheet.cell("H1").value("Payment Method");
         suppliersSheet.cell("I1").value("Lead Time (weeks)");
         suppliersSheet.cell("J1").value("Internal Supplier");
+        suppliersSheet.cell("K1").value("Other Names");
 
 
         int supplierRow = 2;
@@ -537,6 +538,25 @@ bool DataManager::save(
                     supplier->getIsInternal()
                     ? "YES"
                     : "NO");
+
+            // Other Names (column K): "Name,Note" entries joined by "~"
+            string aliasesField = "";
+
+            for (const auto& alias : supplier->getAliases())
+            {
+                if (!aliasesField.empty())
+                {
+                    aliasesField += "~";
+                }
+
+                aliasesField +=
+                    sanitizePackedField(alias.name) + "," +
+                    sanitizePackedField(alias.note);
+            }
+
+            suppliersSheet.cell(
+                "K" + to_string(supplierRow))
+                .value(aliasesField);
 
             supplierRow++;
         }
@@ -889,6 +909,44 @@ bool DataManager::load(
                     paymentMethod,
                     leadTimeWeeks,
                     isInternal);
+
+                // Other Names (column K) - newer column, an older
+                // file has no such cell
+                if (row.length() > 10)
+                {
+                    string aliasesValue =
+                        row[10].value<string>();
+
+                    vector<SupplierAlias> loadedAliases;
+
+                    stringstream aliasStream(aliasesValue);
+
+                    string aliasEntry;
+
+                    while (getline(aliasStream, aliasEntry, '~'))
+                    {
+                        if (aliasEntry.empty())
+                        {
+                            continue;
+                        }
+
+                        size_t comma = aliasEntry.find(',');
+
+                        SupplierAlias alias;
+
+                        alias.name = aliasEntry.substr(0, comma);
+
+                        alias.note = comma == string::npos ?
+                            "" : aliasEntry.substr(comma + 1);
+
+                        if (!alias.name.empty())
+                        {
+                            loadedAliases.push_back(alias);
+                        }
+                    }
+
+                    supplier.setAliases(loadedAliases);
+                }
 
 
                 if (!supplierManager.createSupplier(supplier))
