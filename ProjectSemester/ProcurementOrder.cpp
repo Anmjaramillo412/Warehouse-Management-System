@@ -32,6 +32,7 @@ ProcurementOrder::ProcurementOrder(
     closed = false;
     cancelled = false;
     estimatedReceiptDate = "";
+    supplierName = "";
 }
 
 
@@ -138,6 +139,12 @@ string ProcurementOrder::getEstimatedReceiptDate() const
 }
 
 
+string ProcurementOrder::getSupplierName() const
+{
+    return supplierName;
+}
+
+
 // ================================================================
 // SETTERS
 // ================================================================
@@ -223,6 +230,12 @@ void ProcurementOrder::setCancelled(bool value)
 void ProcurementOrder::setEstimatedReceiptDate(const string& date)
 {
     estimatedReceiptDate = date;
+}
+
+
+void ProcurementOrder::setSupplierName(const string& name)
+{
+    supplierName = name;
 }
 
 

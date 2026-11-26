@@ -90,7 +90,12 @@ string ProcurementManager::describeLineForHistory(
 {
     string materialName = order.getMaterialName();
 
-    string supplierName = "No Supplier";
+    string supplierName = orderSupplierName(order);
+
+    if (supplierName.empty())
+    {
+        supplierName = "No Supplier";
+    }
 
     if (materialManager != nullptr)
     {
@@ -101,12 +106,6 @@ string ProcurementManager::describeLineForHistory(
         if (material != nullptr)
         {
             materialName = material->getName();
-
-            if (material->getSupplier() != nullptr)
-            {
-                supplierName =
-                    material->getSupplier()->getName();
-            }
         }
     }
 
@@ -232,7 +231,8 @@ ProcurementOrder* ProcurementManager::createOrder(
     double orderedQuantity,
     const string& comment,
     const string& projectionID,
-    const string& explicitID)
+    const string& explicitID,
+    const string& supplierName)
 {
     orderedQuantity = roundQty(orderedQuantity);
 
@@ -258,6 +258,29 @@ ProcurementOrder* ProcurementManager::createOrder(
 
     orders.back()->setProjectionID(
         projectionID);
+
+    {
+        string chosenSupplier = supplierName;
+
+        // No explicit choice: remember the primary Supplier as of now,
+        // so the order keeps it if the primary is changed later.
+        if (chosenSupplier.empty() &&
+            materialManager != nullptr)
+        {
+            Material* supplied =
+                materialManager->findMaterial(materialID);
+
+            if (supplied != nullptr &&
+                supplied->getSupplier() != nullptr)
+            {
+                chosenSupplier =
+                    supplied->getSupplier()->getName();
+            }
+        }
+
+        orders.back()->setSupplierName(
+            sanitizeField(chosenSupplier));
+    }
 
     // Snapshot the Material's current name into the order itself, so
     // the persisted record stays self-explanatory even if the
@@ -293,6 +316,159 @@ ProcurementOrder* ProcurementManager::createOrder(
     }
 
     return orders.back().get();
+}
+
+
+// ================================================================
+// SUPPLIER OF AN ORDER LINE
+// ================================================================
+
+string ProcurementManager::orderSupplierName(
+    const ProcurementOrder& order) const
+{
+    if (!order.getSupplierName().empty())
+    {
+        return order.getSupplierName();
+    }
+
+    if (materialManager != nullptr)
+    {
+        Material* material =
+            materialManager->findMaterial(
+                order.getMaterialID());
+
+        if (material != nullptr &&
+            material->getSupplier() != nullptr)
+        {
+            return material->getSupplier()->getName();
+        }
+    }
+
+    return "";
+}
+
+
+string ProcurementManager::orderSupplierPartNumber(
+    const ProcurementOrder& order) const
+{
+    if (materialManager == nullptr)
+    {
+        return "";
+    }
+
+    Material* material =
+        materialManager->findMaterial(
+            order.getMaterialID());
+
+    if (material == nullptr)
+    {
+        return "";
+    }
+
+    string name = orderSupplierName(order);
+
+    if (material->getSupplier() != nullptr &&
+        material->getSupplier()->getName() == name)
+    {
+        return material->getSupplierPartNumber();
+    }
+
+    for (const auto& link : material->getAdditionalSuppliers())
+    {
+        if (link.supplier != nullptr &&
+            link.supplier->getName() == name)
+        {
+            return link.supplierPartNumber;
+        }
+    }
+
+    return "";
+}
+
+
+bool ProcurementManager::materialHasSupplier(
+    const string& materialID,
+    const string& supplierName) const
+{
+    if (materialManager == nullptr)
+    {
+        return false;
+    }
+
+    Material* material =
+        materialManager->findMaterial(materialID);
+
+    if (material == nullptr)
+    {
+        return false;
+    }
+
+    if (material->getSupplier() != nullptr &&
+        material->getSupplier()->getName() == supplierName)
+    {
+        return true;
+    }
+
+    for (const auto& link : material->getAdditionalSuppliers())
+    {
+        if (link.supplier != nullptr &&
+            link.supplier->getName() == supplierName)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+
+string ProcurementManager::setOrderSupplier(
+    const string& id,
+    const string& supplierName)
+{
+    bool found = false;
+
+    for (const auto& order : orders)
+    {
+        if (order->getID() != id)
+        {
+            continue;
+        }
+
+        found = true;
+
+        if (!materialHasSupplier(
+                order->getMaterialID(), supplierName))
+        {
+            return "Material " + order->getMaterialID() +
+                " cannot be bought from " + supplierName + ".";
+        }
+    }
+
+    if (!found)
+    {
+        return "Procurement Order not found.";
+    }
+
+    for (const auto& order : orders)
+    {
+        if (order->getID() == id)
+        {
+            order->setSupplierName(
+                sanitizeField(supplierName));
+        }
+    }
+
+    save();
+
+    if (movementLogger != nullptr)
+    {
+        movementLogger->log(
+            "PROCUREMENT ORDER SUPPLIER CHANGED",
+            "ID: " + id + " | Supplier: " + supplierName);
+    }
+
+    return "";
 }
 
 
@@ -930,6 +1106,8 @@ ProcurementManager::getOrders() const
 // cancelled: "1" if cancelOrder() was used on this line, else "0"
 // estimatedReceiptDate: optional "YYYY-MM-DD", empty if not set;
 //   rows saved before this field existed simply have no such column
+// supplierName: Supplier the order was placed with (empty = the
+//   Material's primary Supplier); appended after estimatedReceiptDate
 
 bool ProcurementManager::save()
 {
@@ -999,7 +1177,8 @@ bool ProcurementManager::save()
             << order->getProjectionID() << "|"
             << (order->isClosed() ? "1" : "0") << "|"
             << (order->isCancelled() ? "1" : "0") << "|"
-            << order->getEstimatedReceiptDate()
+            << order->getEstimatedReceiptDate() << "|"
+            << order->getSupplierName()
             << endl;
     }
 
@@ -1127,6 +1306,12 @@ bool ProcurementManager::load()
         {
             order->setEstimatedReceiptDate(
                 fields[13 + base]);
+        }
+
+        if (fields.size() > (size_t)(14 + base))
+        {
+            order->setSupplierName(
+                fields[14 + base]);
         }
 
         // Backfill the name for a pre-materialName row from the

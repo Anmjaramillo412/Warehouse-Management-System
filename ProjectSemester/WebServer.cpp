@@ -5101,20 +5101,50 @@ void WebServer::run()
                         order->getMaterialName();
 
 
-                    Supplier* supplier =
-                        (material != nullptr) ?
-                        material->getSupplier() : nullptr;
+                    // The Supplier this order was placed with (stored
+                    // on the order; older orders fall back to the
+                    // Material's primary Supplier).
+                    {
+                        string orderSupplier =
+                            procurementManager.orderSupplierName(*order);
 
-                    item["supplierName"] =
-                        (supplier != nullptr) ?
-                        supplier->getName() : "No Supplier";
+                        item["supplierName"] =
+                            orderSupplier.empty() ?
+                            string("No Supplier") : orderSupplier;
+                    }
 
-                    // The primary Supplier's own part number for this
+                    // That Supplier's own part number for this
                     // material - what the Supplier knows it by, so it
                     // is shown on the order lines
                     item["supplierPartNumber"] =
-                        (material != nullptr) ?
-                        material->getSupplierPartNumber() : "";
+                        procurementManager.orderSupplierPartNumber(*order);
+
+                    // Every Supplier this Material can be bought from
+                    // (primary first) - lets the order card offer a
+                    // Supplier switch when there is more than one.
+                    {
+                        crow::json::wvalue::list altSuppliers;
+
+                        if (material != nullptr &&
+                            material->getSupplier() != nullptr)
+                        {
+                            altSuppliers.push_back(
+                                material->getSupplier()->getName());
+
+                            for (const auto& link :
+                                material->getAdditionalSuppliers())
+                            {
+                                if (link.supplier != nullptr)
+                                {
+                                    altSuppliers.push_back(
+                                        link.supplier->getName());
+                                }
+                            }
+                        }
+
+                        item["materialSuppliers"] =
+                            std::move(altSuppliers);
+                    }
 
 
                     item["warehouseID"] =
@@ -5952,6 +5982,32 @@ void WebServer::run()
                         (itemSupplier != nullptr) ?
                         itemSupplier->getName() : "";
 
+                    // All Suppliers this Material can be ordered from
+                    // (primary first) - the order form shows a choice
+                    // only when there is more than one.
+                    {
+                        crow::json::wvalue::list itemSuppliers;
+
+                        if (itemSupplier != nullptr)
+                        {
+                            itemSuppliers.push_back(
+                                itemSupplier->getName());
+
+                            for (const auto& link :
+                                material->getAdditionalSuppliers())
+                            {
+                                if (link.supplier != nullptr)
+                                {
+                                    itemSuppliers.push_back(
+                                        link.supplier->getName());
+                                }
+                            }
+                        }
+
+                        itemJson["suppliers"] =
+                            std::move(itemSuppliers);
+                    }
+
 
                     itemJson["requiredQuantity"] =
                         projItem.requiredQuantity;
@@ -6740,10 +6796,40 @@ void WebServer::run()
                                 "zero for material " + materialID);
                         }
 
+                        // Optional Supplier choice (when the Material has
+                        // more than one); default is the primary.
+                        string chosenSupplier =
+                            lineMaterial->getSupplier()->getName();
+
+                        if (lineJson.has("supplierName") &&
+                            lineJson["supplierName"].t() ==
+                                crow::json::type::String)
+                        {
+                            string requested =
+                                lineJson["supplierName"].s();
+
+                            if (!requested.empty() &&
+                                requested != chosenSupplier)
+                            {
+                                if (!warehouseSystem->getProcurementManager()
+                                    .materialHasSupplier(
+                                        materialID, requested))
+                                {
+                                    return crow::response(
+                                        400,
+                                        "Material " + materialID +
+                                        " is not available from " +
+                                        requested + ".");
+                                }
+
+                                chosenSupplier = requested;
+                            }
+                        }
+
                         lines.push_back({
                             materialID,
                             orderedQuantity,
-                            lineMaterial->getSupplier()->getName()});
+                            chosenSupplier});
                     }
 
 
@@ -6806,7 +6892,8 @@ void WebServer::run()
                                 line.orderedQuantity,
                                 comment,
                                 projectionID,
-                                batchID);
+                                batchID,
+                                supplierName);
                         }
 
                         createdIDs.push_back(batchID);
@@ -7089,29 +7176,18 @@ void WebServer::run()
                     // should not end up covering a line meant for
                     // Supplier B.
 
-                    Material* firstLineMaterial =
-                        materialManager.findMaterial(
-                            existingLines[0]->getMaterialID());
-
-                    Supplier* orderSupplier =
-                        (firstLineMaterial != nullptr) ?
-                        firstLineMaterial->getSupplier() : nullptr;
-
                     string orderSupplierName =
-                        (orderSupplier != nullptr) ?
-                        orderSupplier->getName() : "";
-
-                    string newMaterialSupplierName =
-                        material->getSupplier()->getName();
+                        procurementManager.orderSupplierName(
+                            *existingLines[0]);
 
                     if (!orderSupplierName.empty() &&
-                        newMaterialSupplierName != orderSupplierName)
+                        !procurementManager.materialHasSupplier(
+                            materialID, orderSupplierName))
                     {
                         return crow::response(
                             400,
-                            "This Material's Supplier (" +
-                            newMaterialSupplierName +
-                            ") does not match this Order's Supplier (" +
+                            "This Material cannot be bought from this "
+                            "Order's Supplier (" +
                             orderSupplierName +
                             "). Create a separate Procurement Order for a "
                             "different Supplier.");
@@ -7141,7 +7217,8 @@ void WebServer::run()
                             orderedQuantity,
                             comment,
                             "",
-                            id);
+                            id,
+                            orderSupplierName);
 
                     if (newLine == nullptr)
                     {
@@ -8296,13 +8373,23 @@ void WebServer::run()
                             order->getMaterialName() : "");
 
 
-                    Supplier* supplier =
-                        (material != nullptr) ?
-                        material->getSupplier() : nullptr;
+                    {
+                        string pendingSupplier =
+                            (order != nullptr) ?
+                            procurementManager.orderSupplierName(*order) : "";
 
-                    item["supplierName"] =
-                        (supplier != nullptr) ?
-                        supplier->getName() : "No Supplier";
+                        if (pendingSupplier.empty() &&
+                            material != nullptr &&
+                            material->getSupplier() != nullptr)
+                        {
+                            pendingSupplier =
+                                material->getSupplier()->getName();
+                        }
+
+                        item["supplierName"] =
+                            pendingSupplier.empty() ?
+                            string("No Supplier") : pendingSupplier;
+                    }
 
 
                     // The last price on record for this material, if
@@ -8410,13 +8497,28 @@ void WebServer::run()
                             materialManager.findMaterial(
                                 lines[i].materialID);
 
-                        Supplier* lineSupplier =
-                            (lineMaterial != nullptr) ?
-                            lineMaterial->getSupplier() : nullptr;
+                        {
+                            ProcurementOrder* lineOrder =
+                                warehouseSystem->getProcurementManager()
+                                .findOrder(
+                                    lines[i].procurementOrderID,
+                                    lines[i].materialID);
 
-                        lineItem["supplierName"] =
-                            (lineSupplier != nullptr) ?
-                            lineSupplier->getName() : "";
+                            string lineSupplierName =
+                                (lineOrder != nullptr) ?
+                                warehouseSystem->getProcurementManager()
+                                .orderSupplierName(*lineOrder) : "";
+
+                            if (lineSupplierName.empty() &&
+                                lineMaterial != nullptr &&
+                                lineMaterial->getSupplier() != nullptr)
+                            {
+                                lineSupplierName =
+                                    lineMaterial->getSupplier()->getName();
+                            }
+
+                            lineItem["supplierName"] = lineSupplierName;
+                        }
 
                         lineItem["materialName"] =
                             (lineMaterial != nullptr) ?
@@ -9239,6 +9341,31 @@ void WebServer::run()
                     item["sourceProcurementOrderID"] =
                         entry.sourceProcurementOrderID;
 
+                    // Supplier the order was placed with (stored on the
+                    // order; older orders = primary Supplier). Manual
+                    // adjustments have no order, so no Supplier.
+                    {
+                        string historySupplier;
+
+                        if (entry.sourceProcurementOrderID != "MANUAL")
+                        {
+                            ProcurementOrder* historyOrder =
+                                warehouseSystem->getProcurementManager()
+                                .findOrder(
+                                    entry.sourceProcurementOrderID,
+                                    materialID);
+
+                            if (historyOrder != nullptr)
+                            {
+                                historySupplier =
+                                    warehouseSystem->getProcurementManager()
+                                    .orderSupplierName(*historyOrder);
+                            }
+                        }
+
+                        item["supplierName"] = historySupplier;
+                    }
+
                     historyList.push_back(
                         std::move(item));
                 }
@@ -9683,6 +9810,68 @@ void WebServer::run()
                             "This order is already completed, closed or "
                             "cancelled - its Estimated Delivery can no "
                             "longer be changed.");
+                    }
+
+                    crow::json::wvalue response;
+
+                    response["success"] = true;
+
+                    return crow::response(response);
+                }
+
+                catch (const exception& e)
+                {
+                    return crow::response(
+                        500,
+                        string("Error: ") + e.what());
+                }
+            });
+
+
+// ============================================================
+// PROCUREMENT - CHANGE THE SUPPLIER OF AN ORDER
+// ============================================================
+// Body: { id, supplierName }
+// For a Material with several Suppliers: sets which one this whole
+// "PRC-######" was placed with. Every line must be buyable from it.
+
+    CROW_ROUTE(app, "/api/procurement/set-supplier")
+        .methods(crow::HTTPMethod::POST)
+        ([warehouseSystem](const crow::request& req)
+            {
+                try
+                {
+                    auto body =
+                        crow::json::load(req.body);
+
+                    if (!body ||
+                        !body.has("id") ||
+                        !body.has("supplierName"))
+                    {
+                        return crow::response(
+                            400,
+                            "Order ID and Supplier are required.");
+                    }
+
+                    string id = body["id"].s();
+
+                    string supplierName =
+                        body["supplierName"].s();
+
+                    if (supplierName.empty())
+                    {
+                        return crow::response(
+                            400,
+                            "Supplier is required.");
+                    }
+
+                    string error =
+                        warehouseSystem->getProcurementManager()
+                        .setOrderSupplier(id, supplierName);
+
+                    if (!error.empty())
+                    {
+                        return crow::response(400, error);
                     }
 
                     crow::json::wvalue response;
