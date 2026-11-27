@@ -12805,6 +12805,14 @@ function renderProcurementCard(group, cardMode = "open") {
     const totalReceived =
         roundQty3(lines.reduce((sum, line) => sum + line.totalReceivedQuantity, 0));
 
+    // Quantity really expected: what the supplier confirmed, once the
+    // line is confirmed; otherwise what was ordered.
+    const totalExpected =
+        roundQty3(lines.reduce((sum, line) =>
+            sum + (line.confirmationDate
+                ? line.confirmedQuantity
+                : line.orderedQuantity), 0));
+
     // Material IDs open the material pop-up (without toggling the card)
     const materialLinkHtml = materialID => `
         <a href="#" class="material-popup-link"
@@ -13402,10 +13410,11 @@ function renderProcurementCard(group, cardMode = "open") {
                     ${materialsLabelHtml}
                 </span>
 
-                <span class="procurement-summary-qty">
+                <span class="procurement-summary-qty"
+                    title="${totalExpected !== totalOrdered ? "Ordered " + totalOrdered + ", confirmed " + totalExpected : ""}">
                     WH ${warehouseID}
                     &nbsp;&middot;&nbsp;
-                    ${totalReceived} / ${totalOrdered}
+                    ${totalReceived} / ${totalExpected}
                 </span>
 
                 <span
@@ -13717,8 +13726,8 @@ function toggleProcurementCard(id) {
 // PROCUREMENT ORDERS - QUICK CONFIRM (today, same ordered qty)
 // ============================================================
 // One click for the common case: supplier confirmed exactly what
-// was ordered, today, for every material in this order. Fills the
-// Confirmation fields and reuses the normal save path so
+// was ordered, today, for every material in this order (quantities you
+// already typed are kept). Fills the Confirmation fields and reuses the normal save path so
 // validation/behavior stays identical.
 
 function quickConfirmGroup(id) {
@@ -13742,8 +13751,13 @@ function quickConfirmGroup(id) {
             `[id^="${id}-"][id$="-confirm-qty"]`
         );
 
+    // Only the lines left empty take the ordered quantity; a quantity
+    // already typed (a change from the supplier) is kept as is.
     for (const input of qtyInputs) {
-        input.value = input.dataset.orderedQty;
+
+        if (input.value === "") {
+            input.value = input.dataset.orderedQty;
+        }
     }
 
     saveGroupConfirmation(id);
